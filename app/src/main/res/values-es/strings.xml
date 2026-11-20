@@ -232,6 +232,7 @@
     <string name="post_copied_toast">Copiado</string>
     <string name="post_show_more">Ver más</string>
     <string name="post_more_actions">Más acciones</string>
+    <string name="reaction_picker_more">Más reacciones</string>
     <string name="post_show_less">Ver menos</string>
 
     <!-- Service / expired media -->

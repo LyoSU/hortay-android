@@ -1,5 +1,12 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
@@ -1770,9 +1777,13 @@ private fun SelectTextSheet(post: TimelinePost, onDismiss: () -> Unit) {
 }
 
 /**
- * Telegram-style reaction picker: a horizontally-scrollable row of circular reaction
- * targets. Reactions the user already cast read as "selected" (tertiaryContainer); the
- * rest sit on surfaceContainerHigh. Tapping casts (or retracts) via the same optimistic
+ * Telegram-style reaction picker. Collapsed it is one row: the leading reactions (TDLib's
+ * top ones come first in [reactions]) and, when there are more than fit, an expand button
+ * in the last slot. Expanded it is a grid of every available reaction on the same column
+ * rhythm, scrolling inside a capped height — no sideways scrolling to hunt through.
+ *
+ * Reactions the user already cast read as "selected" (tertiaryContainer); the rest sit on
+ * surfaceContainerHigh. Tapping casts (or retracts) via the same optimistic
  * [PostInteractions.onReactionToggle] path the inline chips use. The emoji glyph itself
  * is the screen-reader label for unicode reactions; custom-emoji targets stay unlabeled,
  * matching the existing [ReactionChip] a11y contract.
@@ -1783,50 +1794,125 @@ internal fun ReactionPickerStrip(
     chosenKeys: Set<String>,
     onPick: (ReactionKind) -> Unit,
 ) {
-    Row(
+    var expanded by remember { mutableStateOf(false) }
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            // 2 dp tighter on every side than the visible rhythm (16 / 8 dp insets, 8 dp
-            // gaps): each 44 dp disc reserves a 48 dp touch target, whose slop makes it up.
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            // 2 dp tighter on every side than the visible rhythm (16 / 8 dp insets): each
+            // 44 dp disc reserves a 48 dp touch target, whose slop makes it up.
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
     ) {
-        reactions.forEachIndexed { index, kind ->
-            val chosen = kind.stableKey in chosenKeys
-            val background =
-                if (chosen) MaterialTheme.colorScheme.tertiaryContainer
-                else MaterialTheme.colorScheme.surfaceContainerHigh
-            Box(
-                modifier = Modifier
-                    .minimumInteractiveComponentSize()
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(background)
-                    .clickable(role = Role.Button) { onPick(kind) },
-                contentAlignment = Alignment.Center,
+        val perRow = ((maxWidth + REACTION_SLOT_GAP) / (REACTION_SLOT + REACTION_SLOT_GAP))
+            .toInt()
+            .coerceAtLeast(2)
+        val overflows = reactions.size > perRow
+        if (expanded) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(perRow),
+                modifier = Modifier.fillMaxWidth().heightIn(max = REACTION_SLOT * REACTION_GRID_MAX_ROWS),
+                horizontalArrangement = Arrangement.spacedBy(REACTION_SLOT_GAP),
+                verticalArrangement = Arrangement.spacedBy(REACTION_SLOT_GAP),
             ) {
-                when (kind) {
-                    // Telegram's appear animation as the strip opens, for the leading
-                    // [PICKER_APPEAR_LIMIT] emoji only (see that constant).
-                    is ReactionKind.Emoji -> ReactionEmojiGlyph(
-                        emoji = kind.text,
-                        style = MaterialTheme.typography.titleLarge,
-                        playAppear = index < PICKER_APPEAR_LIMIT,
-                    )
-                    is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
-                        customEmojiId = kind.customEmojiId,
-                        modifier = Modifier.size(24.dp),
-                        contentDescription = null,
-                    )
-                    // Paid reactions are filtered out upstream (can't be cast from Hortay).
-                    is ReactionKind.Paid -> Unit
+                items(reactions, key = { it.stableKey }) { kind ->
+                    Box(contentAlignment = Alignment.Center) {
+                        ReactionPickerTarget(
+                            kind = kind,
+                            chosen = kind.stableKey in chosenKeys,
+                            playAppear = false,
+                            onPick = onPick,
+                        )
+                    }
+                }
+            }
+        } else {
+            val shown = if (overflows) reactions.take(perRow - 1) else reactions
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(REACTION_SLOT_GAP),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                shown.forEachIndexed { index, kind ->
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        ReactionPickerTarget(
+                            kind = kind,
+                            chosen = kind.stableKey in chosenKeys,
+                            // Telegram's appear animation as the strip opens, for the
+                            // leading [PICKER_APPEAR_LIMIT] emoji only (see that constant).
+                            playAppear = index < PICKER_APPEAR_LIMIT,
+                            onPick = onPick,
+                        )
+                    }
+                }
+                if (overflows) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .size(REACTION_DISC)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .clickable(role = Role.Button) { expanded = true },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Symbol(
+                                name = "keyboard_arrow_down",
+                                contentDescription = stringResource(R.string.reaction_picker_more),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    // Keep a short list on the same column rhythm instead of stretching it.
+                    repeat(perRow - shown.size) { Spacer(modifier = Modifier.weight(1f)) }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun ReactionPickerTarget(
+    kind: ReactionKind,
+    chosen: Boolean,
+    playAppear: Boolean,
+    onPick: (ReactionKind) -> Unit,
+) {
+    val background =
+        if (chosen) MaterialTheme.colorScheme.tertiaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh
+    Box(
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .size(REACTION_DISC)
+            .clip(CircleShape)
+            .background(background)
+            .clickable(role = Role.Button) { onPick(kind) },
+        contentAlignment = Alignment.Center,
+    ) {
+        when (kind) {
+            is ReactionKind.Emoji -> ReactionEmojiGlyph(
+                emoji = kind.text,
+                style = MaterialTheme.typography.titleLarge,
+                playAppear = playAppear,
+            )
+            is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
+                customEmojiId = kind.customEmojiId,
+                modifier = Modifier.size(24.dp),
+                contentDescription = null,
+            )
+            // Paid reactions are filtered out upstream (can't be cast from Hortay).
+            is ReactionKind.Paid -> Unit
+        }
+    }
+}
+
+private val REACTION_DISC = 44.dp
+private val REACTION_SLOT = 48.dp
+private val REACTION_SLOT_GAP = 4.dp
+
+/** Rows of the expanded reaction grid visible at once; the half row hints at scrolling. */
+private const val REACTION_GRID_MAX_ROWS = 5.5f
 
 /**
  * Primary post actions as a Material 3 Expressive [ButtonGroup] — connected buttons with
@@ -1928,13 +2014,30 @@ internal fun formatViews(count: Int): String {
 
 
 /**
- * Telegram sends some reactions as a bare text-default code point — "❤" is U+2764 with no
- * U+FE0F — and our bundled text fonts carry a monochrome glyph for it, so the heart drew
- * black instead of as the red emoji. Appending the emoji variation selector asks for the
- * colour emoji. Display only: the reaction key sent back to Telegram stays as received.
+ * Telegram sends some reactions without the emoji variation selector — "❤" is a bare
+ * U+2764, and "❤‍🔥" is U+2764 + ZWJ + 🔥 with no U+FE0F in between. Text fonts carry a
+ * monochrome glyph for such a text-default code point, so the heart drew black, and the
+ * ZWJ sequence — which is only defined with the selector — fell apart into two emoji.
+ * Adding the selector after a lone code point, and after a BMP symbol that leads into a
+ * ZWJ, asks for the colour emoji and lets the sequence ligate. Display only: the
+ * reaction key sent back to Telegram stays as received.
  */
-internal fun String.withEmojiPresentation(): String =
-    if (codePointCount(0, length) == 1 && !endsWith(EMOJI_VARIATION_SELECTOR)) this + EMOJI_VARIATION_SELECTOR
-    else this
+internal fun String.withEmojiPresentation(): String {
+    if (codePointCount(0, length) == 1) {
+        return if (endsWith(EMOJI_VARIATION_SELECTOR)) this else this + EMOJI_VARIATION_SELECTOR
+    }
+    if (ZERO_WIDTH_JOINER !in this) return this
+    val out = StringBuilder(length + 2)
+    for (i in indices) {
+        val c = this[i]
+        out.append(c)
+        val next = getOrNull(i + 1)
+        if (next == ZERO_WIDTH_JOINER && !c.isSurrogate() && c != EMOJI_VARIATION_SELECTOR[0]) {
+            out.append(EMOJI_VARIATION_SELECTOR)
+        }
+    }
+    return out.toString()
+}
 
 private const val EMOJI_VARIATION_SELECTOR = "\uFE0F"
+private const val ZERO_WIDTH_JOINER = '\u200D'

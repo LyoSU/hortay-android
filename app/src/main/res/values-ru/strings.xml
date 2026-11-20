@@ -238,6 +238,7 @@
     <string name="post_copied_toast">Скопировано</string>
     <string name="post_show_more">Показать больше</string>
     <string name="post_more_actions">Другие действия</string>
+    <string name="reaction_picker_more">Больше реакций</string>
     <string name="post_show_less">Показать меньше</string>
 
     <!-- Service / expired media -->

@@ -74,10 +74,14 @@ class ChannelActionsRepository(
         return outcome.isSuccess || outcome.exceptionOrNull().isTdSilent()
     }
 
-    /** Top + recent + popular reactions available for [messageId] in [chatId], de-duplicated
-     *  and ordered for a picker strip. Returns empty on failure (cosmetic read — stays silent,
-     *  does NOT surface to UserMessageBus). Custom-emoji reactions are included; toggleReaction
-     *  already routes premium-gated rejections through the existing error path on tap. */
+    /**
+     * Reactions the user can cast on [messageId] in [chatId], de-duplicated and ordered the
+     * way Telegram's picker reads them: TDLib's top reactions first (the collapsed strip),
+     * then recent, then popular (the expanded grid). Reactions that need Telegram Premium
+     * the account doesn't have are left out — offering them only led to a rejected tap.
+     * Returns empty on failure or when reactions are unavailable for the message (cosmetic
+     * read — stays silent, does NOT surface to UserMessageBus).
+     */
     suspend fun availableReactions(chatId: Long, messageId: Long): List<ReactionKind> {
         val available = runCatching {
             // rowSize is the picker layout hint (TDLib enforces 5-25); the value doesn't
@@ -86,6 +90,7 @@ class ChannelActionsRepository(
         }
             .warnUnlessCancelled(TAG, "availableReactions($chatId, $messageId)")
             .getOrNull() ?: return emptyList()
+        if (available.unavailabilityReason != null) return emptyList()
         val ordered = sequenceOf(
             available.topReactions,
             available.recentReactions,
@@ -93,13 +98,14 @@ class ChannelActionsRepository(
         )
             .filterNotNull()
             .flatMap { it.asSequence() }
+            .filterNot { it.needsPremium }
             .mapNotNull { it.type.toReactionKind() }
         val seen = HashSet<String>()
-        val result = ArrayList<ReactionKind>(REACTION_STRIP_CAP)
+        val result = ArrayList<ReactionKind>()
         for (kind in ordered) {
             if (seen.add(kind.stableKey)) {
                 result.add(kind)
-                if (result.size >= REACTION_STRIP_CAP) break
+                if (result.size >= REACTION_PICKER_CAP) break
             }
         }
         return result
@@ -395,7 +401,7 @@ class ChannelActionsRepository(
         const val MUTE_FOREVER_SECONDS = 365 * 24 * 60 * 60
         // Hard cap on the de-duplicated picker strip so a chat with an unusually long
         // available-reaction list can't blow up the row TDLib hands back.
-        const val REACTION_STRIP_CAP = 24
+        const val REACTION_PICKER_CAP = 120
     }
 }
 

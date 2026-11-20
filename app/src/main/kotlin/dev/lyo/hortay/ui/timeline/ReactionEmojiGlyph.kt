@@ -78,11 +78,14 @@ import kotlin.math.roundToInt
  * Neither plays under reduced motion, without the Telegram artwork (guest mode, System
  * style, failed lookup), or before the static icon is on screen — the centre animation's
  * last frame hands back to the static icon, so it needs the icon to hand back to. The
- * animation files download lazily through [MediaCache] at [DownloadPriority.Avatar] — the
- * first time one is wanted, never for every reaction on screen — and if a file isn't on
- * disk within a short budget ([CHOOSE_START_BUDGET_MS] / [APPEAR_START_BUDGET_MS]) the
- * animation is skipped this time while the download finishes for the next one. Nothing
- * here gates the tap or the optimistic reaction flip, which run before any of it.
+ * choose-effect files (two small TGS per emoji, kept in TDLib's file cache afterwards) are
+ * fetched at [DownloadPriority.Avatar] as soon as a glyph shows its static icon, so they
+ * are on disk before the first tap; the appear file only when the picker opens. A play
+ * waits for its files and for the static icon up to a budget ([CHOOSE_START_BUDGET_MS] /
+ * [APPEAR_START_BUDGET_MS]) and is skipped past it, while the download finishes for the
+ * next one. The wait matters for a chip that is NEW with this very pick — the first
+ * reaction on a post — whose icon binds a frame or two after the effect is asked for.
+ * Nothing here gates the tap or the optimistic reaction flip, which run before any of it.
  */
 @Composable
 internal fun ReactionEmojiGlyph(
@@ -117,7 +120,15 @@ internal fun ReactionEmojiGlyph(
     // Re-checked right before a play starts: the files may land after the icon state
     // changed (style switched to System, reduced motion turned on).
     val canAnimateNow by rememberUpdatedState(canAnimate)
+    val iconNow by rememberUpdatedState(icon)
     val cache = LocalMediaCache.current
+    // Warm the choose effect while the reaction is merely on screen: fetched on the tap
+    // instead, the files missed the start budget and the first pick played nothing.
+    LaunchedEffect(icon, canAnimate) {
+        if (!canAnimate) return@LaunchedEffect
+        cache.prefetchReactionAnimation(icon?.centerAnimation)
+        cache.prefetchReactionAnimation(icon?.aroundAnimation)
+    }
     // Compositions currently playing; null = at rest on the static icon. Set only while
     // a one-shot runs, so the card never recomposes per frame — Lottie reads the
     // animatable's progress in its draw phase.
@@ -131,12 +142,15 @@ internal fun ReactionEmojiGlyph(
     val aroundProgress = rememberLottieAnimatable()
 
     LaunchedEffect(chooseEffectTrigger) {
-        if (chooseEffectTrigger == 0 || !canAnimate) return@LaunchedEffect
-        val target = icon ?: return@LaunchedEffect
+        if (chooseEffectTrigger == 0 || reducedMotion) return@LaunchedEffect
+        val startedAt = SystemClock.uptimeMillis()
+        // A chip created by this pick has no resolved icon on its first frames.
+        withTimeoutOrNull(CHOOSE_START_BUDGET_MS) { snapshotFlow { canAnimateNow }.first { it } }
+            ?: return@LaunchedEffect
+        val target = iconNow ?: return@LaunchedEffect
         val centerMedia = target.centerAnimation
         val aroundMedia = target.aroundAnimation
         if (centerMedia == null && aroundMedia == null) return@LaunchedEffect
-        val startedAt = SystemClock.uptimeMillis()
         // Kick both downloads first and outside the budget, so a skipped effect still
         // leaves the files on disk for the next tap.
         cache.prefetchReactionAnimation(centerMedia)
@@ -325,10 +339,10 @@ private const val CENTER_SCALE = 2f
 private const val AROUND_SCALE = 3f
 
 /** From the tap: how long the centre/around files may take to be ready and parsed. */
-private const val CHOOSE_START_BUDGET_MS = 400L
+private const val CHOOSE_START_BUDGET_MS = 1_500L
 
 /** From the picker opening: how long an appear file may take to be ready and parsed. */
-private const val APPEAR_START_BUDGET_MS = 700L
+private const val APPEAR_START_BUDGET_MS = 1_200L
 
 /** Lifetime of an unconsumed [ReactionEffectRequest]. */
 private const val EFFECT_REQUEST_TTL_MS = 2_000L

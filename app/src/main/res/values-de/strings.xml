@@ -228,6 +228,7 @@
     <string name="post_copied_toast">Kopiert</string>
     <string name="post_show_more">Mehr anzeigen</string>
     <string name="post_more_actions">Weitere Aktionen</string>
+    <string name="reaction_picker_more">Mehr Reaktionen</string>
     <string name="post_show_less">Weniger anzeigen</string>
 
     <!-- Dienst- / abgelaufene Medien -->

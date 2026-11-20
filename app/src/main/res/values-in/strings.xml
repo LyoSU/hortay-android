@@ -221,6 +221,7 @@
     <string name="post_copied_toast">Disalin</string>
     <string name="post_show_more">Tampilkan lebih banyak</string>
     <string name="post_more_actions">Tindakan lainnya</string>
+    <string name="reaction_picker_more">Reaksi lainnya</string>
     <string name="post_show_less">Tampilkan lebih sedikit</string>
 
     <!-- Pesan layanan / media kadaluarsa -->

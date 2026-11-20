@@ -236,6 +236,7 @@
     <string name="post_copied_toast">Skopiowano</string>
     <string name="post_show_more">Pokaż więcej</string>
     <string name="post_more_actions">Więcej działań</string>
+    <string name="reaction_picker_more">Więcej reakcji</string>
     <string name="post_show_less">Pokaż mniej</string>
 
     <!-- Usługi systemowe / media, które wygasły -->
