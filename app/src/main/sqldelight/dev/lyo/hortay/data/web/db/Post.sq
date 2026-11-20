@@ -211,6 +211,11 @@ SELECT id FROM post WHERE is_bookmarked = 1;
 
 -- Whether a channel already has stored posts. A fetched page with zero posts for
 -- such a channel is treated as a parse failure, not an "ok" empty channel.
+-- Newest stored post of a channel; NULL when it has none. Served by the
+-- (channel_username, seq) primary key.
+selectMaxSeq:
+SELECT MAX(seq) AS max_seq FROM post WHERE channel_username = ?;
+
 countByChannel:
 SELECT COUNT(*) FROM post WHERE channel_username = :username;
 

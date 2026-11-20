@@ -292,6 +292,20 @@ class WebRepository(
     }
 
     /**
+     * Ingest a `?before=` page fetched to close a gap between the channel's newest page
+     * and the posts already stored (see `WebFeedSource.fillGap`). New posts are inserted
+     * like on a normal sweep; the channel row is left alone — its validators and
+     * `older_cursor` describe the NEWEST page.
+     */
+    suspend fun ingestOlderPosts(posts: List<WebPost>, fetchedAtMs: Long) = withContext(ioDispatcher) {
+        db.transaction {
+            for (post in posts) {
+                ingestPost(post, fetchedAtMs, forceMediaRefresh = false)
+            }
+        }
+    }
+
+    /**
      * Media-refresh ingest for a `?before=` page fetched by the stale-media path.
      * Only rows that already exist are rewritten (with the fingerprint guard
      * bypassed so the rotated CDN URLs land): the refetch exists to repair an
@@ -585,6 +599,11 @@ class WebRepository(
     /** True when [username] already has stored posts. */
     suspend fun hasPosts(username: String): Boolean = withContext(ioDispatcher) {
         postQueries.countByChannel(username).executeAsOne() > 0L
+    }
+
+    /** Seq of the newest stored post of [username], or null when it has none. */
+    suspend fun maxSeq(username: String): Long? = withContext(ioDispatcher) {
+        postQueries.selectMaxSeq(username).executeAsOneOrNull()?.max_seq
     }
 
     /** Smallest seq on the channel's newest fetched page, or null when unknown. */

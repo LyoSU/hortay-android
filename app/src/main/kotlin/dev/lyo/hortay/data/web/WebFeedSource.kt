@@ -594,6 +594,45 @@ class WebFeedSource(
     }
 
     /**
+     * t.me/s/ serves about twenty posts per page, and a sweep reads only the newest page.
+     * A channel that posted more than that since the last sweep (a busy news channel
+     * overnight) therefore left a hole between the stored posts and the new page, with
+     * nothing in the feed to show for it. When the fresh page doesn't reach down to the
+     * newest post already stored, walk older pages with `?before=` until it does, capped
+     * at [GAP_FILL_MAX_PAGES] so a channel unread for weeks costs a bounded number of
+     * requests (the rest stays a gap, as before).
+     *
+     * Best effort and silent: the newest page is already ingested, and a failed
+     * back-fill must not paint an error over a channel that just refreshed fine.
+     */
+    private suspend fun fillGap(
+        username: String,
+        newestPage: WebChannelPage,
+        storedMaxSeq: Long?,
+        fetchedAtMs: Long,
+    ) {
+        if (storedMaxSeq == null) return
+        var floor = newestPage.posts.minOfOrNull { it.seq } ?: return
+        try {
+            repeat(GAP_FILL_MAX_PAGES) {
+                if (floor <= storedMaxSeq + 1) return
+                val result = fetchSemaphore.withPermit {
+                    client.fetchChannelPage(username, before = floor.toString(), useCache = false)
+                }
+                val posts = (result as? FetchResult.Page)?.page?.posts.orEmpty()
+                val olderFloor = posts.minOfOrNull { it.seq }
+                // No posts, or a page that doesn't go further back: stop rather than loop.
+                if (olderFloor == null || olderFloor >= floor) return
+                repository.ingestOlderPosts(posts, fetchedAtMs)
+                floor = olderFloor
+            }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(TAG, "gap fill failed for $username: ${t.message}")
+        }
+    }
+
+    /**
      * @return [FetchOutcome] describing the sweep's contribution. The caller
      *   ([doRefresh]) aggregates these to drive the adaptive backoff counter
      *   exposed via [consecutiveNoOpSweeps].
@@ -628,6 +667,7 @@ class WebFeedSource(
                         )
                         return FetchOutcome.NoOp
                     }
+                    val storedMaxSeq = repository.maxSeq(username)
                     captureArchiveDiff(username, result.page.posts, fetchedAtMs)
                     repository.ingestPage(
                         page = result.page,
@@ -641,6 +681,7 @@ class WebFeedSource(
                         // guard — see the callers in doRefresh / refetchForStalePost.
                         forceMediaRefresh = forceMediaRefresh,
                     )
+                    fillGap(username, result.page, storedMaxSeq, fetchedAtMs)
                     return FetchOutcome.Fresh
                 }
                 FetchResult.NotModified -> {
@@ -995,6 +1036,9 @@ class WebFeedSource(
          * span MORE seqs, so treating a page as covering this many is conservative.
          */
         private const val OLDER_PAGE_SPAN = 20L
+
+        /** Older pages a sweep may fetch per channel to close a gap (~20 posts each). */
+        private const val GAP_FILL_MAX_PAGES = 3
 
     }
 }
