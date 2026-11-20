@@ -2077,8 +2077,17 @@ private fun PostContextMenu(
                         onClick = { close { onSummarize() } },
                     )
                 }
-                if (interactions.canReport(post)) {
-                    ContextMenuDivider()
+                val onHideChannel = interactions.onHideChannelClick
+                val canReport = interactions.canReport(post)
+                if (onHideChannel != null || canReport) ContextMenuDivider()
+                if (onHideChannel != null) {
+                    ContextMenuItem(
+                        symbol = "visibility_off",
+                        label = stringResource(R.string.post_hide_channel),
+                        onClick = { close { onHideChannel(post) } },
+                    )
+                }
+                if (canReport) {
                     ContextMenuItem(
                         symbol = "flag",
                         label = stringResource(R.string.report_action),

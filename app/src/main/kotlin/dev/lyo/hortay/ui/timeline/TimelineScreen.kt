@@ -25,6 +25,8 @@ import androidx.compose.ui.semantics.semantics
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
+import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.ui.main.LocalUserMessageBus
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.items
@@ -198,6 +200,12 @@ fun TimelineScreen(
      * connected backend pass null so the dwell collector stays inert.
      */
     markAsRead: (suspend (List<TimelinePost>) -> Unit)? = null,
+    /**
+     * Hidden-channels store behind the post menu's "Hide channel from feed". Passed by
+     * the Feed route only — the Saved route leaves it null, so the entry is not offered
+     * there.
+     */
+    ignoredChannels: dev.lyo.hortay.data.IgnoredChannelsStore? = null,
     /**
      * User-chosen feed ordering (defaults to
      * [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst] — the Telegram-channel
@@ -1425,7 +1433,33 @@ fun TimelineScreen(
     // state. The same root cause as the per-account-state-survived-logout fix
     // on the data layer, just on the UI side.
     val guestReactionNudge = rememberGuestReactionNudge()
+    var hideChannelTarget by remember { mutableStateOf<TimelinePost?>(null) }
+    hideChannelTarget?.let { target ->
+        val bus = LocalUserMessageBus.current
+        val channelName = target.channelContext?.name ?: target.senderName
+        val hiddenText = stringResource(R.string.hide_channel_done, channelName)
+        val undoLabel = stringResource(R.string.action_undo)
+        HideChannelSheet(
+            channelName = channelName,
+            onDismiss = { hideChannelTarget = null },
+            onPick = { duration ->
+                hideChannelTarget = null
+                val store = ignoredChannels ?: return@HideChannelSheet
+                val chatId = target.chatId
+                scope.launch {
+                    val millis = duration.millis
+                    if (millis == null) store.add(chatId) else store.snooze(chatId, System.currentTimeMillis() + millis)
+                    bus?.post(
+                        text = hiddenText,
+                        severity = UserMessageBus.Severity.Info,
+                        action = UserMessageBus.Action.Run(undoLabel) { scope.launch { store.remove(chatId) } },
+                    )
+                }
+            },
+        )
+    }
     val interactions = remember(
+        ignoredChannels,
         guestReactionNudge,
         vm,
         viewer,
@@ -1577,6 +1611,7 @@ fun TimelineScreen(
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedState.value },
             onReportClick = onReportClick,
             canReport = canReport,
+            onHideChannelClick = if (ignoredChannels != null) ({ post -> hideChannelTarget = post }) else null,
         )
     }
 

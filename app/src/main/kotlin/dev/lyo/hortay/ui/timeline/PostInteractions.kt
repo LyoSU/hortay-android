@@ -106,6 +106,12 @@ data class PostInteractions(
      * action is hidden in contexts that don't wire it.
      */
     val canReport: (post: TimelinePost) -> Boolean = { false },
+    /**
+     * User picked "Hide channel from feed" in the post menu. Non-null only on the merged
+     * feed: inside a channel, a thread or Saved the entry would hide the very thing the
+     * reader chose to open, so those surfaces leave it null and the item is not shown.
+     */
+    val onHideChannelClick: ((post: TimelinePost) -> Unit)? = null,
 ) {
     companion object {
         val Noop = PostInteractions()

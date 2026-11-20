@@ -20,6 +20,9 @@
 - A bookmark button under every post saves it to the Saved tab in one tap, next to a Share button.
 - The comment count under a post shows the faces of the latest commenters.
 - Double-tapping a post leaves a quick reaction — Settings → Feed picks which one or turns the gesture off.
+- Settings → Feed has a word filter — posts containing the words or hashtags you list stay out of the feed.
+- A post's ⋯ menu can hide its channel from the feed for 8 hours, a day, a week or until you show it again.
+- The Channels tab can mark every channel as read in one step.
 - A forwarded post's comments screen has an “Original post in …” row that opens the original with its own discussion, and tapping the forward's header there now works too.
 - Settings → Appearance lets you pick a System, Light or Dark theme, with a Pure black option for dark mode.
 - Settings → Reading lets you choose the text size of posts, comments and articles in four steps, with a live preview.

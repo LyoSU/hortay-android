@@ -145,6 +145,8 @@ class PostsRepository(
      * pre-feature implementation.
      */
     private val ignoredChannels: IgnoredChannelsStore? = null,
+    /** Muted words for the merged feed; same read-side contract as [ignoredChannels]. */
+    private val mutedWords: dev.lyo.hortay.data.MutedWordsStore? = null,
     /**
      * One-shot persisted flag for the first-sign-in history backfill (see
      * [runFirstSignInBackfill]). Optional for the same test-constructor
@@ -423,6 +425,11 @@ class PostsRepository(
         // No store wired (legacy callers) → empty set, filter is a no-op.
         val ignoredFlow = ignoredChannels?.ignored
             ?: kotlinx.coroutines.flow.flowOf(kotlinx.collections.immutable.persistentSetOf())
+        // Hidden channels and muted words travel as one pair for the same reason as
+        // `archiveAuxFlow` below: the typed `combine` stops at five flows.
+        val mutedFlow: Flow<Set<String>> = mutedWords?.words ?: flowOf(emptySet())
+        val feedFilterFlow = combine(ignoredFlow, mutedFlow) { hidden, muted -> hidden to muted }
+        val mutedWordsFilter = dev.lyo.hortay.data.MutedWordsFilter()
         // Tombstones flow — TDLib-only archived DELETED snapshots reconstructed as ghost
         // posts. Merges into the live feed in the same combine so chat-list gates and
         // ignored filtering apply uniformly. Empty when archive feature has no captures
@@ -440,12 +447,14 @@ class PostsRepository(
         // typed 5-arg overload (there is no typed 6-arg form — the vararg variant erases
         // to Array<Any>, which we'd then have to cast at every read).
         val archiveAuxFlow = combine(tombstonesFlow, revisionCountsFlow) { t, r -> t to r }
-        combine(_posts, _mainChatIds, _archivedChatIds, ignoredFlow, archiveAuxFlow) { all, mainIds, archivedIds, ignored, archiveAux ->
+        combine(_posts, _mainChatIds, _archivedChatIds, feedFilterFlow, archiveAuxFlow) { all, mainIds, archivedIds, feedFilter, archiveAux ->
+            val (ignored, muted) = feedFilter
             val (tombstones, revCounts) = archiveAux
             val subscribed = if (mainIds.isEmpty() && archivedIds.isEmpty()) all
             else all.filter { it.chatId in mainIds || it.chatId in archivedIds }
-            val gated = if (ignored.isEmpty()) subscribed
+            val shown = if (ignored.isEmpty()) subscribed
             else subscribed.filter { it.chatId !in ignored }
+            val gated = mutedWordsFilter.apply(shown, muted)
             // Seed revisionCount from archive — preserves the EditedChip counter across
             // relaunches. Live-session bumps via handleContentChanged already work; this
             // patches in the values for posts that were edited in earlier sessions and
@@ -1610,6 +1619,37 @@ class PostsRepository(
             // stream we depend on for live reactions / views / replies).
             forceRead = !open,
         )
+    }
+
+    /**
+     * "Mark all as read": advances the read position of every channel in [chatIds] that
+     * still has unread posts to its newest message. Returns how many channels were acked.
+     *
+     * One `ViewMessages` per channel carrying only that channel's last message id — the
+     * server reads everything up to the highest viewed id, so this stays inside the
+     * "few messages per call" rule in the [viewMessages] KDoc. `ReadChatList` would be a
+     * single call, but it also reads every private chat and group in the list, which a
+     * channel reader has no business touching.
+     *
+     * The newest id comes from `GetChat` (a local read of TDLib's live chat object — the
+     * registry's copy can be older than the last `UpdateChatLastMessage`). Calls are
+     * spaced by [MARK_READ_SPACING_MS] so a few hundred channels trickle out instead of
+     * landing as one burst; the central FLOOD_WAIT gate still applies on top. Suspends
+     * until done — launch it in the session scope so logout cancels it.
+     */
+    suspend fun markChannelsRead(chatIds: Collection<Long>): Int {
+        val unread = _chatUnreadCounts.value
+        var acked = 0
+        for (chatId in chatIds) {
+            if ((unread[chatId] ?: 0) <= 0) continue
+            val lastId = runCatching { td.send(TdApi.GetChat(chatId)) }
+                .warnUnlessCancelled(TAG, "markChannelsRead/getChat")
+                .getOrNull()?.lastMessage?.id ?: continue
+            if (acked > 0) delay(MARK_READ_SPACING_MS)
+            viewMessages(chatId, listOf(lastId))
+            acked++
+        }
+        return acked
     }
 
     /**
@@ -3008,6 +3048,9 @@ private data class AlbumRepairRequest(val chatId: Long, val anchorId: Long, val 
 const val BACKFILL_TOP_K = 20
 const val BACKFILL_POSTS_PER_CHAT = 10
 const val BACKFILL_THROTTLE_MS = 1100L
+
+/** Gap between the per-channel acks of [PostsRepository.markChannelsRead]. */
+private const val MARK_READ_SPACING_MS = 120L
 
 /**
  * Status of an on-demand full-rich-message fetch ([PostsRepository.ensureFullRichMessage]),

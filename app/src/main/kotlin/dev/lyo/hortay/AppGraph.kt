@@ -222,6 +222,9 @@ class AppGraph(context: Context) {
      */
     val ignoredChannels: IgnoredChannelsStore = IgnoredChannelsStore(context)
 
+    /** Words whose posts stay out of the merged feed; see [dev.lyo.hortay.data.MutedWordsStore]. */
+    val mutedWords: dev.lyo.hortay.data.MutedWordsStore = dev.lyo.hortay.data.MutedWordsStore(context)
+
     /**
      * One-shot persisted flag that gates [PostsRepository.runFirstSignInBackfill].
      * Reset on TDLib `loggedOut` via [runLogoutCleanup] so a fresh sign-in
@@ -265,6 +268,7 @@ class AppGraph(context: Context) {
         foreground = lifecycleBridge.foreground,
         res = res,
         ignoredChannels = ignoredChannels,
+        mutedWords = mutedWords,
         coldStartBackfill = coldStartBackfillStore,
         archiveRepository = archiveRepository,
         archiveMediaStore = archivedMediaStore,
@@ -630,6 +634,7 @@ class AppGraph(context: Context) {
         subscriptions = webSubscriptions,
         scope = appScope,
         ignoredChannels = ignoredChannels,
+        mutedWords = mutedWords,
         archiveRepository = archiveRepository,
     )
 

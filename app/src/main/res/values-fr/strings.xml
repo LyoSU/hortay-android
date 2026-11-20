@@ -903,4 +903,25 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">Vitesse de lecture %1$s</string>
     <string name="audio_mini_close">Arrêter la lecture</string>
+    <string name="post_hide_channel">Masquer la chaîne du fil</string>
+    <string name="hide_channel_sheet_title">Masquer %1$s du fil</string>
+    <string name="hide_channel_8h">Pendant 8 heures</string>
+    <string name="hide_channel_1d">Pendant un jour</string>
+    <string name="hide_channel_1w">Pendant une semaine</string>
+    <string name="hide_channel_forever">Jusqu\'à ce que je la réaffiche</string>
+    <string name="hide_channel_done">%1$s est masquée du fil</string>
+    <string name="action_undo">Annuler</string>
+    <string name="channels_mark_all_read">Tout marquer comme lu</string>
+    <string name="channels_mark_all_read_confirm">Toutes les chaînes seront marquées comme lues, dans Telegram aussi. Cette action est irréversible.</string>
+    <string name="settings_muted_words_title">Filtre de mots</string>
+    <string name="settings_muted_words_subtitle_empty">Écarter du fil les publications contenant certains mots</string>
+    <string name="muted_words_explainer">Les publications contenant l\'un de ces mots ou hashtags n\'apparaissent pas dans le fil. Tu les verras toujours en ouvrant la chaîne.</string>
+    <string name="muted_words_hint">Mot ou #hashtag</string>
+    <string name="muted_words_add">Ajouter</string>
+    <string name="muted_words_remove">Retirer %1$s</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="one">%d mot</item>
+        <item quantity="many">%d mots</item>
+        <item quantity="other">%d mots</item>
+    </plurals>
 </resources>

@@ -877,4 +877,24 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">سرعت پخش %1$s</string>
     <string name="audio_mini_close">توقف پخش</string>
+    <string name="post_hide_channel">پنهان کردن کانال از فید</string>
+    <string name="hide_channel_sheet_title">پنهان کردن %1$s از فید</string>
+    <string name="hide_channel_8h">برای ۸ ساعت</string>
+    <string name="hide_channel_1d">برای یک روز</string>
+    <string name="hide_channel_1w">برای یک هفته</string>
+    <string name="hide_channel_forever">تا وقتی خودم برگردانم</string>
+    <string name="hide_channel_done">%1$s از فید پنهان شد</string>
+    <string name="action_undo">واگرد</string>
+    <string name="channels_mark_all_read">علامت‌گذاری همه به‌عنوان خوانده‌شده</string>
+    <string name="channels_mark_all_read_confirm">همهٔ کانال‌ها به‌عنوان خوانده‌شده علامت می‌خورند، در تلگرام هم. این کار قابل بازگشت نیست.</string>
+    <string name="settings_muted_words_title">فیلتر کلمات</string>
+    <string name="settings_muted_words_subtitle_empty">پست‌های دارای کلمات مشخص در فید نمایش داده نشوند</string>
+    <string name="muted_words_explainer">پست‌هایی که یکی از این کلمات یا هشتگ‌ها را دارند در فید نمایش داده نمی‌شوند. وقتی خود کانال را باز کنید آن‌ها را می‌بینید.</string>
+    <string name="muted_words_hint">کلمه یا #هشتگ</string>
+    <string name="muted_words_add">افزودن</string>
+    <string name="muted_words_remove">حذف %1$s</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="one">%d کلمه</item>
+        <item quantity="other">%d کلمه</item>
+    </plurals>
 </resources>

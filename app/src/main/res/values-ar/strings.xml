@@ -963,4 +963,28 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">سرعة التشغيل %1$s</string>
     <string name="audio_mini_close">إيقاف التشغيل</string>
+    <string name="post_hide_channel">إخفاء القناة من الخلاصة</string>
+    <string name="hide_channel_sheet_title">إخفاء %1$s من الخلاصة</string>
+    <string name="hide_channel_8h">لمدة 8 ساعات</string>
+    <string name="hide_channel_1d">لمدة يوم</string>
+    <string name="hide_channel_1w">لمدة أسبوع</string>
+    <string name="hide_channel_forever">إلى أن أُظهرها من جديد</string>
+    <string name="hide_channel_done">أُخفيت %1$s من الخلاصة</string>
+    <string name="action_undo">تراجع</string>
+    <string name="channels_mark_all_read">تحديد الكل كمقروء</string>
+    <string name="channels_mark_all_read_confirm">ستُحدَّد كل القنوات كمقروءة، وفي تيليغرام أيضًا. لا يمكن التراجع عن ذلك.</string>
+    <string name="settings_muted_words_title">فلتر الكلمات</string>
+    <string name="settings_muted_words_subtitle_empty">إبعاد المنشورات التي تحتوي كلمات معيّنة عن الخلاصة</string>
+    <string name="muted_words_explainer">المنشورات التي تحتوي إحدى هذه الكلمات أو الوسوم لا تظهر في الخلاصة. ستظل تراها حين تفتح القناة نفسها.</string>
+    <string name="muted_words_hint">كلمة أو #وسم</string>
+    <string name="muted_words_add">إضافة</string>
+    <string name="muted_words_remove">إزالة %1$s</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="zero">لا كلمات</item>
+        <item quantity="one">كلمة واحدة</item>
+        <item quantity="two">كلمتان</item>
+        <item quantity="few">%d كلمات</item>
+        <item quantity="many">%d كلمة</item>
+        <item quantity="other">%d كلمة</item>
+    </plurals>
 </resources>

@@ -9,8 +9,11 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.collections.immutable.ImmutableSet
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentSet
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.transformLatest
 
 /**
  * User-curated set of channel chat ids whose posts should be hidden from the
@@ -43,8 +46,17 @@ import kotlinx.coroutines.flow.map
  * strings because the DataStore Preferences API only ships set codecs for
  * String / Int / Long-as-scalar — no `longSetPreferencesKey`. Decimal is
  * portable across reinstalls and easy to inspect in DataStore tooling.
+ *
+ * Timed hides ("hide for a day") live in a second set of `chatId:untilEpochMillis`
+ * entries. [ignored] is the union of the permanent set and the timed entries that have
+ * not run out, so every consumer — both feed filters, the Channels tab, the Hidden
+ * channels screen — treats a snoozed channel exactly like a hidden one and needs no
+ * second code path. The flow re-emits by itself when an entry runs out.
  */
-class IgnoredChannelsStore(context: Context) {
+class IgnoredChannelsStore(
+    context: Context,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
 
     private val dataStore = context.applicationContext.ignoredChannelsDataStore
 
@@ -53,8 +65,35 @@ class IgnoredChannelsStore(context: Context) {
      * Compose stability inference treats the collection as a value and the
      * derived feed flow doesn't trigger spurious recompositions on equal sets.
      */
-    val ignored: Flow<ImmutableSet<Long>> = dataStore.data.map { prefs ->
-        prefs[KEY_IGNORED]?.mapNotNull { it.toLongOrNull() }?.toPersistentSet() ?: persistentSetOf()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val ignored: Flow<ImmutableSet<Long>> = dataStore.data
+        .map { prefs ->
+            val permanent = prefs[KEY_IGNORED]?.mapNotNullTo(HashSet()) { it.toLongOrNull() } ?: emptySet()
+            permanent to parseSnoozes(prefs[KEY_SNOOZED])
+        }
+        .distinctUntilChanged()
+        .transformLatest { (permanent, snoozes) ->
+            while (true) {
+                val at = now()
+                emit(hiddenAt(permanent, snoozes, at))
+                val nextExpiry = snoozes.values.filter { it > at }.minOrNull() ?: break
+                // Re-checked at least once a minute rather than slept through in one go:
+                // `delay` runs on a clock that stops in deep sleep, the expiry is wall time.
+                delay((nextExpiry - at + 1).coerceAtMost(SNOOZE_RECHECK_MS))
+            }
+        }
+        .distinctUntilChanged()
+
+    /**
+     * Hide [chatId] until [untilEpochMillis]. A channel that is already hidden for good
+     * stays that way — the permanent entry wins in [ignored].
+     */
+    suspend fun snooze(chatId: Long, untilEpochMillis: Long) {
+        if (chatId == 0L) return
+        dataStore.edit { prefs ->
+            val live = parseSnoozes(prefs[KEY_SNOOZED]).filterValues { it > now() }
+            prefs[KEY_SNOOZED] = encodeSnoozes(live + (chatId to untilEpochMillis))
+        }
     }
 
     suspend fun add(chatId: Long) {
@@ -70,6 +109,7 @@ class IgnoredChannelsStore(context: Context) {
         dataStore.edit { prefs ->
             val current = prefs[KEY_IGNORED] ?: emptySet()
             prefs[KEY_IGNORED] = current - chatId.toString()
+            dropSnoozes(prefs, setOf(chatId))
         }
     }
 
@@ -88,7 +128,10 @@ class IgnoredChannelsStore(context: Context) {
     suspend fun removeAll(chatIds: Collection<Long>) {
         val keys = chatIds.map(Long::toString).toSet()
         if (keys.isEmpty()) return
-        dataStore.edit { prefs -> prefs[KEY_IGNORED] = (prefs[KEY_IGNORED] ?: emptySet()) - keys }
+        dataStore.edit { prefs ->
+            prefs[KEY_IGNORED] = (prefs[KEY_IGNORED] ?: emptySet()) - keys
+            dropSnoozes(prefs, chatIds.toSet())
+        }
     }
 
     suspend fun toggle(chatId: Long): Boolean {
@@ -97,8 +140,10 @@ class IgnoredChannelsStore(context: Context) {
         dataStore.edit { prefs ->
             val current = prefs[KEY_IGNORED] ?: emptySet()
             val key = chatId.toString()
-            if (key in current) {
+            val snoozed = (parseSnoozes(prefs[KEY_SNOOZED])[chatId] ?: 0L) > now()
+            if (key in current || snoozed) {
                 prefs[KEY_IGNORED] = current - key
+                dropSnoozes(prefs, setOf(chatId))
                 resultingState = false
             } else {
                 prefs[KEY_IGNORED] = current + key
@@ -108,8 +153,33 @@ class IgnoredChannelsStore(context: Context) {
         return resultingState
     }
 
-    private companion object {
-        val KEY_IGNORED = stringSetPreferencesKey("ignored_channel_ids")
+    private fun dropSnoozes(prefs: androidx.datastore.preferences.core.MutablePreferences, chatIds: Set<Long>) {
+        val snoozes = parseSnoozes(prefs[KEY_SNOOZED])
+        if (snoozes.isEmpty()) return
+        prefs[KEY_SNOOZED] = encodeSnoozes(snoozes.filter { (id, until) -> id !in chatIds && until > now() })
+    }
+
+    internal companion object {
+        private val KEY_IGNORED = stringSetPreferencesKey("ignored_channel_ids")
+        private val KEY_SNOOZED = stringSetPreferencesKey("snoozed_channel_ids")
+        private const val SNOOZE_RECHECK_MS = 60_000L
+
+        /** `chatId:untilEpochMillis` entries → map; malformed entries are skipped. */
+        internal fun parseSnoozes(raw: Set<String>?): Map<Long, Long> {
+            if (raw.isNullOrEmpty()) return emptyMap()
+            return raw.mapNotNull { entry ->
+                val id = entry.substringBefore(':').toLongOrNull()
+                val until = entry.substringAfter(':', "").toLongOrNull()
+                if (id != null && until != null) id to until else null
+            }.toMap()
+        }
+
+        internal fun encodeSnoozes(snoozes: Map<Long, Long>): Set<String> =
+            snoozes.mapTo(HashSet(snoozes.size)) { (id, until) -> "$id:$until" }
+
+        /** The hidden set at wall time [at]: permanent hides plus snoozes still running. */
+        internal fun hiddenAt(permanent: Set<Long>, snoozes: Map<Long, Long>, at: Long): ImmutableSet<Long> =
+            (permanent + snoozes.filterValues { it > at }.keys).toPersistentSet()
     }
 }
 

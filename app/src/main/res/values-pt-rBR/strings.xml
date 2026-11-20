@@ -907,4 +907,25 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">Velocidade de reprodução %1$s</string>
     <string name="audio_mini_close">Parar a reprodução</string>
+    <string name="post_hide_channel">Ocultar canal do feed</string>
+    <string name="hide_channel_sheet_title">Ocultar %1$s do feed</string>
+    <string name="hide_channel_8h">Por 8 horas</string>
+    <string name="hide_channel_1d">Por um dia</string>
+    <string name="hide_channel_1w">Por uma semana</string>
+    <string name="hide_channel_forever">Até eu mostrar de novo</string>
+    <string name="hide_channel_done">%1$s está oculto do feed</string>
+    <string name="action_undo">Desfazer</string>
+    <string name="channels_mark_all_read">Marcar tudo como lido</string>
+    <string name="channels_mark_all_read_confirm">Todos os canais serão marcados como lidos, no Telegram também. Não é possível desfazer.</string>
+    <string name="settings_muted_words_title">Filtro de palavras</string>
+    <string name="settings_muted_words_subtitle_empty">Manter fora do feed as publicações com certas palavras</string>
+    <string name="muted_words_explainer">Publicações com alguma destas palavras ou hashtags não aparecem no feed. Você ainda as verá ao abrir o canal.</string>
+    <string name="muted_words_hint">Palavra ou #hashtag</string>
+    <string name="muted_words_add">Adicionar</string>
+    <string name="muted_words_remove">Remover %1$s</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="one">%d palavra</item>
+        <item quantity="many">%d palavras</item>
+        <item quantity="other">%d palavras</item>
+    </plurals>
 </resources>

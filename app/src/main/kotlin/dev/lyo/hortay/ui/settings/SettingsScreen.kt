@@ -115,6 +115,8 @@ fun SettingsScreen(
      * without rewiring the call sites.
      */
     ignoredChannels: IgnoredChannelsStore? = null,
+    /** Word-filter store behind the "Word filter" row and its sub-screen. */
+    mutedWords: dev.lyo.hortay.data.MutedWordsStore? = null,
     /**
      * TDLib resolver for the Hidden Channels sub-screen — resolves channel
      * title / handle for each hidden chatId. Null in guest mode (the
@@ -204,6 +206,8 @@ fun SettingsScreen(
                     onSignIn = onSignIn,
                     ignoredChannels = ignoredChannels,
                     onOpenHiddenChannels = { settingsBackStack.add(SettingsNavKey.HiddenChannels) },
+                    mutedWords = mutedWords,
+                    onOpenMutedWords = { settingsBackStack.add(SettingsNavKey.MutedWords) },
                     onOpenDataStorage = { settingsBackStack.add(SettingsNavKey.DataStorage) },
                     onOpenPrivacy = { settingsBackStack.add(SettingsNavKey.Privacy) },
                     onOpenAbout = { settingsBackStack.add(SettingsNavKey.About) },
@@ -231,6 +235,11 @@ fun SettingsScreen(
                         channelActions = channelActions,
                         webChannelByChatId = webChannelByChatId,
                     )
+                }
+            }
+            entry<SettingsNavKey.MutedWords> {
+                mutedWords?.let { store ->
+                    MutedWordsScreen(store = store, contentPadding = contentPadding, onBack = pop)
                 }
             }
             entry<SettingsNavKey.DataStorage> {
@@ -277,6 +286,7 @@ private sealed interface SettingsNavKey : NavKey {
     data object Proxy : SettingsNavKey
     data object About : SettingsNavKey
     data object HiddenChannels : SettingsNavKey
+    data object MutedWords : SettingsNavKey
     data object AutoDownload : SettingsNavKey
 }
 
@@ -291,6 +301,8 @@ private fun SettingsMain(
     onSignIn: (() -> Unit)?,
     ignoredChannels: IgnoredChannelsStore?,
     onOpenHiddenChannels: () -> Unit,
+    mutedWords: dev.lyo.hortay.data.MutedWordsStore?,
+    onOpenMutedWords: () -> Unit,
     onOpenDataStorage: () -> Unit,
     onOpenPrivacy: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -476,6 +488,21 @@ private fun SettingsMain(
                             chevron = true,
                             grouped = true,
                             onClick = onOpenHiddenChannels,
+                        )
+                    }
+                    if (mutedWords != null) {
+                        val muted by mutedWords.words.collectAsStateWithLifecycle(initialValue = persistentSetOf())
+                        SettingsRow(
+                            symbol = "block",
+                            title = stringResource(R.string.settings_muted_words_title),
+                            subtitle = if (muted.isEmpty()) {
+                                stringResource(R.string.settings_muted_words_subtitle_empty)
+                            } else {
+                                pluralStringResource(R.plurals.settings_muted_words_count, muted.size, muted.size)
+                            },
+                            chevron = true,
+                            grouped = true,
+                            onClick = onOpenMutedWords,
                         )
                     }
                 }

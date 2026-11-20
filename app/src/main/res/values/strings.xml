@@ -919,4 +919,24 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">Playback speed %1$s</string>
     <string name="audio_mini_close">Stop playback</string>
+    <string name="post_hide_channel">Hide channel from feed</string>
+    <string name="hide_channel_sheet_title">Hide %1$s from the feed</string>
+    <string name="hide_channel_8h">For 8 hours</string>
+    <string name="hide_channel_1d">For a day</string>
+    <string name="hide_channel_1w">For a week</string>
+    <string name="hide_channel_forever">Until I show it again</string>
+    <string name="hide_channel_done">%1$s is hidden from the feed</string>
+    <string name="action_undo">Undo</string>
+    <string name="channels_mark_all_read">Mark all as read</string>
+    <string name="channels_mark_all_read_confirm">Every channel will be marked as read, in Telegram too. This can\'t be undone.</string>
+    <string name="settings_muted_words_title">Word filter</string>
+    <string name="settings_muted_words_subtitle_empty">Keep posts with certain words out of the feed</string>
+    <string name="muted_words_explainer">Posts that contain any of these words or hashtags stay out of the feed. You\'ll still see them when you open the channel itself.</string>
+    <string name="muted_words_hint">Word or #hashtag</string>
+    <string name="muted_words_add">Add</string>
+    <string name="muted_words_remove">Remove %1$s</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="one">%d word</item>
+        <item quantity="other">%d words</item>
+    </plurals>
 </resources>

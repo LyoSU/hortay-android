@@ -878,4 +878,24 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">Oynatma hızı %1$s</string>
     <string name="audio_mini_close">Oynatmayı durdur</string>
+    <string name="post_hide_channel">Kanalı akıştan gizle</string>
+    <string name="hide_channel_sheet_title">%1$s kanalını akıştan gizle</string>
+    <string name="hide_channel_8h">8 saatliğine</string>
+    <string name="hide_channel_1d">Bir günlüğüne</string>
+    <string name="hide_channel_1w">Bir haftalığına</string>
+    <string name="hide_channel_forever">Ben tekrar gösterene kadar</string>
+    <string name="hide_channel_done">%1$s akıştan gizlendi</string>
+    <string name="action_undo">Geri al</string>
+    <string name="channels_mark_all_read">Tümünü okundu say</string>
+    <string name="channels_mark_all_read_confirm">Tüm kanallar Telegram\'da da okundu olarak işaretlenecek. Bu işlem geri alınamaz.</string>
+    <string name="settings_muted_words_title">Kelime filtresi</string>
+    <string name="settings_muted_words_subtitle_empty">Belirli kelimeleri içeren gönderileri akışta gösterme</string>
+    <string name="muted_words_explainer">Bu kelimelerden veya etiketlerden birini içeren gönderiler akışta görünmez. Kanalın kendisini açtığında yine de görürsün.</string>
+    <string name="muted_words_hint">Kelime veya #etiket</string>
+    <string name="muted_words_add">Ekle</string>
+    <string name="muted_words_remove">%1$s kelimesini kaldır</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="one">%d kelime</item>
+        <item quantity="other">%d kelime</item>
+    </plurals>
 </resources>

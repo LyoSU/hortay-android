@@ -210,21 +210,8 @@ fun ChannelsScreen(
     bulkConfirm?.let { action ->
         AlertDialog(
             onDismissRequest = { bulkConfirm = null },
-            title = {
-                Text(
-                    stringResource(
-                        if (action == FeedBulkAction.HideAll) R.string.channels_hide_all else R.string.channels_show_all,
-                    ),
-                )
-            },
-            text = {
-                Text(
-                    stringResource(
-                        if (action == FeedBulkAction.HideAll) R.string.channels_hide_all_confirm
-                        else R.string.channels_show_all_confirm,
-                    ),
-                )
-            },
+            title = { Text(stringResource(action.title)) },
+            text = { Text(stringResource(action.confirm)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -233,15 +220,18 @@ fun ChannelsScreen(
                             when (action) {
                                 FeedBulkAction.HideAll -> graph.ignoredChannels.addAll(bulkScope())
                                 FeedBulkAction.ShowAll -> graph.ignoredChannels.removeAll(bulkScope())
+                                // In the session scope, not this screen's: the acks trickle
+                                // out over several seconds and must outlive a tab switch,
+                                // but not a logout.
+                                FeedBulkAction.MarkAllRead -> {
+                                    val ids = bulkScope()
+                                    graph.session.scope.launch { repo.markChannelsRead(ids) }
+                                }
                             }
                         }
                     },
                 ) {
-                    Text(
-                        stringResource(
-                            if (action == FeedBulkAction.HideAll) R.string.channels_hide_all else R.string.channels_show_all,
-                        ),
-                    )
+                    Text(stringResource(action.title))
                 }
             },
             dismissButton = {
@@ -266,6 +256,12 @@ fun ChannelsScreen(
                                 )
                             }
                             DropdownMenu(expanded = feedMenuOpen, onDismissRequest = { feedMenuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.channels_mark_all_read)) },
+                                    leadingIcon = { Symbol(name = "check_circle", contentDescription = null) },
+                                    enabled = unreadCounts.any { it.value > 0 },
+                                    onClick = { feedMenuOpen = false; bulkConfirm = FeedBulkAction.MarkAllRead },
+                                )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.channels_hide_all)) },
                                     leadingIcon = { Symbol(name = "visibility_off", contentDescription = null) },
@@ -804,7 +800,11 @@ private fun SwipeHintRow(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** Bulk feed-visibility actions from the Channels top bar (issue #3: 500-channel users). */
-private enum class FeedBulkAction { HideAll, ShowAll }
+private enum class FeedBulkAction(@param:StringRes val title: Int, @param:StringRes val confirm: Int) {
+    HideAll(R.string.channels_hide_all, R.string.channels_hide_all_confirm),
+    ShowAll(R.string.channels_show_all, R.string.channels_show_all_confirm),
+    MarkAllRead(R.string.channels_mark_all_read, R.string.channels_mark_all_read_confirm),
+}
 
 /** Quick filters above the channel list. */
 internal enum class ChannelsFilter(@param:StringRes val label: Int) {

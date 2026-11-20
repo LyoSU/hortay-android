@@ -859,4 +859,23 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">Kecepatan pemutaran %1$s</string>
     <string name="audio_mini_close">Hentikan pemutaran</string>
+    <string name="post_hide_channel">Sembunyikan kanal dari feed</string>
+    <string name="hide_channel_sheet_title">Sembunyikan %1$s dari feed</string>
+    <string name="hide_channel_8h">Selama 8 jam</string>
+    <string name="hide_channel_1d">Selama sehari</string>
+    <string name="hide_channel_1w">Selama seminggu</string>
+    <string name="hide_channel_forever">Sampai saya tampilkan lagi</string>
+    <string name="hide_channel_done">%1$s disembunyikan dari feed</string>
+    <string name="action_undo">Urungkan</string>
+    <string name="channels_mark_all_read">Tandai semua sudah dibaca</string>
+    <string name="channels_mark_all_read_confirm">Semua kanal akan ditandai sudah dibaca, juga di Telegram. Tindakan ini tidak bisa diurungkan.</string>
+    <string name="settings_muted_words_title">Filter kata</string>
+    <string name="settings_muted_words_subtitle_empty">Jangan tampilkan kiriman dengan kata tertentu di feed</string>
+    <string name="muted_words_explainer">Kiriman yang memuat salah satu kata atau tagar ini tidak muncul di feed. Kamu tetap bisa melihatnya saat membuka kanalnya.</string>
+    <string name="muted_words_hint">Kata atau #tagar</string>
+    <string name="muted_words_add">Tambah</string>
+    <string name="muted_words_remove">Hapus %1$s</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="other">%d kata</item>
+    </plurals>
 </resources>

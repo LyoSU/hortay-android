@@ -80,6 +80,8 @@ class WebFeedSource(
      * store across both modes.
      */
     private val ignoredChannels: IgnoredChannelsStore? = null,
+    /** Muted words for the merged feed; same read-side contract as [ignoredChannels]. */
+    private val mutedWords: dev.lyo.hortay.data.MutedWordsStore? = null,
     private val maxConcurrentFetches: Int = DEFAULT_CONCURRENCY,
     private val stalenessWindowMs: Long = DEFAULT_STALENESS_WINDOW_MS,
     private val mediaTtlMs: Long = DEFAULT_MEDIA_TTL_MS,
@@ -142,6 +144,8 @@ class WebFeedSource(
      * One composition feeds both [posts] and [savedOnlyKeys] so the two never come
      * from different DB snapshots.
      */
+    private val mutedWordsFilter = dev.lyo.hortay.data.MutedWordsFilter()
+
     private val composition: StateFlow<FeedComposition> =
         combine(
             repository.observeFeed(),
@@ -155,7 +159,11 @@ class WebFeedSource(
             // unchanged across TDLib + guest modes (see [IgnoredChannelsStore]
             // for the cross-mode chatId design).
             ignoredChannels?.ignored ?: flowOf(persistentSetOf()),
-        ) { feed, saved, ignored -> composeFeed(feed, saved, ignored) }
+            mutedWords?.words ?: flowOf(persistentSetOf()),
+        ) { feed, saved, ignored, muted ->
+            // Muted words leave the feed only; a saved post stays in Saved whatever it says.
+            composeFeed(mutedWordsFilter.apply(feed, muted).toPersistentList(), saved, ignored)
+        }
             // WhileSubscribed(5s) instead of Eagerly so authenticated users
             // who never enter guest mode don't pay for the SQL query at
             // AppGraph construction time. 5s grace matches the rest of the

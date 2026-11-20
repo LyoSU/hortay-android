@@ -923,4 +923,26 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">Скорость воспроизведения %1$s</string>
     <string name="audio_mini_close">Остановить воспроизведение</string>
+    <string name="post_hide_channel">Скрыть канал из ленты</string>
+    <string name="hide_channel_sheet_title">Скрыть «%1$s» из ленты</string>
+    <string name="hide_channel_8h">На 8 часов</string>
+    <string name="hide_channel_1d">На сутки</string>
+    <string name="hide_channel_1w">На неделю</string>
+    <string name="hide_channel_forever">Пока не верну</string>
+    <string name="hide_channel_done">«%1$s» скрыт из ленты</string>
+    <string name="action_undo">Отменить</string>
+    <string name="channels_mark_all_read">Отметить всё прочитанным</string>
+    <string name="channels_mark_all_read_confirm">Все каналы будут отмечены прочитанными, в Telegram тоже. Отменить это не получится.</string>
+    <string name="settings_muted_words_title">Фильтр слов</string>
+    <string name="settings_muted_words_subtitle_empty">Не показывать в ленте посты с определёнными словами</string>
+    <string name="muted_words_explainer">Посты с этими словами или хештегами не попадают в ленту. Открыв сам канал, вы всё равно их увидите.</string>
+    <string name="muted_words_hint">Слово или #хештег</string>
+    <string name="muted_words_add">Добавить</string>
+    <string name="muted_words_remove">Убрать «%1$s»</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="one">%d слово</item>
+        <item quantity="few">%d слова</item>
+        <item quantity="many">%d слов</item>
+        <item quantity="other">%d слова</item>
+    </plurals>
 </resources>

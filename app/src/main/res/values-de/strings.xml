@@ -883,4 +883,24 @@
     <string name="audio_speed_value">%1$s×</string>
     <string name="audio_speed_cd">Wiedergabegeschwindigkeit %1$s</string>
     <string name="audio_mini_close">Wiedergabe beenden</string>
+    <string name="post_hide_channel">Kanal aus dem Feed ausblenden</string>
+    <string name="hide_channel_sheet_title">%1$s aus dem Feed ausblenden</string>
+    <string name="hide_channel_8h">Für 8 Stunden</string>
+    <string name="hide_channel_1d">Für einen Tag</string>
+    <string name="hide_channel_1w">Für eine Woche</string>
+    <string name="hide_channel_forever">Bis ich ihn wieder einblende</string>
+    <string name="hide_channel_done">%1$s ist aus dem Feed ausgeblendet</string>
+    <string name="action_undo">Rückgängig</string>
+    <string name="channels_mark_all_read">Alle als gelesen markieren</string>
+    <string name="channels_mark_all_read_confirm">Alle Kanäle werden als gelesen markiert, auch in Telegram. Das lässt sich nicht rückgängig machen.</string>
+    <string name="settings_muted_words_title">Wortfilter</string>
+    <string name="settings_muted_words_subtitle_empty">Beiträge mit bestimmten Wörtern aus dem Feed heraushalten</string>
+    <string name="muted_words_explainer">Beiträge mit einem dieser Wörter oder Hashtags erscheinen nicht im Feed. Du siehst sie weiterhin, wenn du den Kanal selbst öffnest.</string>
+    <string name="muted_words_hint">Wort oder #Hashtag</string>
+    <string name="muted_words_add">Hinzufügen</string>
+    <string name="muted_words_remove">%1$s entfernen</string>
+    <plurals name="settings_muted_words_count">
+        <item quantity="one">%d Wort</item>
+        <item quantity="other">%d Wörter</item>
+    </plurals>
 </resources>

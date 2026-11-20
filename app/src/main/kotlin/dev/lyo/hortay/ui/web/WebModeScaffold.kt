@@ -603,6 +603,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                         },
                                                         canReport = { true },
                                                         markAsRead = webMarkAsRead,
+                                                        ignoredChannels = graph.ignoredChannels,
                                                         feedOrder = feedOrder,
                                                         snapScroll = snapScroll,
                                                         // No extra bottom inset for the "↓ N" unread button:
@@ -664,6 +665,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                     graph.webFeedSource.clearCacheAndRefresh()
                                                 },
                                                 ignoredChannels = graph.ignoredChannels,
+                                                mutedWords = graph.mutedWords,
                                                 // Guest-mode resolver: walk the in-memory channels
                                                 // list for a row whose username hashes to the given
                                                 // chatId. Cheap — typical subscription set is < 200,
