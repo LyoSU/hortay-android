@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-20
+
 ### Added
 - Tapping a quoted fragment in a post or a comment jumps to the original and briefly highlights the quoted words.
 - Long posts that Telegram can summarize offer “Summarize” in their ⋯ menu, with the summary in your app language.

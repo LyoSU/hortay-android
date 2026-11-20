@@ -105,7 +105,7 @@ android {
         // the single source of truth for a published version; local builds keep the
         // literal below.
         versionName = (project.findProperty("hortayVersionName") as? String)
-            ?.takeIf { it.isNotBlank() } ?: "0.12.0"
+            ?.takeIf { it.isNotBlank() } ?: "0.13.0"
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")
