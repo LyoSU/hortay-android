@@ -142,4 +142,35 @@ class ArchiveSweepTest {
         // Timeline anchor is untouched: the first dot is still the publication time.
         assertEquals(now - 90L * 86_400_000L, rows[0].seen_at_ms)
     }
+
+    @Test
+    fun sweep_dropsDeletionsWithNoArchivedVersion() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        ArchiveDatabase.Schema.create(driver)
+        val db = ArchiveDatabase(driver)
+        val settingsFlow = MutableStateFlow(ArchiveSettings(enabled = true))
+        fun deleted(chat: String, key: String, keys: String) = db.postSnapshotQueries.insert(
+            "TDLIB", chat, key, null, "DELETED", 2_000L, null, "marker", byteArrayOf(0), "d$chat$key",
+            "", null, keys, 0L, 2_000L,
+        )
+        val repo = ArchiveRepository(db, settingsFlow, clock = { 1_000L })
+        repo.captureTdlibBaseline(ChatRef.tdlib(1), "10", null, meta("kept"), originalDateMs = 1_000L)
+        repo.captureTdlibBaseline(ChatRef.tdlib(1), "21", "a", meta("album member"), originalDateMs = 1_000L)
+        // Stored before capture filtered them: the anchor is archived, a member is archived,
+        // nothing is archived, and a matching key in another chat does not count.
+        deleted("1", "10", "[\"10\"]")
+        deleted("1", "20", "[\"20\",\"21\"]")
+        deleted("1", "30", "[\"30\",\"31\"]")
+        deleted("2", "10", "[\"10\"]")
+        deleted("1", "1", "[\"100\"]")
+
+        ArchiveSweep(db, settingsFlow, clock = { 1_000L }).run()
+
+        val left = db.postSnapshotQueries.selectAllForExport().executeAsList()
+            .filter { it.kind == "DELETED" }
+            .map { "${it.source_key}:${it.message_key}" }
+            .sorted()
+        assertEquals(listOf("1:10", "1:20"), left)
+        assertEquals(4, db.postSnapshotQueries.selectAllForExport().executeAsList().size)
+    }
 }

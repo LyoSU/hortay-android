@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import dev.lyo.hortay.data.nav.AppNavKey
+import dev.lyo.hortay.data.suspendRunCatching
 import dev.lyo.hortay.data.warnUnlessCancelled
 import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.posts.PostsRepository
@@ -253,8 +254,42 @@ class AppGraph(context: Context) {
 
     val archivedMediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore =
         dev.lyo.hortay.data.archive.ArchivedMediaStore(context, archiveDb)
+    /**
+     * Capture decision journal: two rotating JSONL files (~2000 records) under
+     * `filesDir/archive_journal/`, ids / hashes / decision codes only. Mirrored to logcat
+     * (tag `Archive`, debug level) in debuggable and beta builds; wiped with the archive.
+     */
+    val archiveJournal: dev.lyo.hortay.data.archive.ArchiveJournal =
+        dev.lyo.hortay.data.archive.FileArchiveJournal(
+            dir = File(context.filesDir, "archive_journal"),
+            logcat = if (BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "beta") {
+                { line -> android.util.Log.d("Archive", line) }
+            } else {
+                null
+            },
+        )
     val archiveRepository: ArchiveRepository =
-        ArchiveRepository(archiveDb, archiveSettingsState, archivedMediaStore, appScope)
+        ArchiveRepository(archiveDb, archiveSettingsState, archivedMediaStore, appScope, journal = archiveJournal)
+
+    /**
+     * The single ordered writer for TDLib-mode archive captures. Its consumer runs in the
+     * session scope; the logout hook stops it and drops queued events before
+     * [runLogoutCleanup] wipes the archive (hooks run in registration order).
+     */
+    val archiveRecorder: dev.lyo.hortay.data.archive.ArchiveRecorder =
+        dev.lyo.hortay.data.archive.ArchiveRecorder(
+            repo = archiveRepository,
+            journal = archiveJournal,
+            scope = { session.scope },
+            readLocal = { chatId, messageId ->
+                suspendRunCatching { tdClient.send(org.drinkless.tdlib.TdApi.GetMessageLocally(chatId, messageId)) }
+                    .getOrNull()
+            },
+            copyMedia = { content ->
+                dev.lyo.hortay.data.archive.MediaFileFromContent.extract(content)
+                    ?.let { archivedMediaStore.copyIfAvailable(it) }
+            },
+        ).also { recorder -> session.onEnd("archiveRecorder") { recorder.reset() } }
     val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState, archivedMediaStore)
 
     /** Sharp-media lookup for the edit-history sheet (archive copy, else the same TDLib photo). */
@@ -278,7 +313,7 @@ class AppGraph(context: Context) {
         savedKeys = bookmarkStore.bookmarks,
         coldStartBackfill = coldStartBackfillStore,
         archiveRepository = archiveRepository,
-        archiveMediaStore = archivedMediaStore,
+        archiveRecorder = archiveRecorder,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(
@@ -286,8 +321,7 @@ class AppGraph(context: Context) {
         mapper = messageMapper,
         scope = appScope,
         res = res,
-        archiveRepository = archiveRepository,
-        archiveMediaStore = archivedMediaStore,
+        archiveRecorder = archiveRecorder,
     )
 
     /**

@@ -48,6 +48,22 @@ WHERE source_kind = ? AND source_key = ? AND message_key = ?
 ORDER BY seen_at_ms DESC, id DESC
 LIMIT 1;
 
+-- The row latestForMessage picks, with its content — read only when a capture's hash
+-- differs from the latest stored one, to re-derive that row's hash with the current
+-- normalizer (see checkAgainstLatest). Kept apart from latestForMessage so the common
+-- same-hash path never loads a blob.
+latestContentForMessage:
+SELECT content_kind, content_blob
+FROM PostSnapshot
+WHERE source_kind = ? AND source_key = ? AND message_key = ?
+ORDER BY seen_at_ms DESC, id DESC
+LIMIT 1;
+
+-- Content of the given rows — the archive browser re-derives their hashes with the current
+-- normalizer so versions stored under an older hash form still fold (ArchiveEntries.kt).
+selectContentByIds:
+SELECT id, content_kind, content_blob FROM PostSnapshot WHERE id IN ?;
+
 selectRevisions:
 SELECT *
 FROM PostSnapshot
@@ -216,3 +232,68 @@ INNER JOIN ArchivedChannel c
 -- filter is purely scoped to the feed-reconstruction read path.
 WHERE d.kind = 'DELETED' AND d.source_kind = 'TDLIB' AND d.is_comment = 0
 ORDER BY d.seen_at_ms DESC;
+
+-- Archive browser read: every row of every message the browser may list, without the
+-- heavy columns (blob, minithumb). A message qualifies when it has a DELETED row, has
+-- VERSION rows with at least two distinct hashes (a baseline-only message never
+-- qualifies), is a guest-mode message with any VERSION (guest captures store only the
+-- version a change replaced), or is a member of an album that has a DELETED row (its
+-- rows supply the deleted album's preview and are purged with it). Grouping into one
+-- entry per message / album happens in ArchiveEntries.kt (buildArchiveEntries).
+selectArchiveEntryRows:
+SELECT p.id, p.source_kind, p.source_key, p.message_key, p.album_key, p.kind,
+       p.seen_at_ms, p.content_hash, p.text_preview, p.deleted_msg_keys, p.is_comment,
+       CASE WHEN p.media_minithumb IS NULL THEN 0 ELSE 1 END AS has_thumb
+FROM PostSnapshot p
+INNER JOIN (
+    SELECT source_kind, source_key, message_key
+    FROM PostSnapshot
+    GROUP BY source_kind, source_key, message_key
+    HAVING SUM(CASE WHEN kind = 'DELETED' THEN 1 ELSE 0 END) > 0
+        OR COUNT(DISTINCT CASE WHEN kind = 'VERSION' THEN content_hash END) > 1
+        OR (source_kind = 'WEB' AND SUM(CASE WHEN kind = 'VERSION' THEN 1 ELSE 0 END) > 0)
+    UNION
+    SELECT v.source_kind, v.source_key, v.message_key
+    FROM PostSnapshot v
+    INNER JOIN PostSnapshot d
+        ON d.source_kind = v.source_kind
+        AND d.source_key = v.source_key
+        AND d.album_key = v.album_key
+    WHERE d.kind = 'DELETED' AND v.kind = 'VERSION'
+) q
+    ON q.source_kind = p.source_kind
+    AND q.source_key = p.source_key
+    AND q.message_key = p.message_key
+ORDER BY p.seen_at_ms ASC, p.id ASC;
+
+-- Minithumbs for the rows the archive browser shows a thumbnail for.
+selectMinithumbsByIds:
+SELECT id, media_minithumb
+FROM PostSnapshot
+WHERE id IN ? AND media_minithumb IS NOT NULL;
+
+-- Which of [keys] the archive holds at least one VERSION of — captureTdlibDelete writes a
+-- DELETED marker only for those. A deletion of a message the archive never held (catch-up
+-- deletes from busy groups the reader never opened) carries no content to keep.
+selectVersionedMessageKeys:
+SELECT DISTINCT message_key
+FROM PostSnapshot
+WHERE source_kind = :sourceKind AND source_key = :sourceKey
+  AND kind = 'VERSION' AND message_key IN :keys;
+
+-- Nightly sweep: drop DELETED markers none of whose messages (the anchor, or any key in
+-- deleted_msg_keys, stored as a JSON array of quoted strings) has a VERSION row. Such a
+-- marker is content-free: its blob is a one-byte marker with no media reference, and it
+-- has no minithumb, so nothing needs releasing. instr() instead of json_each(): Android 8
+-- ships SQLite 3.18 without a guaranteed JSON1 extension.
+deleteContentlessDeletions:
+DELETE FROM PostSnapshot
+WHERE kind = 'DELETED'
+  AND NOT EXISTS (
+    SELECT 1 FROM PostSnapshot v
+    WHERE v.kind = 'VERSION'
+      AND v.source_kind = PostSnapshot.source_kind
+      AND v.source_key = PostSnapshot.source_key
+      AND (v.message_key = PostSnapshot.message_key
+           OR instr(COALESCE(PostSnapshot.deleted_msg_keys, ''), '"' || v.message_key || '"') > 0)
+  );

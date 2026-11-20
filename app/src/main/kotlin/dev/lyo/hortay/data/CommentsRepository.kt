@@ -62,8 +62,11 @@ class CommentsRepository(
     private val mapper: MessageMapper,
     private val scope: CoroutineScope,
     private val res: StringResolver,
-    private val archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
-    private val archiveMediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore? = null,
+    /**
+     * The single ordered archive writer shared with PostsRepository. Comment edits and
+     * deletes are only enqueued here; null = no archive capture.
+     */
+    private val archiveRecorder: dev.lyo.hortay.data.archive.ArchiveRecorder? = null,
 ) {
 
     private val unavailableMsg: String get() = res.getString(dev.lyo.hortay.R.string.comments_unavailable)
@@ -160,10 +163,11 @@ class CommentsRepository(
     // synchronized block is a single SharedFlow construction (no IO, no suspend), so
     // contention is irrelevant in practice.
     /**
-     * UMC↔UME pairing buffer for comment archive capture. Mirrors the post-side
-     * gate so a poll-vote in a comment (or any non-edit content mutation) doesn't
-     * land in the archive as a phantom edit. See
-     * [dev.lyo.hortay.data.archive.PendingEditBuffer] for full rationale.
+     * UMC↔UME pairing buffer for comment archive capture: the fallback content for an
+     * edit when the recorder's `GetMessageLocally` read fails. A poll-vote in a comment
+     * (or any non-edit content mutation) never pairs, so it never lands in the archive
+     * as a phantom edit. See [dev.lyo.hortay.data.archive.PendingEditBuffer] and
+     * [dev.lyo.hortay.data.archive.ArchiveRecorder].
      */
     private val pendingCommentEdits = dev.lyo.hortay.data.archive.PendingEditBuffer()
 
@@ -713,11 +717,11 @@ class CommentsRepository(
                 val idx = live.indexOfFirst { it.id == upd.messageId }
                 if (idx == -1) false
                 else {
-                    // Archive: stash new content into pairing buffer. Capture itself
-                    // is gated on a paired UpdateMessageEdited(editDate > 0) — see
-                    // PendingEditBuffer. Bare UMC (poll vote, paid reveal, live loc)
+                    // Archive: stash new content into pairing buffer (edit fallback).
+                    // Capture itself is gated on a paired UpdateMessageEdited(editDate > 0)
+                    // — see PendingEditBuffer. Bare UMC (poll vote, paid reveal, live loc)
                     // is dropped on TTL expiry, never archived.
-                    if (archiveRepository != null) {
+                    if (archiveRecorder?.capturesEditsFor(upd.chatId) == true) {
                         pendingCommentEdits.stash(upd.chatId, upd.messageId, upd.newContent)
                     }
                     live[idx].content = upd.newContent; true
@@ -734,40 +738,22 @@ class CommentsRepository(
                     // "edited" affordance refreshes from the next buildTree pass.
                     if (upd.editDate > 0) {
                         live[idx].editDate = upd.editDate
-                        // Archive: commit paired UMC if buffered, otherwise GetMessage
-                        // as fallback (UME may beat UMC; TDLib doesn't guarantee order).
-                        val archive = archiveRepository
-                        if (archive != null) {
+                        // Archive: enqueue into the ordered recorder, which reads the
+                        // edited comment locally and falls back to the paired UMC.
+                        val recorder = archiveRecorder
+                        if (recorder != null) {
                             val buffered = pendingCommentEdits.commitOnEdited(upd.chatId, upd.messageId)
-                            // Guarded: an archive write failure (disk full) must drop this
-                            // capture, not crash the process from a fire-and-forget launch.
-                            scope.launch {
-                                suspendRunCatching {
-                                    val content: TdApi.MessageContent = buffered
-                                        ?: suspendRunCatching {
-                                            td.send(TdApi.GetMessage(upd.chatId, upd.messageId))
-                                        }.getOrNull()?.content ?: return@launch
-                                    val mediaSha = archiveMediaStore?.let { store ->
-                                        dev.lyo.hortay.data.archive.MediaFileFromContent.extract(content)
-                                            ?.let { store.copyIfAvailable(it) }
-                                    }
-                                    val baseMeta = dev.lyo.hortay.data.archive.TdlibContentMetaExtractor.extract(content)
-                                    val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
-                                        baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
-                                    } else baseMeta
-                                    archive.captureTdlibEdit(
-                                        chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
-                                        messageKey = upd.messageId.toString(),
-                                        albumKey = null,
-                                        editedAtMs = upd.editDate.toLong() * 1000L,
-                                        meta = meta,
-                                        isComment = true,
-                                    )
-                                    // upsertChannel intentionally skipped here — discussion-group
-                                    // metadata is the channel anchor's, not the comment author's;
-                                    // it gets populated by PostsRepository on the anchor's flow.
-                                }.warnUnlessCancelled(TAG, "captureCommentEdit(${upd.chatId},${upd.messageId})")
-                            }
+                            recorder.recordEdit(
+                                chatId = upd.chatId,
+                                messageId = upd.messageId,
+                                editDate = upd.editDate,
+                                buffered = buffered,
+                                albumKey = null,
+                                // Discussion-group metadata is the channel anchor's, not the
+                                // comment author's; PostsRepository populates the row.
+                                channel = null,
+                                isComment = true,
+                            )
                         }
                         true
                     } else false
@@ -778,21 +764,7 @@ class CommentsRepository(
             if (upd.chatId != anchor.threadChatId || !upd.isPermanent) false
             else {
                 // Archive: capture comment deletions before mutating live list.
-                if (archiveRepository != null) {
-                    val keys = upd.messageIds.map { it.toString() }
-                    if (keys.isNotEmpty()) {
-                        scope.launch {
-                            suspendRunCatching {
-                                archiveRepository.captureTdlibDelete(
-                                    chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
-                                    messageKeys = keys,
-                                    albumKey = null, // comments don't use album debounce
-                                    isComment = true,
-                                )
-                            }.warnUnlessCancelled(TAG, "captureCommentDelete(${upd.chatId})")
-                        }
-                    }
-                }
+                archiveRecorder?.recordCommentDelete(upd.chatId, upd.messageIds)
                 // Delete fan-in is naturally thread-safe: the only mutation is
                 // `live.removeAll { it.id in ids }`, so messages from foreign
                 // threads (different `messageThreadId`, same discussion chat)

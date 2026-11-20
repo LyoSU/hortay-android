@@ -15,21 +15,29 @@ import java.util.concurrent.ConcurrentHashMap
  *   > come in a separate updateMessageContent.
  *
  * Admin edits emit BOTH `updateMessageEdited(editDate > 0)` AND a separate
- * `updateMessageContent` with the new payload. The order between the two is not
- * guaranteed by TDLib.
+ * `updateMessageContent` with the new payload. The schema promises no order; the
+ * implementation (`MessagesManager::update_message`, pinned TDLib) sends the content
+ * update first and only when the content changed — see [ArchiveRecorder].
+ *
+ * **Role since [ArchiveRecorder]:** fallback content source only. The recorder reads
+ * the edited message with `GetMessageLocally` (content + its own edit date, in one
+ * snapshot) and uses the content committed here only when that read fails. The
+ * pairing still matters for the other half of the contract below: bare UMC events
+ * never produce a capture.
  *
  * Non-edit content mutations (poll voter ticks, live-location coordinate updates,
  * paid-media reveals, self-destruct timer expiry, fact-checks) emit ONLY
  * `updateMessageContent` — no paired UME. Tying capture to bare UMC produced
- * "phantom edit" rows on every poll vote. Tying capture to UME alone misses
- * the fresh content (TDLib doesn't carry it on UME).
+ * "phantom edit" rows on every poll vote. UME alone carries no content; the
+ * recorder's local read after it supplies the content instead.
  *
  * This buffer holds incoming UMC payloads for up to [TTL_MS] and either:
  *  - **commits** the buffered content when a paired UME arrives (via [commitOnEdited]), OR
  *  - **drops** the entry on TTL expiry (poll vote / live loc / paid reveal — discarded).
  *
- * Also handles the reverse order: UME arriving FIRST. In that case [commitOnEdited]
- * returns `null` and the caller is expected to fall back to `GetMessage` for fresh content.
+ * A UME with nothing buffered (content unchanged — reply-markup-only edit — or the
+ * UMC suppressed by TDLib) makes [commitOnEdited] return `null`; the recorder's
+ * local read is then the only content source.
  *
  * Thread-safety: backed by [ConcurrentHashMap]; all methods are safe to call from
  * any TDLib-update dispatch context.

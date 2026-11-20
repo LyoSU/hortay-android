@@ -140,12 +140,46 @@ class ArchiveRepositoryTest {
     fun captureDelete_groupsAlbumMembers() = runTest {
         val (repo, db) = newRepo()
         val chat = ChatRef.tdlib(42)
+        for (key in listOf("100", "101", "102")) {
+            repo.captureTdlibBaseline(chat, key, "5", meta("photo $key"), originalDateMs = 500L)
+        }
         repo.captureTdlibDelete(chat, listOf("100", "101", "102"), albumKey = "5", isComment = false)
 
         val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(1, rows.size)
-        assertEquals("DELETED", rows.first().kind)
-        assertEquals("""["100","101","102"]""", rows.first().deleted_msg_keys)
+        assertEquals(2, rows.size)
+        assertEquals("DELETED", rows.last().kind)
+        assertEquals("""["100","101","102"]""", rows.last().deleted_msg_keys)
+    }
+
+    @Test
+    fun captureDelete_ofANeverArchivedMessageWritesNothing() = runTest {
+        val (repo, db) = newRepo()
+        val chat = ChatRef.tdlib(42)
+
+        val outcome = repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
+        val comment = repo.captureTdlibDelete(chat, listOf("200", "201"), albumKey = null, isComment = true)
+
+        assertEquals(ArchiveDecision.NO_CONTENT, outcome.decision)
+        assertEquals(DETAIL_NEVER_ARCHIVED, outcome.detail)
+        assertEquals(DETAIL_NEVER_ARCHIVED, comment.detail)
+        assertEquals(0, db.postSnapshotQueries.selectAllForExport().executeAsList().size)
+    }
+
+    @Test
+    fun captureDelete_keepsOnlyTheArchivedMembersOfAnAlbum() = runTest {
+        val (repo, db) = newRepo()
+        val chat = ChatRef.tdlib(42)
+        repo.captureTdlibBaseline(chat, "101", "5", meta("caption"), originalDateMs = 500L)
+
+        val outcomes = repo.captureTdlibDeleteSmart(chat, listOf("100", "101", "102"), isComment = false)
+
+        val deleted = db.postSnapshotQueries.selectAllForExport().executeAsList().filter { it.kind == "DELETED" }
+        assertEquals(1, deleted.size)
+        // Anchored at the archived member, naming only it.
+        assertEquals("101", deleted.single().message_key)
+        assertEquals("""["101"]""", deleted.single().deleted_msg_keys)
+        assertEquals(1, outcomes.count { it.outcome.decision == ArchiveDecision.WRITTEN })
+        assertEquals(2, outcomes.count { it.outcome.detail == DETAIL_NEVER_ARCHIVED })
     }
 
     @Test

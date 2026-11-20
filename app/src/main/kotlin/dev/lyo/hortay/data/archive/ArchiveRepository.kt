@@ -3,6 +3,7 @@ package dev.lyo.hortay.data.archive
 import androidx.compose.runtime.Immutable
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOne
 import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import dev.lyo.hortay.data.escapeSqlLike
 import dev.lyo.hortay.data.web.WebForwardSource
@@ -16,7 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -64,6 +67,12 @@ class ArchiveRepository(
      */
     private val releaseScope: kotlinx.coroutines.CoroutineScope? = null,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * Capture decision journal ([ArchiveJournal]). TDLib-mode decisions are recorded by
+     * [ArchiveRecorder]; this repository records only the guest-mode [captureWebVersion]
+     * decisions itself, wipes the journal in [clear] and appends it to [exportTo].
+     */
+    private val journal: ArchiveJournal? = null,
 ) {
 
     private val writeMutex = Mutex()
@@ -90,6 +99,88 @@ class ArchiveRepository(
         return s.enabled && s.captureEdits && chat !in s.excludedChats
     }
 
+    /** Why a VERSION capture for [chat] would be skipped under [s], or null when it would run. */
+    private fun versionGate(s: ArchiveSettings, chat: ChatRef): ArchiveDecision? = when {
+        !s.enabled || !s.captureEdits -> ArchiveDecision.DISABLED
+        chat in s.excludedChats -> ArchiveDecision.EXCLUDED
+        else -> null
+    }
+
+    /** [versionGate] against the current settings — the recorder's pre-work check. */
+    internal fun versionGate(chat: ChatRef): ArchiveDecision? = versionGate(settings.value, chat)
+
+    /** See [planTdlibIngest] (top level, IngestPlan.kt) — this binds it to [db]. */
+    internal fun planTdlibIngest(
+        chat: ChatRef,
+        messageKey: String,
+        originalDateMs: Long,
+        editedAtMs: Long?,
+        allowBaseline: Boolean,
+    ): IngestPlan? = planTdlibIngest(
+        db.postSnapshotQueries, versionGate(chat), chat, messageKey, originalDateMs, editedAtMs, allowBaseline,
+    )
+
+    /**
+     * Record an edit the archive missed live — the message came back through ingest (cold
+     * start, history load, channel open) with an `editDate` newer than the latest stored
+     * version and different content (channel difference too long, app closed through the
+     * edit, a dropped live capture). `edited_at_ms = editedAtMs`, `seen_at_ms = clock()`
+     * like [captureTdlibEdit], so it orders after every row already on the timeline.
+     *
+     * Re-validated under `writeMutex` against the latest row: same content → DUP_HASH
+     * (stored hash, or the row re-hashed — [checkAgainstLatest]), an edit date not newer
+     * than the latest version's → STALE, a DELETED latest → STALE.
+     */
+    suspend fun captureTdlibReconcile(
+        chat: ChatRef,
+        messageKey: String,
+        albumKey: String?,
+        editedAtMs: Long,
+        meta: TdlibContentMeta,
+        isComment: Boolean = false,
+    ): CaptureOutcome {
+        versionGate(settings.first(), chat)?.let { decision ->
+            releaseUnusedMedia(meta)
+            return CaptureOutcome(decision)
+        }
+        val blob = ContentBlobCodec.encode(meta)
+        val hash = ContentNormalizer.canonicalHash(meta)
+        val outcome = writeMutex.withLock {
+            val latest = db.postSnapshotQueries.latestForMessage(
+                chat.kind.name, chat.key, messageKey,
+            ).executeAsOneOrNull()
+            val check = latest?.takeIf { it.kind == SnapshotKind.VERSION.name }?.let {
+                checkAgainstLatest(db.postSnapshotQueries, chat, messageKey, it.content_hash, hash, meta)
+            }
+            val skip = when {
+                latest == null -> CaptureOutcome(ArchiveDecision.STALE, hash, null, DETAIL_NOT_ARCHIVED)
+                check == null -> CaptureOutcome(ArchiveDecision.STALE, hash, latest.content_hash, DETAIL_DELETED)
+                check.isDup -> CaptureOutcome(ArchiveDecision.DUP_HASH, hash, latest.content_hash, check.detail, check.diff)
+                latest.edited_at_ms != null && editedAtMs <= latest.edited_at_ms ->
+                    CaptureOutcome(ArchiveDecision.STALE, hash, latest.content_hash, DETAIL_NO_NEWER_EDIT, check.diff)
+                else -> null
+            }
+            if (skip != null) return@withLock skip
+            insertSnapshot(
+                chat = chat, messageKey = messageKey, albumKey = albumKey,
+                kind = SnapshotKind.VERSION, editedAtMs = editedAtMs,
+                contentKind = "tdlib", blob = blob, hash = hash,
+                textPreview = meta.textPreview,
+                minithumb = meta.mediaRef?.minithumbBytes,
+                deletedKeys = null, isComment = isComment,
+                seenAtMs = clock(),
+            )
+            maybeEvictByCap()
+            CaptureOutcome(ArchiveDecision.WRITTEN, hash, latest?.content_hash, diff = check?.diff)
+        }
+        if (outcome.decision == ArchiveDecision.WRITTEN) {
+            _events.tryEmit(ArchiveEvent.Captured(chat, messageKey))
+        } else {
+            releaseUnusedMedia(meta)
+        }
+        return outcome
+    }
+
     /**
      * Capture the as-published baseline VERSION row — `seen_at_ms = originalDateMs`,
      * `edited_at_ms = null` — so the revision timeline anchors on "when the post
@@ -99,14 +190,17 @@ class ArchiveRepository(
      * regardless of content hash. There is exactly one publication event per
      * message; the baseline is a fixed left anchor on the revision timeline.
      *
-     * **A content-hash check would be wrong here.** Cold-start ingest fires
-     * the baseline call via `scope.launch` after merging the post into `_posts`;
-     * an `UpdateMessageEdited(editDate > 0)` can land for the same message
-     * before the launched coroutine acquires `writeMutex`. The legacy unified
+     * **A content-hash check would be wrong here.** Ingest enqueues the baseline
+     * only after its suspending album coalesce + `_posts` merge, while the
+     * `UpdateMessageEdited(editDate > 0)` handler enqueues its edit immediately —
+     * so even through the single ordered [ArchiveRecorder] the edit can be
+     * processed BEFORE the baseline of the same message. The legacy unified
      * capture path then saw the edit row as "latest" and either dropped the
      * baseline as a dup (when content matched) or wrote it with `clock()` as
      * `seen_at_ms` (when it didn't) — both broke the timeline ordering. The
      * `selectFirstSeenForMessage` existence check is invariant under that race.
+     * An edit newer than the stored state that this rule skips is picked up by
+     * [captureTdlibReconcile] instead (see [planTdlibIngest]).
      *
      * @param meta extracted from `TdApi.MessageContent`. Repository stays TDLib-free.
      * @param originalDateMs the post's publication time in ms. Required —
@@ -134,13 +228,12 @@ class ArchiveRepository(
          * (no VERSION to JOIN against, no tombstone card to render).
          */
         priorEditedAtMs: Long? = null,
-    ) {
-        val s = settings.first()
+    ): CaptureOutcome {
         // Settings can flip between the caller's [capturesEditsFor] gate and here —
         // release the pre-copied media ref so a skipped capture can't leak it.
-        if (!s.enabled || !s.captureEdits || chat in s.excludedChats) {
+        versionGate(settings.first(), chat)?.let { decision ->
             releaseUnusedMedia(meta)
-            return
+            return CaptureOutcome(decision)
         }
 
         // [meta] already carries any pre-computed [ArchivedMediaRef.localArchiveSha]
@@ -149,7 +242,7 @@ class ArchiveRepository(
         val blob = ContentBlobCodec.encode(meta)
         // Hash a *normalized* projection so unstable counters (poll voterCount,
         // isChosen, etc.) cannot poison dedup. See [ContentNormalizer] KDoc.
-        val hash = ContentBlobCodec.hash(ContentNormalizer.canonicalBytes(meta))
+        val hash = ContentNormalizer.canonicalHash(meta)
         writeMutex.withLock {
             // Idempotency rule: skip if the archive already holds a VERSION
             // row at-or-before `originalDateMs`. Covers normal re-ingest
@@ -163,7 +256,7 @@ class ArchiveRepository(
                 meta.mediaRef?.localArchiveSha?.let { sha ->
                     runCatching { mediaStore?.releaseRef(sha) }
                 }
-                return
+                return CaptureOutcome(ArchiveDecision.DUP_HASH, hash, null, DETAIL_BASELINE_PRESENT)
             }
             insertSnapshot(
                 chat = chat, messageKey = messageKey, albumKey = albumKey,
@@ -177,6 +270,7 @@ class ArchiveRepository(
             maybeEvictByCap()
         }
         _events.tryEmit(ArchiveEvent.Captured(chat, messageKey))
+        return CaptureOutcome(ArchiveDecision.WRITTEN, hash)
     }
 
     /**
@@ -202,37 +296,38 @@ class ArchiveRepository(
         meta: TdlibContentMeta,
         minithumb: ByteArray? = null,
         isComment: Boolean = false,
-    ) {
-        val s = settings.first()
-        if (!s.enabled || !s.captureEdits || chat in s.excludedChats) {
+    ): CaptureOutcome {
+        versionGate(settings.first(), chat)?.let { decision ->
             releaseUnusedMedia(meta)
-            return
+            return CaptureOutcome(decision)
         }
 
         val blob = ContentBlobCodec.encode(meta)
-        val hash = ContentBlobCodec.hash(ContentNormalizer.canonicalBytes(meta))
+        val hash = ContentNormalizer.canonicalHash(meta)
         writeMutex.withLock {
             val existing = db.postSnapshotQueries.latestForMessage(
                 chat.kind.name, chat.key, messageKey,
             ).executeAsOneOrNull()
-            // Out-of-order guard. Every edit capture is its own `scope.launch` with
+            val check = existing?.takeIf { it.kind == SnapshotKind.VERSION.name }?.let {
+                checkAgainstLatest(db.postSnapshotQueries, chat, messageKey, it.content_hash, hash, meta)
+            }
+            // Out-of-order guard. Edit captures used to be one `scope.launch` each, with
             // suspension points before this mutex (media copy on IO, the GetMessage
             // fallback), so two edits landing close together — or a catch-up burst
-            // after reconnect — can reach here in the wrong order. Comparing only the
+            // after reconnect — could reach here in the wrong order. Comparing only the
             // hash against the latest row then wrote the older content AFTER the newer
             // one, and the next content-less UME (reply-markup edit, re-emit) wrote the
             // newer content again: three versions for two edits, alternating text.
-            // A capture whose edit date is strictly older than the latest recorded
-            // version's is stale by construction and is dropped.
-            val stale = existing != null &&
-                existing.kind == SnapshotKind.VERSION.name &&
-                existing.edited_at_ms != null &&
-                editedAtMs < existing.edited_at_ms
-            if (existing?.content_hash == hash || stale) {
+            // [ArchiveRecorder] now serialises TDLib captures in update order and reads
+            // content + edit date together, but a reconcile from ingest can still land a
+            // newer version first; a capture whose edit date is strictly older than the
+            // latest recorded version's is stale by construction and is dropped. One with
+            // the same edit date is the same server version — see [editSkip].
+            editSkip(existing, check, editedAtMs)?.let { (decision, detail) ->
                 meta.mediaRef?.localArchiveSha?.let { sha ->
                     runCatching { mediaStore?.releaseRef(sha) }
                 }
-                return
+                return CaptureOutcome(decision, hash, existing?.content_hash, detail, check?.diff)
             }
             insertSnapshot(
                 chat = chat, messageKey = messageKey, albumKey = albumKey,
@@ -244,8 +339,9 @@ class ArchiveRepository(
                 seenAtMs = clock(),
             )
             maybeEvictByCap()
+            _events.tryEmit(ArchiveEvent.Captured(chat, messageKey))
+            return CaptureOutcome(ArchiveDecision.WRITTEN, hash, existing?.content_hash, diff = check?.diff)
         }
-        _events.tryEmit(ArchiveEvent.Captured(chat, messageKey))
     }
 
     /**
@@ -269,8 +365,8 @@ class ArchiveRepository(
         chat: ChatRef,
         messageKeys: List<String>,
         isComment: Boolean,
-    ) {
-        if (messageKeys.isEmpty()) return
+    ): List<DeleteOutcome> {
+        if (messageKeys.isEmpty()) return emptyList()
         // Lookup album_key per message under writeMutex so a concurrent VERSION
         // ingest can't move the key under us mid-grouping. SELECT only; no
         // writes inside this loop, the writes happen in captureTdlibDelete.
@@ -281,16 +377,19 @@ class ArchiveRepository(
                 ).executeAsOneOrNull()?.album_key
             }
         }
+        val outcomes = ArrayList<DeleteOutcome>(byAlbum.size)
         for ((albumKey, keys) in byAlbum) {
             if (albumKey == null) {
                 // No known album — each key is a standalone DELETED.
                 for (k in keys) {
-                    captureTdlibDelete(chat, listOf(k), albumKey = null, isComment = isComment)
+                    val keyList = listOf(k)
+                    outcomes += DeleteOutcome(keyList, captureTdlibDelete(chat, keyList, albumKey = null, isComment = isComment))
                 }
             } else {
-                captureTdlibDelete(chat, keys, albumKey = albumKey, isComment = isComment)
+                outcomes += DeleteOutcome(keys, captureTdlibDelete(chat, keys, albumKey = albumKey, isComment = isComment))
             }
         }
+        return outcomes
     }
 
     /**
@@ -298,27 +397,37 @@ class ArchiveRepository(
      *
      * Albums: pass all `messageKeys` together. The repository writes a single composite
      * DELETED row anchored at the first key, with the full list in `deleted_msg_keys`.
+     *
+     * Only keys the archive holds a VERSION of are recorded: a marker for a message it never
+     * held has nothing to show or restore. Catch-up `UpdateDeleteMessages` from busy groups
+     * the reader is a member of produced ~100 such rows per cold start. An album keeps the
+     * members that were archived; when none were, nothing is written and the outcome is
+     * NO_CONTENT / [DETAIL_NEVER_ARCHIVED] (logcat only in the journal).
      */
     suspend fun captureTdlibDelete(
         chat: ChatRef,
         messageKeys: List<String>,
         albumKey: String?,
         isComment: Boolean,
-    ) {
+    ): CaptureOutcome {
         val s = settings.first()
-        if (!s.enabled || !s.captureDeletes) return
-        if (chat in s.excludedChats) return
-        if (messageKeys.isEmpty()) return
+        if (!s.enabled || !s.captureDeletes) return CaptureOutcome(ArchiveDecision.DISABLED)
+        if (chat in s.excludedChats) return CaptureOutcome(ArchiveDecision.EXCLUDED)
+        if (messageKeys.isEmpty()) return CaptureOutcome(ArchiveDecision.NO_CONTENT)
 
-        val anchorKey = messageKeys.first()
-        val deletedJson = Json.encodeToString(
-            ListSerializer(String.serializer()),
-            messageKeys,
-        )
-        writeMutex.withLock {
-            val markerBlob = byteArrayOf(0)
+        val markerBlob = byteArrayOf(0)
+        val (written, writtenHash) = writeMutex.withLock {
+            val versioned = messageKeys.chunked(SQL_VARIABLE_CHUNK).flatMapTo(HashSet()) { chunk ->
+                db.postSnapshotQueries.selectVersionedMessageKeys(chat.kind.name, chat.key, chunk).executeAsList()
+            }
+            val kept = messageKeys.filter { it in versioned }
+            if (kept.isEmpty()) return CaptureOutcome(ArchiveDecision.NO_CONTENT, detail = DETAIL_NEVER_ARCHIVED)
+            val anchorKey = kept.first()
+            val deletedJson = Json.encodeToString(ListSerializer(String.serializer()), kept)
             val markerHash = ContentBlobCodec.hash(markerBlob + deletedJson.toByteArray())
-            if (isDuplicate(chat, anchorKey, markerHash)) return
+            if (isDuplicate(chat, anchorKey, markerHash)) {
+                return CaptureOutcome(ArchiveDecision.DUP_HASH, markerHash, markerHash)
+            }
             insertSnapshot(
                 chat = chat, messageKey = anchorKey, albumKey = albumKey,
                 kind = SnapshotKind.DELETED, editedAtMs = null,
@@ -327,8 +436,10 @@ class ArchiveRepository(
                 deletedKeys = deletedJson, isComment = isComment,
             )
             maybeEvictByCap()
+            kept to markerHash
         }
-        _events.tryEmit(ArchiveEvent.Deleted(chat, messageKeys))
+        _events.tryEmit(ArchiveEvent.Deleted(chat, written))
+        return CaptureOutcome(ArchiveDecision.WRITTEN, writtenHash)
     }
 
     /**
@@ -340,16 +451,38 @@ class ArchiveRepository(
         messageKey: String,
         previous: WebPost,
         seenAtOverrideMs: Long? = null,
-    ) {
+    ): CaptureOutcome {
+        val outcome = captureWebVersionInternal(chat, messageKey, previous, seenAtOverrideMs)
+        journal?.record(
+            ArchiveJournalRecord(
+                wallTimeMs = clock(),
+                sourceKind = chat.kind,
+                chatKey = chat.key,
+                messageKey = messageKey,
+                event = ArchiveEventKind.WEB,
+                decision = outcome.decision,
+                newHash = outcome.hash,
+                latestHash = outcome.latestHash,
+            ),
+        )
+        return outcome
+    }
+
+    private suspend fun captureWebVersionInternal(
+        chat: ChatRef,
+        messageKey: String,
+        previous: WebPost,
+        seenAtOverrideMs: Long?,
+    ): CaptureOutcome {
         val s = settings.first()
-        if (!s.enabled || !s.captureEdits) return
-        if (chat in s.excludedChats) return
+        if (!s.enabled || !s.captureEdits) return CaptureOutcome(ArchiveDecision.DISABLED)
+        if (chat in s.excludedChats) return CaptureOutcome(ArchiveDecision.EXCLUDED)
 
         val json = Json.encodeToString(JsonObject.serializer(), webPostToJson(previous))
         val blob = json.toByteArray(Charsets.UTF_8)
         val hash = ContentBlobCodec.hash(blob)
         writeMutex.withLock {
-            if (isDuplicate(chat, messageKey, hash)) return
+            if (isDuplicate(chat, messageKey, hash)) return CaptureOutcome(ArchiveDecision.DUP_HASH, hash, hash)
             db.postSnapshotQueries.insert(
                 source_kind = chat.kind.name,
                 source_key = chat.key,
@@ -370,6 +503,7 @@ class ArchiveRepository(
             maybeEvictByCap()
         }
         _events.tryEmit(ArchiveEvent.Captured(chat, messageKey))
+        return CaptureOutcome(ArchiveDecision.WRITTEN, hash)
     }
 
     /** UPSERT the denormalised channel-index row. Call on every capture. */
@@ -407,6 +541,9 @@ class ArchiveRepository(
         // Outside writeMutex — mediaStore takes its own mutex; calling under
         // ours would invert lock order with copyIfAvailable's release path.
         runCatching { mediaStore?.clearAll() }
+        // The decision journal describes rows that no longer exist (and, on logout, the
+        // previous account's chats) — wiped with them.
+        journal?.clear()
     }
 
     // --- Read API ---
@@ -442,6 +579,27 @@ class ArchiveRepository(
                     )
                 }.toPersistentList()
             }
+
+    /**
+     * The archive browser's list: one [ArchiveEntry] per deleted message (album = one) or
+     * per message with at least two distinct versions, newest event first. See
+     * [buildArchiveEntries] for the grouping rules. Rows are read without their blobs;
+     * minithumbs are fetched only for the rows an entry shows.
+     */
+    fun observeEntries(): Flow<ImmutableList<ArchiveEntry>> =
+        db.postSnapshotQueries.selectArchiveEntryRows()
+            .asFlow().mapToList(Dispatchers.IO)
+            .map { rows -> db.toArchiveEntries(rows) }
+            .flowOn(Dispatchers.IO)
+
+    /**
+     * Bytes the archive takes on disk: stored snapshot blobs and thumbnails plus the media
+     * files copied out of TDLib's cache ([ArchivedMediaStore]).
+     */
+    fun observeStorageBytes(): Flow<Long> = combine(
+        db.postSnapshotQueries.storageBytes().asFlow().mapToOne(Dispatchers.IO),
+        db.archivedMediaFileQueries.storageBytes().asFlow().mapToOne(Dispatchers.IO),
+    ) { rows, files -> rows + files }
 
     suspend fun purge(ids: List<Long>) {
         if (ids.isEmpty()) return
@@ -505,6 +663,10 @@ class ArchiveRepository(
             count++
         }
         writer.endArray()
+        // Capture decision journal (ids, hashes, codes — no text): lets a user report
+        // "this post has 8 versions" come with the reason for each one.
+        writer.name("captureJournal")
+        writeJournalArray(writer, journal?.readAll().orEmpty())
         writer.endObject()
         writer.flush()
         count

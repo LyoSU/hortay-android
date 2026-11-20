@@ -131,7 +131,31 @@ object TdlibContentMetaExtractor {
         is TdApi.MessageVoiceNote -> c.caption.text to c.caption.entities
         is TdApi.MessageVideoNote -> "" to emptyArray()
         is TdApi.MessagePoll -> c.poll.question.text to c.poll.question.entities
+        is TdApi.MessageAnimatedEmoji -> c.emoji to animatedEmojiEntities(c)
         else -> "" to emptyArray()
+    }
+
+    /**
+     * A post that is a single emoji reaches the client as `messageText` OR as
+     * `messageAnimatedEmoji`, decided per read, not per version: td `MessageContent.cpp`
+     * `get_message_content_object` returns `messageAnimatedEmoji` only while
+     * `StickersManager::get_animated_emoji_object` can resolve the emoji's animation
+     * (the animated-emoji sticker set loaded, animated emoji not disabled). Extracted the
+     * way the `messageText` form would be — the emoji as text, one custom-emoji entity over
+     * it when it is a custom emoji — so the two forms hash the same; this used to extract
+     * as empty text and record a phantom version whenever the form flipped. A custom emoji
+     * whose sticker isn't loaded yet comes with `sticker = null` (only custom emoji do —
+     * a regular emoji without its animation is `messageText`); its id is unknown then and
+     * stored as 0, which the revision sheet renders as the fallback emoji.
+     */
+    private fun animatedEmojiEntities(c: TdApi.MessageAnimatedEmoji): Array<TdApi.TextEntity> {
+        val sticker = c.animatedEmoji?.sticker
+        val customEmojiId = when (val type = sticker?.fullType) {
+            null -> if (sticker == null) 0L else return emptyArray()
+            is TdApi.StickerFullTypeCustomEmoji -> type.customEmojiId
+            else -> return emptyArray()
+        }
+        return arrayOf(TdApi.TextEntity(0, c.emoji.length, TdApi.TextEntityTypeCustomEmoji(customEmojiId)))
     }
 
     /**

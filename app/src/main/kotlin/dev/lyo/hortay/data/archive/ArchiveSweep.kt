@@ -57,6 +57,12 @@ class ArchiveSweep(
             }
             releaseAll(shasToRelease)
         }
+        // Last, so markers whose versions the retention / cap passes just evicted go too.
+        // A DELETED marker none of whose messages has a VERSION row shows nothing (the
+        // browser skips it, the feed's tombstone join drops it); capture stopped writing
+        // them, this clears the ones stored before. Marker blobs are one byte with no media
+        // reference and no minithumb, so there is no media refcount to release.
+        db.postSnapshotQueries.deleteContentlessDeletions()
     }
 
     private fun collectMediaShas(blobs: List<ByteArray>): List<String> {

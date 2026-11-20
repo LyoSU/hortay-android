@@ -1,11 +1,13 @@
 package dev.lyo.hortay.data.archive
 
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -24,6 +26,12 @@ import kotlinx.serialization.json.jsonPrimitive
  *  - **media `durationMs`** — Telegram occasionally re-encodes thumbnails which
  *    causes the duration field to round slightly differently. Rounded to 100 ms.
  *  - **forwardJson / replyJson** kept as-is (stable across non-edit mutations).
+ *  - **entities** reduced to one canonical form — see [canonicalEntities].
+ *
+ * Changing this projection changes the hash of unchanged content. Rows already stored
+ * keep their old `content_hash`, so every comparison against a stored row re-derives
+ * the row's hash from its blob with the current projection before calling a mismatch a
+ * new version — see [checkAgainstLatest].
  *
  * Without this normalizer, [ArchiveRepository.isDuplicate] would have returned
  * `false` on every poll vote → new VERSION row → spam ("phantom edits"). Pairing
@@ -35,19 +43,110 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 object ContentNormalizer {
 
+    /** One entity of the canonical projection: what the hash and the revision sheet compare. */
+    data class CanonicalEntity(val offset: Int, val length: Int, val type: String)
+
     /**
      * Returns deterministic bytes suitable as input to [ContentBlobCodec.hash].
      */
-    fun canonicalBytes(meta: TdlibContentMeta): ByteArray {
-        val obj = buildJsonObject {
-            put("text", JsonPrimitive(meta.text))
-            put("entities", projectEntities(parseOrEmpty(meta.entitiesJson)))
-            put("media", normalizeMedia(meta.mediaSummaryJson))
-            put("poll", normalizePoll(meta.pollJson))
-            put("forward", parseOrNull(meta.forwardJson))
-            put("reply", parseOrNull(meta.replyJson))
+    fun canonicalBytes(meta: TdlibContentMeta): ByteArray =
+        Json.encodeToString(JsonObject.serializer(), JsonObject(components(meta))).toByteArray(Charsets.UTF_8)
+
+    /** [ContentBlobCodec.hash] of [canonicalBytes] — the `content_hash` a TDLib row is written with. */
+    fun canonicalHash(meta: TdlibContentMeta): String = ContentBlobCodec.hash(canonicalBytes(meta))
+
+    /**
+     * The normalized components, keyed by [COMPONENTS] — the hash input, and what
+     * [ContentDiff] compares component by component.
+     */
+    internal fun components(meta: TdlibContentMeta): Map<String, JsonElement> = linkedMapOf(
+        TEXT to JsonPrimitive(meta.text),
+        ENTITIES to JsonArray(
+            canonicalEntities(meta.entitiesJson).map { e ->
+                buildJsonObject {
+                    put(ArchivedEntityKeys.OFFSET, JsonPrimitive(e.offset))
+                    put(ArchivedEntityKeys.LENGTH, JsonPrimitive(e.length))
+                    put(ArchivedEntityKeys.TYPE, JsonPrimitive(e.type))
+                }
+            },
+        ),
+        MEDIA to normalizeMedia(meta.mediaSummaryJson),
+        POLL to normalizePoll(meta.pollJson),
+        FORWARD to parseOrNull(meta.forwardJson),
+        REPLY to parseOrNull(meta.replyJson),
+    )
+
+    /**
+     * The formatting of a stored `entitiesJson` in one canonical form, so two lists TDLib
+     * may hand out for the same formatting compare equal:
+     *
+     *  - **offset / length / type only.** The extractor later started storing render
+     *    payloads too (link url, custom emoji id, mention user id, code language); hashing
+     *    those would give an unchanged post a different hash from its own older row, and
+     *    the next content-less `updateMessageEdited` (a reply-markup edit, a catch-up
+     *    re-emit) would record a phantom version.
+     *  - **No `MediaTimestamp`, no `BotCommand`.** TDLib computes their visibility per read,
+     *    not per message version (td `MessageEntity.cpp` `get_text_entities_object`): a
+     *    media timestamp is dropped while it exceeds `get_message_max_media_timestamp`,
+     *    which for a text post is the duration of its link preview's media in the web-page
+     *    cache, or of the replied-to media — both can be unknown at one read and known at the
+     *    next. Bot commands are dropped by `need_skip_bot_commands`, which for a group
+     *    (comments) depends on whether TDLib has loaded the chat's bot list yet. Neither is
+     *    an author's formatting, so neither may decide whether a version is new.
+     *  - **Style runs merged.** Bold / italic / underline / strikethrough / spoiler are
+     *    TDLib's "splittable" entities: `fix_entities` keeps a valid list as-is but resplits
+     *    an invalid one around links and custom emoji ("can merge some entities"), so the
+     *    same styled range can arrive as one entity or as several touching pieces. Touching
+     *    or overlapping same-type pieces are merged here; they render identically. Every
+     *    other type (links, mentions, custom emoji, code, quotes) is NOT merged — two
+     *    adjacent links are two links.
+     *  - **Sorted** by offset, then length descending (an enclosing entity first), then
+     *    type name, so list order never matters. That is TDLib's own order (`MessageEntity`
+     *    `operator<`) except for its type-priority tie-break, so most rows hashed before
+     *    this canonical form still hash the same.
+     *
+     * Malformed entries and empty ranges are dropped.
+     */
+    fun canonicalEntities(entitiesJson: String): List<CanonicalEntity> {
+        val parsed = parseOrEmpty(entitiesJson).mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val offset = obj[ArchivedEntityKeys.OFFSET]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val length = obj[ArchivedEntityKeys.LENGTH]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val type = obj[ArchivedEntityKeys.TYPE]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            if (length <= 0 || offset < 0 || type in VOLATILE_TYPES) null else CanonicalEntity(offset, length, type)
         }
-        return Json.encodeToString(JsonObject.serializer(), obj).toByteArray(Charsets.UTF_8)
+        val (styles, others) = parsed.partition { it.type in SPLITTABLE_TYPES }
+        val merged = styles.groupBy { it.type }.flatMap { (type, runs) -> mergeRuns(type, runs) }
+        return (others + merged).sortedWith(
+            compareBy<CanonicalEntity> { it.offset }.thenByDescending { it.length }.thenBy { it.type },
+        )
+    }
+
+    /** The raw stored entities as (offset, length, type), in stored order — diagnostics only. */
+    internal fun rawEntities(entitiesJson: String): List<CanonicalEntity> = parseOrEmpty(entitiesJson).mapNotNull { el ->
+        val obj = el as? JsonObject ?: return@mapNotNull null
+        CanonicalEntity(
+            offset = obj[ArchivedEntityKeys.OFFSET]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null,
+            length = obj[ArchivedEntityKeys.LENGTH]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null,
+            type = obj[ArchivedEntityKeys.TYPE]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null,
+        )
+    }
+
+    private fun mergeRuns(type: String, runs: List<CanonicalEntity>): List<CanonicalEntity> {
+        val out = mutableListOf<CanonicalEntity>()
+        var start = -1
+        var end = -1
+        for (r in runs.sortedBy { it.offset }) {
+            if (start >= 0 && r.offset <= end) {
+                end = maxOf(end, r.offset + r.length)
+                continue
+            }
+            if (start >= 0) out += CanonicalEntity(start, end - start, type)
+            start = r.offset
+            end = r.offset + r.length
+        }
+        if (start >= 0) out += CanonicalEntity(start, end - start, type)
+        return out
     }
 
     private fun parseOrEmpty(json: String): JsonArray {
@@ -56,25 +155,6 @@ object ContentNormalizer {
             Json.parseToJsonElement(json) as? JsonArray ?: JsonArray(emptyList())
         }.getOrDefault(JsonArray(emptyList()))
     }
-
-    /**
-     * Keeps only `offset` / `length` / `type` of each entity — exactly the fields every
-     * stored row has carried since the archive shipped. The extractor later started
-     * storing render payloads too (link url, custom emoji id, mention user id, code
-     * language); hashing those would give an unchanged post a different hash from its
-     * own older row, and the next content-less `updateMessageEdited` (a reply-markup
-     * edit, a catch-up re-emit) would record a phantom version.
-     */
-    private fun projectEntities(entities: JsonArray): JsonArray = JsonArray(
-        entities.map { el ->
-            val obj = el as? JsonObject ?: return@map el
-            JsonObject(
-                obj.filterKeys {
-                    it == ArchivedEntityKeys.OFFSET || it == ArchivedEntityKeys.LENGTH || it == ArchivedEntityKeys.TYPE
-                },
-            )
-        },
-    )
 
     private fun parseOrNull(json: String?): JsonPrimitive {
         // Forwards and replies are opaque to the normalizer — we treat the
@@ -131,4 +211,26 @@ object ContentNormalizer {
     }
 
     private fun JsonPrimitive.contentOrNull(): String? = content
+
+    internal const val TEXT = "text"
+    internal const val ENTITIES = "entities"
+    internal const val MEDIA = "media"
+    internal const val POLL = "poll"
+    internal const val FORWARD = "forward"
+    internal const val REPLY = "reply"
+
+    /** Component names, in hash order. */
+    internal val COMPONENTS = listOf(TEXT, ENTITIES, MEDIA, POLL, FORWARD, REPLY)
+
+    /** Entity types TDLib shows or hides per read — see [canonicalEntities]. */
+    private val VOLATILE_TYPES = setOf("TextEntityTypeMediaTimestamp", "TextEntityTypeBotCommand")
+
+    /** TDLib's splittable entity types (td `MessageEntity.cpp` `get_splittable_entities_mask`). */
+    private val SPLITTABLE_TYPES = setOf(
+        "TextEntityTypeBold",
+        "TextEntityTypeItalic",
+        "TextEntityTypeUnderline",
+        "TextEntityTypeStrikethrough",
+        "TextEntityTypeSpoiler",
+    )
 }

@@ -26,11 +26,8 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.archive.ArchiveRepository
-import dev.lyo.hortay.data.archive.ArchivedMediaStore
-import dev.lyo.hortay.data.archive.ChatRef
-import dev.lyo.hortay.data.archive.MediaFileFromContent
+import dev.lyo.hortay.data.archive.ArchiveRecorder
 import dev.lyo.hortay.data.archive.PendingEditBuffer
-import dev.lyo.hortay.data.archive.TdlibContentMetaExtractor
 import dev.lyo.hortay.data.archive.TombstoneRecord
 import dev.lyo.hortay.data.surfaceTo
 import dev.lyo.hortay.data.suspendRunCatching
@@ -168,13 +165,12 @@ class PostsRepository(
      */
     private val archiveRepository: ArchiveRepository? = null,
     /**
-     * Optional companion to [archiveRepository] for storing media file bytes
-     * locally. When non-null, captured snapshots get a Tier 2 file copy under
-     * `filesDir/archive_media/` keyed by SHA-256 — survives TDLib LRU eviction
-     * and post deletion. When null, only structured media references + inline
-     * minithumb are persisted.
+     * The single ordered archive writer ([ArchiveRecorder]): baseline / reconcile on
+     * ingest, edits, deletes. Handlers only enqueue into it; media copies and TDLib reads
+     * for the archive happen inside its consumer. Null = no capture (tests, call sites
+     * without the archive feature); [archiveRepository] stays the read side.
      */
-    private val archiveMediaStore: ArchivedMediaStore? = null,
+    private val archiveRecorder: ArchiveRecorder? = null,
 ) : FeedSource {
 
     /**
@@ -345,30 +341,12 @@ class PostsRepository(
     private val interactionInfo = InteractionInfoBuffer()
 
     /**
-     * Per-chat debounce buffer for `UpdateDeleteMessages`. We coalesce all
-     * ids that arrive within a 200 ms quiet window into one
-     * `captureTdlibDeleteSmart` call so the archive can group album members
-     * via its own VERSION history (`selectAlbumKeyForMessage`) regardless of
-     * whether the live `_posts` had the post resident. The previous
-     * per-`(chatId, albumId)` shape required the live `_posts` row to
-     * recover `albumId`, which dropped catch-up deletes entirely.
-     *
-     * Sliding-window debounce: each fresh batch for the same chatId cancels
-     * the previous timer and rearms — so a 200 ms quiet period from the LAST
-     * arrival fires the consolidated capture, absorbing TDLib's split-pulse
-     * delivery on slow networks.
-     */
-    private val pendingChatDeletions: ConcurrentHashMap<Long, MutableList<Long>> =
-        ConcurrentHashMap()
-    private val chatDeletionTimers: ConcurrentHashMap<Long, Job> =
-        ConcurrentHashMap()
-
-    /**
-     * Pairs `UpdateMessageContent` (UMC) with `UpdateMessageEdited` (UME) so the
-     * archive captures a VERSION only for real admin edits. Bare UMC events
-     * (poll voter ticks, live-location coords, paid-media reveals) get stashed
-     * here and dropped on TTL when no paired UME arrives — see
-     * [PendingEditBuffer] for the full rationale (and tdlib TL schema:9844).
+     * Pairs `UpdateMessageContent` (UMC) with `UpdateMessageEdited` (UME). Since the
+     * archive moved to [ArchiveRecorder] this is only the FALLBACK content source for an
+     * edit: the recorder reads the edited message with `GetMessageLocally` first (see
+     * its KDoc for the TDLib update-order evidence). Bare UMC events (poll voter ticks,
+     * live-location coords, paid-media reveals) are dropped on TTL and never archived.
+     * Per-chat delete debouncing for the archive also lives in the recorder now.
      */
     private val pendingArchiveEdits = PendingEditBuffer()
 
@@ -2068,9 +2046,9 @@ class PostsRepository(
         // the ingest path on a slow downstream collector.
         for (post in addedForEmit) _newArrivals.tryEmit(post)
 
-        // Archive baseline capture: write a "first-observed" VERSION row so
-        // every post that reaches the feed has at least one snapshot in the
-        // archive. Two shapes:
+        // Archive baseline + reconcile, enqueued into the ordered [ArchiveRecorder].
+        // Messages new to the feed get a "first-observed" VERSION row so every post that
+        // reaches the feed has at least one snapshot in the archive. Two shapes:
         //   * `editDate == 0` — genuine as-published anchor (priorEditedAtMs = null).
         //   * `editDate != 0` — post was already edited before we saw it; we
         //     record THIS state with `priorEditedAtMs = msg.editDate` so the
@@ -2084,72 +2062,23 @@ class PostsRepository(
         // feed. selectTombstonesJoined is now INNER JOIN so any remaining
         // orphans are hidden, and this branch prevents new orphans by
         // capturing the pre-edited state instead of dropping it.
-        // Same epoch guard before the archive baseline fan-out — a logout landing
-        // between the _posts write above and here must not spawn baseline captures
-        // for account A into the archive account B is about to reuse.
-        if (archiveRepository?.isEnabled() == true && addedForEmit.isNotEmpty() && sessionEpoch.get() == epoch) {
-            val addedIds = addedForEmit.mapTo(HashSet()) { it.chatId to it.id }
+        //
+        // Messages the feed already held are passed too: an edited one whose editDate
+        // is newer than the archive's latest version is reconciled into a new VERSION
+        // (an edit missed while the app was closed). The recorder drops unedited
+        // re-ingests and already-seen states before enqueueing, so this loop stays a
+        // map lookup per message.
+        // Same epoch guard before the archive fan-out — a logout landing between the
+        // _posts write above and here must not enqueue account A's posts into the
+        // archive account B is about to reuse.
+        val recorder = archiveRecorder
+        if (recorder != null && recorder.capturesEditsFor(chat.id) && sessionEpoch.get() == epoch) {
+            val addedIds = addedForEmit.mapTo(HashSet()) { it.id }
+            val channelMeta = newPosts.firstOrNull()?.archiveChannelMeta()
             for (raw in full) {
-                if ((raw.chatId to raw.id) !in addedIds) continue
-                scope.launch {
-                    suspendRunCatching { captureBaselineSnapshot(raw, chat) }
-                        .warnUnlessCancelled(TAG, "captureBaselineSnapshot(${chat.id},${raw.id})")
-                }
+                recorder.recordIngest(raw, newToFeed = raw.id in addedIds, channel = channelMeta)
             }
         }
-    }
-
-    /**
-     * Captures the as-published baseline VERSION row for a freshly-ingested
-     * message. The archive repository pins `seen_at_ms = originalDateMs` and
-     * uses `selectFirstSeenForMessage` existence — not content hash — as its
-     * idempotency check, so this call is race-safe against an
-     * `UpdateMessageEdited` that lands for the same message before the
-     * baseline coroutine wins `writeMutex` (see
-     * [ArchiveRepository.captureTdlibBaseline] KDoc).
-     *
-     * Errors are swallowed (caller has no recovery): archive misses on a
-     * single post are recoverable on the next user-visible edit.
-     */
-    private suspend fun captureBaselineSnapshot(
-        message: TdApi.Message,
-        chat: TdApi.Chat,
-    ) {
-        val repo = archiveRepository ?: return
-        // Gate before the media copy: copyIfAvailable bumps the refcount, which a
-        // skipped capture (excluded chat, edits capture off) would never release.
-        if (!repo.capturesEditsFor(ChatRef.tdlib(chat.id))) return
-        val mediaSha = archiveMediaStore?.let { store ->
-            MediaFileFromContent.extract(message.content)?.let { store.copyIfAvailable(it) }
-        }
-        val baseMeta = TdlibContentMetaExtractor.extract(message.content)
-        val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
-            baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
-        } else baseMeta
-        runCatching {
-            repo.captureTdlibBaseline(
-                chat = ChatRef.tdlib(chat.id),
-                messageKey = message.id.toString(),
-                albumKey = message.mediaAlbumId.takeIf { it != 0L }?.toString(),
-                meta = meta,
-                originalDateMs = message.date.toLong() * 1000L,
-                isComment = false,
-                priorEditedAtMs = message.editDate
-                    .takeIf { it > 0 }
-                    ?.toLong()
-                    ?.times(1000L),
-            )
-            val livePost = _posts.value.firstOrNull { it.chatId == chat.id && it.id == message.id }
-            if (livePost != null) {
-                repo.upsertChannel(
-                    chat = ChatRef.tdlib(chat.id),
-                    title = livePost.senderName,
-                    handle = livePost.senderHandle,
-                    photoMinithumb = livePost.avatarThumb,
-                    isVerified = livePost.verification != null,
-                )
-            }
-        }.warnUnlessCancelled(TAG, "captureBaselineSnapshot(${chat.id},${message.id})")
     }
 
     /**
@@ -2247,7 +2176,7 @@ class PostsRepository(
 
         // Archive: capture VERSION row regardless of `_posts` membership. The
         // `livePost` lookup is best-effort metadata only — it carries
-        // `mediaAlbumId` (needed to tag the row with `album_key`) and the
+        // `mediaAlbumId` (fallback `album_key` when the local read fails) and the
         // sender info for upsertChannel. **Crucially, a null livePost must NOT
         // skip the archive write**, because cold-start catch-up via
         // `getChannelDifference` emits `UpdateMessageEdited` for posts that
@@ -2258,71 +2187,36 @@ class PostsRepository(
         // The mapped TimelinePost in _posts is the wrong source for the content
         // itself — it strips entities and would produce a different hash than
         // the canonical TdApi.MessageContent path (see TdlibContentMetaExtractor
-        // KDoc on the phantom-edit regression). Content comes from
-        // [pendingArchiveEdits] (UMC arrived first, common path) or
-        // [TdApi.GetMessage] as a fallback when UME beat UMC.
-        if (archiveRepository == null) return
+        // KDoc on the phantom-edit regression). The recorder reads the message
+        // with GetMessageLocally inside its ordered consumer; the
+        // [pendingArchiveEdits] content is the fallback (see [ArchiveRecorder]).
+        val recorder = archiveRecorder ?: return
+        val buffered = pendingArchiveEdits.commitOnEdited(update.chatId, update.messageId)
+        // Archive off (the default), chat excluded or edit capture disabled: nothing
+        // enqueued, no local read, no media copy.
+        if (!recorder.capturesEditsFor(update.chatId)) return
         val livePost = _posts.value.firstOrNull { p ->
             p.chatId == update.chatId &&
                 (p.id == update.messageId || update.messageId in p.albumMessageIds)
         }
-        val buffered = pendingArchiveEdits.commitOnEdited(update.chatId, update.messageId)
-        // Archive off (the default), chat excluded or edit capture disabled: skip the
-        // GetMessage fallback and — crucially — the media copy below, whose refcount
-        // bump only a written VERSION row would ever release.
-        if (!archiveRepository.capturesEditsFor(ChatRef.tdlib(update.chatId))) return
-        // Body guarded: an SQLite failure (disk full) in the media copy or the VERSION write
-        // drops this one capture instead of crashing the process from a fire-and-forget launch.
-        scope.launch {
-            suspendRunCatching { captureEdit(update, buffered, livePost) }
-                .warnUnlessCancelled(TAG, "captureEdit(${update.chatId},${update.messageId})")
-        }
-    }
-
-    private suspend fun captureEdit(
-        update: TdApi.UpdateMessageEdited,
-        buffered: TdApi.MessageContent?,
-        livePost: TimelinePost?,
-    ) {
-        val repo = archiveRepository ?: return
-        val content: TdApi.MessageContent = buffered
-            ?: runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }
-                .warnUnlessCancelled(TAG, "getMessage(archive,${update.chatId},${update.messageId})")
-                .getOrNull()?.content
-            ?: return
-        // Tier 2 media copy: while TDLib still has the file locally, snapshot
-        // the bytes into archive storage. The resulting SHA is folded into
-        // mediaRef so the revision sheet can render the media even after the
-        // original message is deleted or TDLib evicts the file from cache.
-        val mediaSha = archiveMediaStore?.let { store ->
-            MediaFileFromContent.extract(content)?.let { store.copyIfAvailable(it) }
-        }
-        val baseMeta = TdlibContentMetaExtractor.extract(content)
-        val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
-            baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
-        } else baseMeta
-        repo.captureTdlibEdit(
-            chat = ChatRef.tdlib(update.chatId),
-            messageKey = update.messageId.toString(),
+        recorder.recordEdit(
+            chatId = update.chatId,
+            messageId = update.messageId,
+            editDate = update.editDate,
+            buffered = buffered,
             albumKey = livePost?.mediaAlbumId?.takeIf { it != 0L }?.toString(),
-            editedAtMs = update.editDate.toLong() * 1000L,
-            meta = meta,
+            channel = livePost?.archiveChannelMeta(),
             isComment = false,
         )
-        // upsertChannel only when we have live metadata. Channels seen
-        // earlier in the session already have rows in ArchivedChannel from
-        // their baseline captures; missing this upsert on a catch-up edit
-        // just leaves stale (but valid) channel metadata.
-        if (livePost != null) {
-            repo.upsertChannel(
-                chat = ChatRef.tdlib(update.chatId),
-                title = livePost.senderName,
-                handle = livePost.senderHandle,
-                photoMinithumb = livePost.avatarThumb,
-                isVerified = livePost.verification != null,
-            )
-        }
     }
+
+    private fun TimelinePost.archiveChannelMeta(): ArchiveRecorder.ChannelMeta =
+        ArchiveRecorder.ChannelMeta(
+            title = senderName,
+            handle = senderHandle,
+            photoMinithumb = avatarThumb,
+            isVerified = verification != null,
+        )
 
     private fun handleDeleted(update: TdApi.UpdateDeleteMessages) {
         if (!update.isPermanent) return
@@ -2333,10 +2227,10 @@ class PostsRepository(
         // strand a ghost in the feed without a backing snapshot, or vice versa.
         val archiveEnabled = archiveRepository?.isEnabled() == true
 
-        // Archive: append the deleted ids into a per-chat debounce buffer, then
-        // drain through `captureTdlibDeleteSmart` after a 200 ms quiet pause.
-        // **Debounce is per chat, not per album.** The previous shape grouped
-        // by `_posts.value`'s `mediaAlbumId`, which was unreachable on
+        // Archive: hand the deleted ids to the recorder, which debounces them per chat
+        // (200 ms quiet window) and drains through `captureTdlibDeleteSmart` in its
+        // ordered consumer. **Debounce is per chat, not per album.** The previous
+        // shape grouped by `_posts.value`'s `mediaAlbumId`, which was unreachable on
         // cold-start catch-up — `getChannelDifference` emits
         // `UpdateDeleteMessages` for posts the user never scrolled to, leaving
         // `mediaAlbumId` unrecoverable from the feed and the entire delete
@@ -2344,44 +2238,13 @@ class PostsRepository(
         // `captureTdlibDeleteSmart` lets the archive recover album grouping
         // from its own VERSION history (`selectAlbumKeyForMessage`) instead;
         // the per-chat debounce still collapses split pulses for live admin
-        // deletes (same 200 ms window as before).
-        if (archiveEnabled && archiveRepository != null) {
-            val msgIds = update.messageIds.toList()
-            pendingChatDeletions.compute(update.chatId) { _, prev ->
-                (prev ?: mutableListOf()).also { buf -> buf.addAll(msgIds) }
-            }
-            chatDeletionTimers[update.chatId]?.cancel()
-            // Compare-remove (see handleNewMessage): a stale surviving job must not
-            // clear the fresh timer's entry, or a later delete batch would find no
-            // timer to cancel and race a second flush against a half-drained buffer.
-            lateinit var deletionJobRef: Job
-            deletionJobRef = scope.launch {
-                delay(ALBUM_DELETE_DEBOUNCE_MS)
-                chatDeletionTimers.remove(update.chatId, deletionJobRef)
-                val drained = pendingChatDeletions.remove(update.chatId) ?: return@launch
-                // Guarded like the edit capture: an archive write failure must not
-                // crash the process from this fire-and-forget launch.
-                suspendRunCatching {
-                    archiveRepository.captureTdlibDeleteSmart(
-                        chat = ChatRef.tdlib(update.chatId),
-                        messageKeys = drained.map { msgId -> msgId.toString() },
-                        isComment = false,
-                    )
-                    // Best-effort channel metadata from any feed-resident sample
-                    // for this chat — channels that have a baseline already have
-                    // an ArchivedChannel row anyway, so a miss here is fine.
-                    _posts.value.firstOrNull { it.chatId == update.chatId }?.let { sample ->
-                        archiveRepository.upsertChannel(
-                            chat = ChatRef.tdlib(update.chatId),
-                            title = sample.senderName,
-                            handle = sample.senderHandle,
-                            photoMinithumb = sample.avatarThumb,
-                            isVerified = sample.verification != null,
-                        )
-                    }
-                }.warnUnlessCancelled(TAG, "captureDelete(${update.chatId})")
-            }
-            chatDeletionTimers[update.chatId] = deletionJobRef
+        // deletes. Channel metadata: best-effort sample from the feed.
+        if (archiveEnabled) {
+            archiveRecorder?.recordDelete(
+                chatId = update.chatId,
+                messageIds = update.messageIds,
+                channel = _posts.value.firstOrNull { it.chatId == update.chatId }?.archiveChannelMeta(),
+            )
         }
 
         val ids = update.messageIds.toHashSet()
@@ -2530,11 +2393,11 @@ class PostsRepository(
         // The right gate is [TimelinePost.mediaAlbumId]: anything with a
         // non-zero album id must re-ingest the whole group, regardless of
         // which member id the update names.
-        // Archive: stash the new content into the pairing buffer. Capture itself
+        // Archive: stash the new content as the fallback for the edit capture, which
         // happens in handleEdited when a paired UpdateMessageEdited(editDate > 0)
         // confirms this is a real admin edit (not a poll vote / live loc / etc.).
-        // See PendingEditBuffer KDoc for the schema-based rationale.
-        if (archiveRepository != null) {
+        // Skipped while the archive is off (the default). See PendingEditBuffer.
+        if (archiveRecorder?.capturesEditsFor(update.chatId) == true) {
             pendingArchiveEdits.stash(update.chatId, update.messageId, update.newContent)
         }
 
@@ -2877,9 +2740,6 @@ class PostsRepository(
             richFullFetchInFlight.clear()
             _richFullFetch.value = persistentMapOf()
             pendingArchiveEdits.clear()
-            pendingChatDeletions.clear()
-            chatDeletionTimers.values.forEach { it.cancel() }
-            chatDeletionTimers.clear()
             _initialSyncDone.value = false
             // Bump last, inside the mutex: any ingest that captured the old epoch and
             // is parked on a suspend point will see the change and bail before writing.
@@ -3002,15 +2862,6 @@ class PostsRepository(
          * cheap first line; the next two layers are the safety net.
          */
         const val ALBUM_DEBOUNCE_MS = 1_000L
-        /**
-         * Quiet-window length after which an album's accumulated DELETED ids are
-         * flushed as a single archive row. Sliding-window — every new arrival for
-         * the same album resets the timer. 200 ms matches the existing
-         * interaction-info coalesce window and is large enough to absorb
-         * a typical slow-network album delete fan-out (~tens of ms between
-         * siblings), small enough not to delay the user-visible tombstone.
-         */
-        const val ALBUM_DELETE_DEBOUNCE_MS = 200L
         // 60s is long enough that quick back-and-forth between channels reuses the cached
         // history, short enough that a deliberate "refresh by re-entering" still works
         // within a normal browsing session.
