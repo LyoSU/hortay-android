@@ -37,7 +37,8 @@
 - "New posts" and "↓ N unread" now share one compact split button in the corner instead of two separate buttons over the text.
 - Feed order in Settings is a two-option switch that explains the selected option underneath.
 - The comments screen has a slim one-line header showing the number of comments.
-- Each post shows its time and author under the channel name and has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
+- Each post has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
+- Posts read cleaner: the channel name and time share one line, post text is a little larger, and comments, forwards, views, Save and Share sit in one evenly spaced row of thin outline icons under the post.
 - Swipeable photo albums in the feed show their position dots under the photos instead of in a dark pill that blended into them.
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 - Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.

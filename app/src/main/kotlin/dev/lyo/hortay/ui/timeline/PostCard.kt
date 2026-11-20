@@ -64,6 +64,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -119,8 +123,14 @@ import kotlinx.coroutines.launch
 // avatar and the body column. Named so the reading-mode bleed inset (declared at the PostBody call)
 // derives from the SAME values the header lays out with, instead of a copy that silently drifts.
 private val CARD_H_PADDING = 16.dp
-private val AVATAR_SIZE = 40.dp
-private val AVATAR_GAP = 12.dp
+// 36 dp, not 40: with name and time on one line the header is a single text line tall, and a
+// 40 dp avatar towered over it. 36 dp still carries a recognisable channel photo.
+private val AVATAR_SIZE = 36.dp
+private val AVATAR_GAP = HortaySpacing.md
+
+// Vertical padding of the card body. 16 dp (was 14): with the hairline now spanning the full
+// width, a little more air above and below each post keeps the stack from reading as a table.
+private val CARD_V_PADDING = HortaySpacing.lg
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -300,7 +310,7 @@ fun PostCard(
                     onLongClickLabel = if (actionsEnabled) stringResource(R.string.post_more_actions) else null,
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
                 )
-                .padding(horizontal = CARD_H_PADDING, vertical = 14.dp),
+                .padding(horizontal = CARD_H_PADDING, vertical = CARD_V_PADDING),
         ) {
             // Header tap routing — three branches, in priority order:
             //   1. [senderUserId] (personal-author mode, admin posting under their own
@@ -356,7 +366,6 @@ fun PostCard(
                 Column(modifier = Modifier.weight(1f)) {
                     HeaderRow(
                     senderName = post.senderName,
-                    authorSignature = post.authorSignature,
                     editDate = post.editDate,
                     date = post.date,
                     pinned = post.isPinned,
@@ -373,6 +382,18 @@ fun PostCard(
                     onTapRevisions = { onTapRevisions(post) },
                 )
 
+                // Quiet second line: the author signature of a signed channel post. Kept off
+                // the name line so a long channel name + time + marks never has to share
+                // the width with a third, equally truncatable string.
+                post.authorSignature?.takeIf { it.isNotBlank() }?.let { signature ->
+                    Text(
+                        text = signature,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 // "у Channel" subtitle for personal-author posts (TDLib's new channel mode
                 // where admins post under their own identity). Tap behaves the same as the
                 // avatar/header — switches the feed filter to the host channel.
@@ -386,11 +407,14 @@ fun PostCard(
                 }
                 // Visible entry to the post's actions (react, save, share, open, copy…).
                 // Long-press still works, but a hidden gesture was the ONLY way in before,
-                // and most readers never found it.
+                // and most readers never found it. Nudged into the card's end padding so the
+                // dots, not their invisible button slack, line up with the content edge.
                 if (actionsEnabled && !post.isDeleted) {
                     IconButton(
                         onClick = { sheetOpen = true },
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier
+                            .offset(x = HortaySpacing.sm)
+                            .size(36.dp),
                     ) {
                         Symbol(
                             name = "more_horiz",
@@ -527,10 +551,11 @@ fun PostCard(
             }
         }
 
-        // Hairline between cards, inset to the content margins on both sides so it reads
-        // as a quiet section break rather than a table grid.
+        // Hairline between cards, edge to edge (Threads). It used to be inset to the content
+        // margins so it read as a quiet break rather than a table grid; with the full-width
+        // body the inset line looked like a stray underline of the action row instead, and
+        // the extra vertical padding ([CARD_V_PADDING]) now does the "not a grid" work.
         HorizontalDivider(
-            modifier = Modifier.padding(horizontal = CARD_H_PADDING),
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
         )
     }
@@ -576,7 +601,7 @@ private fun ForwardedByRow(forwarders: kotlinx.collections.immutable.ImmutableLi
         }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Symbol(name = "forward", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 14.dp)
+        Symbol(name = "line_forward", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp)
         Spacer(Modifier.width(6.dp))
         Box {
             forwarders.take(3).forEachIndexed { i, ch ->
@@ -742,20 +767,25 @@ private fun avatarBg(name: String): Color {
 }
 
 /**
- * Two-line header next to the avatar: the sender name (+ verification, + drill chevron) on
- * top, and a quiet metadata line under it — time, author signature, edited / revisions /
- * deleted / pinned marks. Stacking the metadata under the name (Threads / Bluesky idiom)
- * keeps a long channel name from fighting the timestamp for one line, and frees the
- * trailing edge for the "more" button.
+ * The header line next to the avatar: the sender name (+ verification, + drill chevron), then
+ * the quiet metadata — relative time and the deleted / revisions / edited / pinned marks — on
+ * the SAME line, Threads-style ("Channel  5 хв"). The author signature and the "у Channel"
+ * chip, when present, sit on a quiet line below (laid out by the caller).
  *
- * Only the name row drills into the sender ([onChannelClick]); the metadata line keeps its
- * own affordances (the revisions chip) and is otherwise inert, so the empty gap after a
- * short name never swallows taps meant for the card.
+ * History: the metadata used to be stacked under the name (Threads / Bluesky idiom) so a long
+ * channel name never fought the timestamp for one line. [NameAndMetaLayout] keeps that
+ * guarantee without the second line: the time and marks are measured first and never
+ * ellipsised, the name takes the remaining width and ellipsises, and only when that leftover
+ * would squeeze the name below a readable width (font scale 2.0, a long Arabic locale time,
+ * several marks) does the metadata drop under the name — the old stacked layout, as a fallback.
+ *
+ * Only the name drills into the sender ([onChannelClick]); the metadata keeps its own
+ * affordances (the revisions chip) and is otherwise inert, so the empty gap after a short
+ * name never swallows taps meant for the card.
  */
 @Composable
 private fun HeaderRow(
     senderName: String,
-    authorSignature: String?,
     editDate: Long,
     date: Long,
     pinned: Boolean,
@@ -767,97 +797,154 @@ private fun HeaderRow(
     onTapRevisions: () -> Unit = {},
 ) {
     val metaColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET)
-    Column {
-        Row(
-            modifier = Modifier
-                .clip(InlineChipCorner)
-                .clickable(role = Role.Button, onClick = onChannelClick),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = senderName,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            verification?.let {
-                Spacer(Modifier.width(4.dp))
-                VerificationBadge(it)
-            }
-            if (showDrillChevron) {
-                Spacer(Modifier.width(2.dp))
-                Symbol(
-                    name = "chevron_right",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 14.dp,
-                )
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TimestampText(date)
-            authorSignature?.let {
+    NameAndMetaLayout(
+        name = {
+            Row(
+                modifier = Modifier
+                    .clip(InlineChipCorner)
+                    .clickable(role = Role.Button, onClick = onChannelClick),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    text = "  ·  $it",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = metaColor,
+                    text = senderName,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-            }
-            // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
-            // chip subsumes the pencil — tapping opens the revision sheet AND
-            // communicates "edited". When archive is off or this post was edited before
-            // the feature was enabled (editDate > 0 but no captured versions), we keep
-            // the original non-interactive pencil so the indicator never disappears for
-            // existing users.
-            when {
-                isDeleted -> {
-                    Spacer(Modifier.width(6.dp))
-                    DeletedBadge()
+                verification?.let {
+                    Spacer(Modifier.width(4.dp))
+                    VerificationBadge(it)
                 }
-                revisionCount > 0 -> {
-                    Spacer(Modifier.width(6.dp))
-                    EditedChip(count = revisionCount, onClick = onTapRevisions)
-                }
-                editDate > 0L -> {
-                    Spacer(Modifier.width(6.dp))
+                if (showDrillChevron) {
+                    Spacer(Modifier.width(2.dp))
                     Symbol(
-                        name = "edit",
-                        contentDescription = stringResource(R.string.post_badge_edited),
-                        tint = metaColor,
-                        size = 12.dp,
+                        name = "chevron_right",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 14.dp,
                     )
                 }
             }
-            if (pinned) {
-                Spacer(Modifier.width(6.dp))
-                Symbol(
-                    name = "push_pin",
-                    contentDescription = stringResource(R.string.post_badge_pinned),
-                    tint = MaterialTheme.colorScheme.primary,
-                    size = 12.dp,
-                )
+        },
+        meta = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TimestampText(date)
+                // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
+                // chip subsumes the pencil — tapping opens the revision sheet AND
+                // communicates "edited". When archive is off or this post was edited before
+                // the feature was enabled (editDate > 0 but no captured versions), we keep
+                // the original non-interactive pencil so the indicator never disappears for
+                // existing users.
+                when {
+                    isDeleted -> {
+                        Spacer(Modifier.width(6.dp))
+                        DeletedBadge()
+                    }
+                    revisionCount > 0 -> {
+                        Spacer(Modifier.width(6.dp))
+                        EditedChip(count = revisionCount, onClick = onTapRevisions)
+                    }
+                    editDate > 0L -> {
+                        Spacer(Modifier.width(6.dp))
+                        Symbol(
+                            name = "line_edit",
+                            contentDescription = stringResource(R.string.post_badge_edited),
+                            tint = metaColor,
+                            size = HEADER_MARK_SIZE,
+                        )
+                    }
+                }
+                if (pinned) {
+                    Spacer(Modifier.width(6.dp))
+                    Symbol(
+                        name = "line_pin",
+                        contentDescription = stringResource(R.string.post_badge_pinned),
+                        tint = MaterialTheme.colorScheme.primary,
+                        size = HEADER_MARK_SIZE,
+                    )
+                }
+            }
+        },
+    )
+}
+
+/** Edited / pinned marks after the header time: the post card's line glyphs at text height. */
+private val HEADER_MARK_SIZE = 14.dp
+
+/** Gap between the sender name and the time when they share one line. */
+private val NAME_META_GAP = 6.dp
+
+/**
+ * Below this share of the line the name would be cut to a stub ("Укр…"); the metadata then
+ * drops under the name instead of squeezing it. Never triggers at the default font scale for
+ * a typical "5 хв" — it is the large-font / many-marks fallback.
+ */
+private const val NAME_MIN_SHARE = 0.4f
+
+/**
+ * Two slots on one line, aligned on their first baselines: [name] takes whatever width [meta]
+ * leaves and ellipsises inside it; [meta] is measured first at its natural width so it is never
+ * truncated. When the leftover can't hold [NAME_MIN_SHARE] of the line (or the whole name, if
+ * shorter), [meta] moves to its own line under [name]. RTL is handled by `placeRelative`.
+ */
+@Composable
+private fun NameAndMetaLayout(
+    name: @Composable () -> Unit,
+    meta: @Composable () -> Unit,
+) {
+    Layout(contents = listOf(name, meta)) { (nameMeasurables, metaMeasurables), constraints ->
+        val nameMeasurable = nameMeasurables.first()
+        val maxWidth = constraints.maxWidth
+        val gap = NAME_META_GAP.roundToPx()
+        val metaPlaceable = metaMeasurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+        val nameNeeded = minOf(
+            nameMeasurable.maxIntrinsicWidth(constraints.maxHeight),
+            (maxWidth * NAME_MIN_SHARE).toInt(),
+        )
+        val leftover = maxWidth - metaPlaceable.width - gap
+        val oneLine = leftover >= nameNeeded
+        val namePlaceable = nameMeasurable.measure(
+            Constraints(maxWidth = if (oneLine) leftover.coerceAtLeast(0) else maxWidth),
+        )
+        if (oneLine) {
+            val nameBaseline = namePlaceable[FirstBaseline]
+            val metaBaseline = metaPlaceable[FirstBaseline]
+            val (nameY, metaY) = if (nameBaseline != AlignmentLine.Unspecified && metaBaseline != AlignmentLine.Unspecified) {
+                val baseline = maxOf(nameBaseline, metaBaseline)
+                (baseline - nameBaseline) to (baseline - metaBaseline)
+            } else {
+                val h = maxOf(namePlaceable.height, metaPlaceable.height)
+                ((h - namePlaceable.height) / 2) to ((h - metaPlaceable.height) / 2)
+            }
+            val height = maxOf(nameY + namePlaceable.height, metaY + metaPlaceable.height)
+            layout(maxWidth, height) {
+                namePlaceable.placeRelative(0, nameY)
+                metaPlaceable.placeRelative(namePlaceable.width + gap, metaY)
+            }
+        } else {
+            layout(maxWidth, namePlaceable.height + metaPlaceable.height) {
+                namePlaceable.placeRelative(0, 0)
+                metaPlaceable.placeRelative(0, namePlaceable.height)
             }
         }
     }
 }
 
 /**
- * C4 — post-header timestamp. `labelSmall` in `onSurfaceVariant @ 0.8` so the relative
- * time recedes below the author name and edit/pin marks, and tabular figures (C2) so a
- * "5 хв" → "12 хв" tick never reflows the right-edge block. One composable shared by the
- * deleted / edited / plain header branches keeps the three timestamps in lockstep.
+ * C4 — post-header timestamp. `bodyMedium` (14 sp, Regular) in `onSurfaceVariant @ QUIET`: it
+ * shares the name's line now, so it is one step under the 15 sp SemiBold name in both size and
+ * weight instead of the old 11 sp `labelSmall` that read as a caption under it. Tabular figures
+ * (C2) so a "5 хв" → "12 хв" tick never reflows the marks after it. One composable shared by
+ * the deleted / edited / plain header branches keeps the three timestamps in lockstep.
  */
 @Composable
 private fun TimestampText(date: Long) {
     Text(
         text = formatRelative(date),
-        style = MaterialTheme.typography.labelSmall.tabularFigures(),
+        style = MaterialTheme.typography.bodyMedium.tabularFigures(),
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET),
+        maxLines = 1,
     )
 }
 
@@ -971,7 +1058,9 @@ private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Symbol(
-            name = "forward",
+            // The post card's line family, so the "forwarded from" arrow is the same glyph
+            // as the forward count on the action line below.
+            name = "line_forward",
             tint = MaterialTheme.colorScheme.tertiary,
             size = 16.dp,
         )
@@ -1164,22 +1253,41 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
  * instead of scrolling sideways — a single scrolling line clipped the last chip at the
  * screen edge, which read as broken.
  *
- * The action line reads, leading to trailing: comments (tappable, opens the thread) ·
- * forwards · views (both read-only metadata, never clickable) · flexible gap · Save · Share.
- * Save used to live only inside the "⋯" sheet even though the app has a whole Saved tab;
- * one tap on the bookmark now keeps a post, and the sheet keeps Save / Share as well.
+ * The action line is ONE evenly spaced run from the leading edge, Threads-style: comments
+ * (tappable, opens the thread) · forwards · views (both read-only metadata, never clickable)
+ * · Save · Share. Every item is the same [ActionItem] — the same [ACTION_ICON_SIZE] line
+ * glyph, the same count style, the same padding — so the eye reads one rhythm, not "stats on
+ * the left, buttons on the right". Save used to live only inside the "⋯" sheet even though
+ * the app has a whole Saved tab; one tap on the bookmark now keeps a post, and the sheet
+ * keeps Save / Share as well.
  *
- * Height budget: Save, Share and the comments pill each reserve a 48 dp touch target
+ * Why Save / Share follow the stats instead of being pushed to the trailing edge (where they
+ * sat before, behind a flexible spacer): on a post with no stats the pair floated alone at
+ * the far right with an empty line to its left, and on a post with stats the spacer opened a
+ * hole in the middle of the line, so the row read as two unrelated clusters. Following the
+ * stats, a stat-less post shows Save · Share where every other post's line starts, and a
+ * post with large counts ("13,5 тис.") simply pushes them right. The line is a [FlowRow], so
+ * at large font scales the run wraps (Share first) instead of clipping or overlapping.
+ *
+ * Comments with no count stay hidden, including `commentCount == 0` posts that do have a
+ * discussion group: Hortay only reads threads, so a bare comment glyph would invite an action
+ * that lands on an empty "no comments yet" thread — and the card tap already opens it.
+ *
+ * Height budget: Save, Share and the comments item each reserve a 48 dp touch target
  * ([minimumInteractiveComponentSize]), which is taller than the old ~28 dp stats line. The
  * slack above the glyphs replaces the spacer that used to sit over this row, and the row
  * reports [ACTION_ROW_BOTTOM_OVERHANG] less height than it lays out so the slack under
  * the glyphs overlaps the card's own bottom padding instead of stacking on it — the card
- * grows by a few dp, not by the full touch-target delta.
+ * grows by a few dp, not by the full touch-target delta. Horizontally the items' own padding
+ * bleeds past the content edge ([bleedHorizontal]) so the first glyph lines up with the text.
  *
- * Glyph sizes: the count-carrying stats keep the C1 14 dp glyph (larger stat glyphs
- * outweighed their counts and lifted the row to the body's visual level), while the
- * icon-only Save / Share use [ACTION_ICON_SIZE] — with no count beside them a 14 dp glyph
- * stops reading as a button.
+ * Glyph size history: the C1 pass shrank the stat glyphs to 14 dp because the weight-500
+ * Material glyphs at 18/22 dp outweighed their 12 sp counts and lifted the row to the body's
+ * visual level, while icon-only Save / Share needed 20 dp to read as buttons — two glyph
+ * sizes on one line. The line now uses the thin `line_*` stroke family (see [Symbol]) at one
+ * 20 dp size: a 1.9-stroke outline carries far less ink than a filled weight-500 glyph, so it
+ * sits beside a quiet 14 sp count without the C1 problem coming back. Don't put weight-500
+ * glyphs back on this line at 20 dp — that is exactly what C1 removed.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1269,43 +1377,42 @@ private fun ActionRow(
     // `commentCount == null` = channel has no linked discussion group (comments
     // fundamentally disabled). `commentCount == 0` = group exists but no replies
     // yet. Both read as "nothing to see" to the user, so we collapse them into
-    // one branch and only surface the pill when the count is meaningfully > 0 —
+    // one branch and only surface the item when the count is meaningfully > 0 —
     // mirrors the empty-state contract on CommentsScreen (no "0 replies" subtitle).
     val safeCommentCount = commentCount ?: 0
     val hasComments = safeCommentCount > 0
     if (!hasComments && views <= 0 && forwardCount <= 0 && !showPostActions) return
-    Row(
+    FlowRow(
         modifier = Modifier
+            .bleedHorizontal(ACTION_ITEM_H_PADDING)
             .fillMaxWidth()
             .trimBottom(ACTION_ROW_BOTTOM_OVERHANG),
-        horizontalArrangement = Arrangement.spacedBy(HortaySpacing.md),
-        verticalAlignment = Alignment.CenterVertically,
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         if (hasComments) {
-            StatPill(
-                symbol = "chat_bubble",
-                text = formatViews(safeCommentCount),
+            ActionItem(
+                symbol = "line_comment",
+                count = formatViews(safeCommentCount),
                 onClick = onCommentsClick,
             )
         }
         // Forward count — read-only, mirrors the stat Telegram shows on a channel
-        // post. Uses the `forward` arrow glyph, matching the "forwarded from" badge.
+        // post. Same forward arrow as the "forwarded from" badge.
         if (forwardCount > 0) {
-            StatPill(symbol = "forward", text = formatViews(forwardCount))
+            ActionItem(symbol = "line_forward", count = formatViews(forwardCount))
         }
         if (views > 0) {
-            StatPill(symbol = "visibility", text = formatViews(views))
+            ActionItem(symbol = "line_views", count = formatViews(views))
         }
         if (showPostActions) {
-            Spacer(Modifier.weight(1f))
             val saveTint by animateColorAsState(
                 targetValue = if (isSaved) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                 label = "post-save-tint",
             )
-            PostActionIcon(
-                symbol = "bookmark",
+            ActionItem(
+                symbol = "line_bookmark",
                 filled = isSaved,
                 tint = saveTint,
                 contentDescription = stringResource(if (isSaved) R.string.post_unsave else R.string.post_save),
@@ -1317,12 +1424,32 @@ private fun ActionRow(
                     onSaveClick()
                 },
             )
-            PostActionIcon(
-                symbol = "share",
+            ActionItem(
+                symbol = "line_share",
                 contentDescription = stringResource(R.string.post_share),
                 onClick = onShareClick,
             )
         }
+    }
+}
+
+/**
+ * Widens the content by [bleed] on both sides and centres it back, so children whose padding
+ * is invisible touch slack line their visible glyphs up with the surrounding content edge.
+ * Reports the original width; `placeRelative` keeps the bleed symmetric in RTL.
+ */
+private fun Modifier.bleedHorizontal(bleed: Dp): Modifier = layout { measurable, constraints ->
+    val bleedPx = bleed.roundToPx()
+    val widened = if (constraints.hasBoundedWidth) {
+        constraints.copy(
+            minWidth = constraints.minWidth + bleedPx * 2,
+            maxWidth = constraints.maxWidth + bleedPx * 2,
+        )
+    } else constraints
+    val placeable = measurable.measure(widened)
+    val width = (placeable.width - bleedPx * 2).coerceIn(constraints.minWidth, constraints.maxWidth)
+    layout(width, placeable.height) {
+        placeable.placeRelative(-bleedPx, 0)
     }
 }
 
@@ -1339,38 +1466,68 @@ private fun Modifier.trimBottom(trim: Dp): Modifier = layout { measurable, const
     }
 }
 
-/** Icon-only action (Save / Share) on the post's action line: 48 dp touch, small glyph. */
+/**
+ * One item of the post's action line: a [ACTION_ICON_SIZE] line glyph with an optional count
+ * after it. Tappable items (comments, Save, Share) get a 48 dp touch target and a pill ripple;
+ * read-only stats (forwards, views) are the same shape without a click, so the whole line
+ * shares one rhythm. Every item carries [ACTION_ITEM_H_PADDING] on both sides — that padding
+ * IS the spacing between items (no extra arrangement gap), which keeps the visible gap between
+ * neighbouring glyph groups even whether an item is tappable or not.
+ */
 @Composable
-private fun PostActionIcon(
+private fun ActionItem(
     symbol: String,
-    contentDescription: String,
-    onClick: () -> Unit,
+    count: String? = null,
+    onClick: (() -> Unit)? = null,
+    contentDescription: String? = null,
     filled: Boolean = false,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
-    Box(
-        modifier = Modifier
-            .minimumInteractiveComponentSize()
-            .size(ACTION_ICON_CONTAINER)
-            .clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
+    val shape = HortayExpressive.Pill.asComposeShape()
+    Row(
+        modifier = if (onClick != null) {
+            // The M3 IconButton recipe: minimum touch size first, then shape + clickable.
+            Modifier
+                .minimumInteractiveComponentSize()
+                .clip(shape)
+                .clickable(role = Role.Button, onClick = onClick)
+        } else Modifier,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Symbol(
-            name = symbol,
-            contentDescription = contentDescription,
-            tint = tint,
-            size = ACTION_ICON_SIZE,
-            filled = filled,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = ACTION_ITEM_H_PADDING, vertical = HortaySpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Symbol(
+                name = symbol,
+                contentDescription = contentDescription,
+                tint = tint,
+                size = ACTION_ICON_SIZE,
+                filled = filled,
+            )
+            if (count != null) {
+                Spacer(Modifier.width(HortaySpacing.xs))
+                Text(
+                    text = count,
+                    // C2 — tabular figures so a view-count tick never reflows the item
+                    // width and shifts its neighbours.
+                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
-/** Glyph size of the icon-only Save / Share actions. */
+/** Glyph size of every item on the action line (line family, see [ActionRow]). */
 private val ACTION_ICON_SIZE = 20.dp
 
-/** Visual (ripple) container of Save / Share; the touch target is 48 dp regardless. */
-private val ACTION_ICON_CONTAINER = 40.dp
+/**
+ * Horizontal padding of each action-line item: half the visible gap between neighbouring
+ * glyph groups (12 + 12 = 24 dp, the Threads spacing), bled past the content edge at the ends.
+ */
+private val ACTION_ITEM_H_PADDING = HortaySpacing.md
 
 /**
  * Touch-target slack under the action line's glyphs that overlaps the card's bottom
@@ -1596,51 +1753,6 @@ internal fun ReactionChip(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun StatPill(
-    symbol: String,
-    text: String,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    onClick: (() -> Unit)? = null,
-) {
-    // StatPill follows the same Expressive vocabulary as the reaction chip — when
-    // tappable, it reads as a real affordance with a polygon-shaped ripple. The
-    // Pill silhouette (subtly flattened ellipse) matches the new-posts pill in the
-    // viewer chrome, so all "stat-style" affordances share one visual idiom.
-    val tappableShape = HortayExpressive.Pill.asComposeShape()
-    Row(
-        modifier = if (onClick != null) {
-            // 48 dp touch target around the visual pill (the M3 IconButton recipe:
-            // minimum size first, then shape + clickable on the smaller drawn area).
-            Modifier
-                .minimumInteractiveComponentSize()
-                .clip(tappableShape)
-                .clickable(role = Role.Button, onClick = onClick)
-                .padding(horizontal = HortaySpacing.sm, vertical = HortaySpacing.xs)
-        } else Modifier,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Symbol(
-            name = symbol,
-            tint = tint,
-            // C1 — 14 dp stat glyphs. The earlier 18/22 dp let views / comments /
-            // forward icons visually outweigh their labelMedium counts and made the
-            // action row read at the same level as the post body above it. Dropping
-            // to 14 dp + labelMedium counts seats the whole row a full visual level
-            // below the body — Threads / Telegram keep stat glyphs in this band.
-            size = 14.dp,
-        )
-        Spacer(Modifier.width(HortaySpacing.xs))
-        Text(
-            text = text,
-            // C2 — tabular figures so a view-count tick (views ↑) never reflows the
-            // pill width and shifts its neighbours.
-            style = MaterialTheme.typography.labelMedium.tabularFigures(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

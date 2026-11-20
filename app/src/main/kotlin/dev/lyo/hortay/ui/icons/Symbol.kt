@@ -33,6 +33,16 @@ import dev.lyo.hortay.R
  *   2. Set Weight=500, Optical size=24px, Fill=0, Grade=0.
  *   3. Click Android → save as `res/drawable/sym_<name>.xml`.
  *   4. Add a `"<name>" -> R.drawable.sym_<name>` line below.
+ *
+ * The `line_*` names are a second, deliberately lighter family: hand-drawn 24 × 24 stroke
+ * vectors (stroke 1.9, round caps and joins, no fill) for the post card's quiet chrome —
+ * the action line under a post (comment, forward, views, bookmark, share) and the header's
+ * edited / pinned marks. Weight-500 Material glyphs are filled outlines whose mass outweighs a
+ * 14 sp count beside them; a single thin stroke family lets those glyphs sit at ~20 dp next
+ * to their counts without lifting the row to the body's visual level (the Threads rhythm).
+ * Keep the two families apart: the rest of the app stays on Material Symbols (a whole-app
+ * reskin was tried and reverted), and a `line_*` glyph should never sit next to a weight-500
+ * one in the same row. `line_bookmark` has a filled twin for the saved state.
  */
 @Composable
 fun Symbol(
@@ -65,6 +75,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
             "notifications_active" -> return R.drawable.sym_notifications_active_filled
             "star" -> return R.drawable.sym_star_filled
             "users_group" -> return R.drawable.sym_users_group_filled
+            "line_bookmark" -> return R.drawable.sym_line_bookmark_filled
             // No filled variant bundled — fall through to the outline below.
         }
     }
@@ -119,6 +130,13 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "ios_share" -> R.drawable.sym_ios_share
         "lan" -> R.drawable.sym_lan
         "lightbulb" -> R.drawable.sym_lightbulb
+        "line_bookmark" -> R.drawable.sym_line_bookmark
+        "line_comment" -> R.drawable.sym_line_comment
+        "line_edit" -> R.drawable.sym_line_edit
+        "line_forward" -> R.drawable.sym_line_forward
+        "line_pin" -> R.drawable.sym_line_pin
+        "line_share" -> R.drawable.sym_line_share
+        "line_views" -> R.drawable.sym_line_views
         "location_on" -> R.drawable.sym_location_on
         "lock" -> R.drawable.sym_lock
         "login" -> R.drawable.sym_login

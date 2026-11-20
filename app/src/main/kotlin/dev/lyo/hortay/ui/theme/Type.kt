@@ -10,10 +10,15 @@ import androidx.compose.ui.unit.sp
  * styles use Plus Jakarta Sans for a distinctive brand voice; body & label use Inter for
  * dense reading.
  *
- * Feed-card hierarchy contract (don't regress): `titleSmall` (sender name, 15 sp SemiBold)
- * must render >= `bodyLarge` (post body, 15 sp Regular). The original M3 defaults had the
- * body (16 sp) towering over the author (14 sp), which inverted the "who said it → what
- * they said" reading rhythm every feed app (Threads, Twitter, Telegram) relies on.
+ * Feed-card hierarchy contract (don't regress): the sender name (`titleSmall`, 15 sp SemiBold)
+ * must never read smaller than the post body (`bodyLarge`). The original M3 defaults had the
+ * body (16 sp) towering over a 14 sp author, which inverted the "who said it → what they
+ * said" reading rhythm every feed app (Threads, Twitter, Telegram) relies on; the fix lifted
+ * the name to 15 sp and, for a while, cut the body to 15 sp to match. The body is back at
+ * 16/24 for comfortable reading (the Threads feed's measure) now that the name is SemiBold
+ * on the post's header line beside a quiet time: weight and position carry the hierarchy, so
+ * a 1 sp body lead no longer inverts it. Don't drop `titleSmall` below 15 sp or its weight
+ * below SemiBold — that is what would reopen the inversion.
  * Body/title tracking sits at 0 — Inter at 14–16 sp with M3's default positive
  * letter-spacing reads loose; premium readers run 0 or slightly negative at these sizes.
  */
@@ -27,7 +32,7 @@ val HortayTypography = Typography(
     titleLarge = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 28.sp, letterSpacing = (-0.1).sp),
     titleMedium = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.1.sp),
     titleSmall = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.sp),
-    bodyLarge = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp, letterSpacing = 0.sp),
+    bodyLarge = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.sp),
     bodyMedium = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp),
     bodySmall = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.4.sp),
     labelLarge = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp),
