@@ -1,0 +1,14 @@
+-- Schema migration: version 4 → 5.
+--
+-- Adds the per-channel unfinished back-fill record for guest mode. See
+-- [ChannelGap.sq] for the rationale. Additive only — no existing column or index
+-- touched.
+
+CREATE TABLE channel_gap (
+    username TEXT NOT NULL PRIMARY KEY,
+    before_seq INTEGER NOT NULL,
+    until_seq INTEGER NOT NULL,
+    FOREIGN KEY(username) REFERENCES channel(username) ON DELETE CASCADE
+);
+
+PRAGMA user_version = 5;

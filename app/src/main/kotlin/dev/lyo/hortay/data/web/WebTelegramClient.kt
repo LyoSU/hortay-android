@@ -227,6 +227,15 @@ class WebTelegramClient(
         when (response.code) {
             200 -> {
                 val body = response.body?.string().orEmpty()
+                // A page cut short still parses: jsoup closes the open tags, and the
+                // last post comes out with its id but half a body and no date — which
+                // ingest would then write over the good copy. Every real page ends
+                // with the closing tag (followed only by a "page generated in" comment),
+                // so its absence means an incomplete delivery.
+                if (!body.takeLast(PAGE_TAIL_CHARS).contains("</html>", ignoreCase = true)) {
+                    Log.w(TAG, "Incomplete page for $username (body length=${body.length})")
+                    return FetchResult.NetworkError(java.io.IOException("incomplete page"))
+                }
                 val page = TmePageParser.parse(body, username)
                 if (page == null) {
                     Log.w(TAG, "Parse failed for $username (body length=${body.length})")
@@ -331,6 +340,9 @@ class WebTelegramClient(
         }
 
     companion object {
+        /** How far from the end of a page the closing `</html>` is looked for. */
+        private const val PAGE_TAIL_CHARS = 256
+
         private const val TAG = "WebTelegram"
 
         // Desktop-Chrome UA. Telegram's edge serves THREE different versions of t.me/<u>:

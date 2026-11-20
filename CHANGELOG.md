@@ -72,6 +72,8 @@
 - In guest mode, single photos keep their real proportions instead of showing as squares, and posts forwarded from a private source are marked as forwarded.
 - A guest-mode channel that has no posts yet no longer shows a load error.
 - A connection that drops while a guest-mode channel is loading no longer crashes "Add channel".
+- In guest mode, posts a channel deleted disappear from the feed, reaction counts keep updating on older posts, and a catch-up interrupted by a lost connection resumes on the next refresh.
+- Guest mode stops checking channels as soon as you sign in or leave the app.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.

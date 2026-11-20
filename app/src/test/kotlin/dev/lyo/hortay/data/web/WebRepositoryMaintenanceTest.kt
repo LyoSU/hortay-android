@@ -7,6 +7,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -106,6 +107,56 @@ class WebRepositoryMaintenanceTest {
         repo.vacuum()
 
         assertEquals(1, db.postQueries.searchPlain("%привіт%", 10).executeAsList().size)
+    }
+
+    @Test
+    fun postMissingFromItsPageRange_isDropped_bookmarkSurvives() = runTest {
+        val (repo, db) = newRepo()
+        repo.subscribe("chan")
+        repo.ingestPage(
+            page("chan", post("chan", 1), post("chan", 2), post("chan", 3), post("chan", 4)),
+            null, null, fetchedAtMs = 1_000L,
+        )
+        db.postQueries.setBookmark(true, "chan/3")
+
+        // The channel deleted 2 and 3; the page still spans 1..5.
+        val fresh = page("chan", post("chan", 1), post("chan", 4), post("chan", 5))
+        repo.ingestPage(
+            fresh.copy(listedSeqs = persistentListOf(1L, 4L, 5L)),
+            null, null, fetchedAtMs = 2_000L,
+        )
+
+        assertNull(db.postQueries.selectFingerprint("chan", 2).executeAsOneOrNull())
+        assertNotNull(db.postQueries.selectFingerprint("chan", 3).executeAsOneOrNull())
+        assertNotNull(db.postQueries.selectFingerprint("chan", 5).executeAsOneOrNull())
+    }
+
+    @Test
+    fun reactionChangeAlone_isPersisted() = runTest {
+        val (repo, db) = newRepo()
+        repo.subscribe("chan")
+        repo.ingestPage(page("chan", post("chan", 1)), null, null, fetchedAtMs = 1_000L)
+
+        val reacted = post("chan", 1).copy(
+            reactions = persistentListOf(WebReaction(glyph = "👍", emojiId = null, count = "7", isPaid = false)),
+        )
+        repo.ingestPage(page("chan", reacted), null, null, fetchedAtMs = 2_000L)
+
+        val row = db.postQueries.selectFingerprint("chan", 1).executeAsOne()
+        assertTrue(row.reactions_json.contains("👍"))
+        assertEquals(2_000L, row.fetched_at_ms)
+    }
+
+    @Test
+    fun pendingGap_roundTripsAndClears() = runTest {
+        val (repo, _) = newRepo()
+        repo.subscribe("chan")
+        assertNull(repo.pendingGap("chan"))
+        repo.saveGap("chan", WebRepository.PendingGap(beforeSeq = 90, untilSeq = 40))
+        repo.saveGap("chan", WebRepository.PendingGap(beforeSeq = 70, untilSeq = 40))
+        assertEquals(WebRepository.PendingGap(70, 40), repo.pendingGap("chan"))
+        repo.clearGap("chan")
+        assertNull(repo.pendingGap("chan"))
     }
 
     @Test

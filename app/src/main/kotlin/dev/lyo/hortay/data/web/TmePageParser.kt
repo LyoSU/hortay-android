@@ -51,6 +51,9 @@ object TmePageParser {
             channel = channel,
             posts = posts.toPersistentList(),
             olderCursor = olderCursor,
+            listedSeqs = doc.select(".tgme_widget_message[data-post]:not(.service_message)")
+                .mapNotNull { it.attr("data-post").substringAfterLast('/').toLongOrNull() }
+                .toPersistentList(),
         )
     }
 

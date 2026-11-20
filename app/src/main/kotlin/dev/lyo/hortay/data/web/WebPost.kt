@@ -2,6 +2,7 @@ package dev.lyo.hortay.data.web
 
 import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.serialization.Serializable
 
 /**
@@ -39,6 +40,13 @@ data class WebChannelPage(
      * to paginate backwards. `null` means we reached the channel's first message.
      */
     val olderCursor: String?,
+    /**
+     * Seq of every post the page LISTS (service rows excluded), whether or not it could
+     * be parsed. A page is a contiguous slice of the channel, so a stored post whose seq
+     * falls inside this range but is not in the list was deleted — see
+     * `WebRepository.ingestPage`. Empty when the caller built the page by hand.
+     */
+    val listedSeqs: ImmutableList<Long> = persistentListOf(),
 )
 
 @Immutable

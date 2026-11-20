@@ -191,8 +191,22 @@ UPDATE post SET text_plain = :textPlain WHERE id = :id;
 -- selector failed (empty / unparseable ISO) keeps the stored valid timestamp
 -- instead of overwriting it with the fetch-time fallback.
 selectFingerprint:
-SELECT text_html, views, fetched_at_ms, published_at_iso, published_at_ms FROM post
+SELECT text_html, views, fetched_at_ms, published_at_iso, published_at_ms,
+       media_json, web_preview_json, forwarded_from_json, reactions_json
+FROM post
 WHERE channel_username = :channelUsername AND seq = :seq;
+
+-- Posts the channel deleted. A fetched page is a contiguous slice of the channel, so
+-- a stored post inside the page's seq range that the page no longer lists is gone
+-- (this also clears "X pinned a message" rows cached before they were skipped).
+-- Bookmarks survive: a saved post outlives its source, like on unsubscribe.
+deleteMissingInRange:
+DELETE FROM post
+WHERE channel_username = :channelUsername
+  AND seq >= :minSeq
+  AND seq <= :maxSeq
+  AND seq NOT IN :listedSeqs
+  AND is_bookmarked = 0;
 
 -- Saved tab source: every bookmarked post, with no subscription filter and no
 -- LIMIT — a saved post must outlive both the feed's newest-N window and an

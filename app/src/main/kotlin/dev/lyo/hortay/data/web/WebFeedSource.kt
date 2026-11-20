@@ -445,7 +445,12 @@ class WebFeedSource(
                 _refreshState.value = RefreshState.Idle
                 maybeVacuum()
             } catch (t: Throwable) {
-                if (t is kotlinx.coroutines.CancellationException) throw t
+                if (t is kotlinx.coroutines.CancellationException) {
+                    // The scheduler cancels a sweep when guest mode ends or the app
+                    // goes to the background; don't leave the indicator spinning.
+                    _refreshState.value = RefreshState.Idle
+                    throw t
+                }
                 Log.w(TAG, "refresh failed: ${t.message}")
                 _refreshState.value = RefreshState.Error(t.message ?: "refresh failed")
             }
@@ -557,13 +562,15 @@ class WebFeedSource(
      */
     private suspend fun refetchOlderPage(username: String, seq: Long) {
         try {
-            val result = fetchSemaphore.withPermit {
-                client.fetchChannelPage(username, before = (seq + 1).toString(), useCache = false)
-            }
-            if (result is FetchResult.Page) {
-                repository.refreshExistingPosts(result.page.posts, System.currentTimeMillis())
-            } else {
-                Log.w(TAG, "older-page media refetch for $username before ${seq + 1}: $result")
+            channelLock(username).withLock {
+                val result = fetchSemaphore.withPermit {
+                    client.fetchChannelPage(username, before = (seq + 1).toString(), useCache = false)
+                }
+                if (result is FetchResult.Page) {
+                    repository.refreshExistingPosts(result.page.posts, System.currentTimeMillis())
+                } else {
+                    Log.w(TAG, "older-page media refetch for $username before ${seq + 1}: $result")
+                }
             }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t
@@ -625,13 +632,20 @@ class WebFeedSource(
             val result = fetchSemaphore.withPermit {
                 client.fetchChannelPage(username, after = after.toString(), useCache = false)
             }
-            val posts = (result as? FetchResult.Page)?.page?.posts
-            if (posts == null) {
-                // Mid-walk failure: keep what was ingested; the next sweep resumes from it.
+            if (result !is FetchResult.Page) {
+                // A rate limit or a network error is the answer for this sweep: asking
+                // again for the full page would only repeat the failure at six times
+                // the size. Posts already ingested stay; the walk resumes from the
+                // stored maximum next time. Anything else (a parse failure, a redirect)
+                // goes to the full fetch, which owns those statuses.
+                if (result is FetchResult.RateLimited || result is FetchResult.NetworkError) {
+                    return recordFailure(username, result)
+                }
                 if (!gotNew) return null
                 repository.markNotModified(username, fetchedAtMs)
                 return FetchOutcome.Fresh
             }
+            val posts = result.page.posts
             val newest = posts.maxOfOrNull { it.seq }
             if (newest == null || newest <= after) {
                 repository.markNotModified(username, fetchedAtMs)
@@ -649,35 +663,46 @@ class WebFeedSource(
      * t.me/s/ serves about twenty posts per page, and a sweep reads only the newest page.
      * A channel that posted more than that since the last sweep (a busy news channel
      * overnight) therefore left a hole between the stored posts and the new page, with
-     * nothing in the feed to show for it. When the fresh page doesn't reach down to the
-     * newest post already stored, walk older pages with `?before=` until it does, capped
-     * at [GAP_FILL_MAX_PAGES] so a channel unread for weeks costs a bounded number of
-     * requests (the rest stays a gap, as before).
+     * nothing in the feed to show for it. [fetchOneLocked] records such a hole
+     * ([WebRepository.saveGap]); this walks older pages with `?before=` until it closes,
+     * at most [GAP_FILL_MAX_PAGES] per sweep.
+     *
+     * The record is what makes the walk resumable: it used to live only in this call,
+     * so a cap, a network error or a cancelled sweep left the rest of the hole behind
+     * for good — the next sweep started from the new maximum. Now every sweep of the
+     * channel continues where the last one stopped. A hole reaching further back than
+     * [GAP_MAX_SEQ_SPAN] ids is dropped instead: a channel unread for weeks must not
+     * cost dozens of requests for posts the retention sweep would delete anyway.
      *
      * Best effort and silent: the newest page is already ingested, and a failed
      * back-fill must not paint an error over a channel that just refreshed fine.
      */
-    private suspend fun fillGap(
-        username: String,
-        newestPage: WebChannelPage,
-        storedMaxSeq: Long?,
-        fetchedAtMs: Long,
-    ) {
-        if (storedMaxSeq == null) return
-        var floor = newestPage.posts.minOfOrNull { it.seq } ?: return
+    private suspend fun fillGap(username: String, fetchedAtMs: Long) {
+        val gap = repository.pendingGap(username) ?: return
+        val newest = repository.maxSeq(username) ?: return
+        var floor = gap.beforeSeq
         try {
             repeat(GAP_FILL_MAX_PAGES) {
-                if (floor <= storedMaxSeq + 1) return
+                if (floor <= gap.untilSeq + 1 || newest - floor > GAP_MAX_SEQ_SPAN) {
+                    repository.clearGap(username)
+                    return
+                }
                 val result = fetchSemaphore.withPermit {
                     client.fetchChannelPage(username, before = floor.toString(), useCache = false)
                 }
-                val posts = (result as? FetchResult.Page)?.page?.posts.orEmpty()
+                // Not a page: keep the record, the next sweep retries from [floor].
+                val posts = (result as? FetchResult.Page)?.page?.posts ?: return
                 val olderFloor = posts.minOfOrNull { it.seq }
-                // No posts, or a page that doesn't go further back: stop rather than loop.
-                if (olderFloor == null || olderFloor >= floor) return
+                // No posts, or a page that doesn't go further back: nothing left below.
+                if (olderFloor == null || olderFloor >= floor) {
+                    repository.clearGap(username)
+                    return
+                }
                 repository.ingestOlderPosts(posts, fetchedAtMs)
                 floor = olderFloor
+                repository.saveGap(username, WebRepository.PendingGap(floor, gap.untilSeq))
             }
+            if (floor <= gap.untilSeq + 1) repository.clearGap(username)
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t
             Log.w(TAG, "gap fill failed for $username: ${t.message}")
@@ -697,16 +722,77 @@ class WebFeedSource(
     /** When each channel's newest page was last fetched in full, this process. */
     private val lastFullFetchMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    /**
+     * One lock per channel, held from the request through the ingest commit. A sweep,
+     * an error-chip retry and a stale-media repair all fetch the same channel on their
+     * own; [fetchSemaphore] only bounds the HTTP part, so without this an older
+     * response could commit after a newer one and put back an outdated text or an
+     * already-rotated CDN URL (the post upsert has no freshness predicate).
+     */
+    private val channelLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+
+    private fun channelLock(username: String): Mutex = channelLocks.getOrPut(username) { Mutex() }
+
     private suspend fun fetchOne(
         username: String,
         forceNetwork: Boolean,
         fetchedAtMs: Long,
         forceMediaRefresh: Boolean = false,
+    ): FetchOutcome = channelLock(username).withLock {
+        fetchOneLocked(username, forceNetwork, fetchedAtMs, forceMediaRefresh)
+    }
+
+    /** Status + outcome for an answer that carries no page. Shared by both fetch paths. */
+    private suspend fun recordFailure(username: String, result: FetchResult): FetchOutcome = when (result) {
+        is FetchResult.RateLimited -> {
+            repository.markFetchStatus(
+                username = username,
+                status = ChannelFetchStatus.RateLimited,
+                retryAfterMs = result.retryAfterMs,
+            )
+            FetchOutcome.Transient
+        }
+        is FetchResult.NetworkError -> {
+            repository.markFetchStatus(
+                username = username,
+                status = ChannelFetchStatus.Error,
+                error = result.cause.message,
+            )
+            FetchOutcome.Transient
+        }
+        FetchResult.NotFound -> {
+            repository.markFetchStatus(username, ChannelFetchStatus.NotFound, error = null)
+            FetchOutcome.NoOp
+        }
+        FetchResult.PrivateChannel -> {
+            repository.markFetchStatus(username, ChannelFetchStatus.Private)
+            FetchOutcome.NoOp
+        }
+        FetchResult.ParseFailure -> {
+            repository.markFetchStatus(
+                username = username,
+                status = ChannelFetchStatus.ParseFailure,
+                error = "parse failed",
+            )
+            FetchOutcome.NoOp
+        }
+        // Not failures; the callers handle these before reaching here.
+        is FetchResult.Page, FetchResult.NotModified -> FetchOutcome.NoOp
+    }
+
+    private suspend fun fetchOneLocked(
+        username: String,
+        forceNetwork: Boolean,
+        fetchedAtMs: Long,
+        forceMediaRefresh: Boolean,
     ): FetchOutcome {
         repository.markFetchStatus(username, ChannelFetchStatus.Loading)
         try {
             if (!forceNetwork && !forceMediaRefresh) {
-                fetchNewerOnly(username, fetchedAtMs)?.let { return it }
+                fetchNewerOnly(username, fetchedAtMs)?.let { outcome ->
+                    if (outcome != FetchOutcome.Transient) fillGap(username, fetchedAtMs)
+                    return outcome
+                }
             }
             val result = fetchSemaphore.withPermit {
                 client.fetchChannelPage(username, useCache = !forceNetwork)
@@ -739,7 +825,14 @@ class WebFeedSource(
                         // guard — see the callers in doRefresh / refetchForStalePost.
                         forceMediaRefresh = forceMediaRefresh,
                     )
-                    fillGap(username, result.page, storedMaxSeq, fetchedAtMs)
+                    // The page doesn't reach down to what was stored: record the hole
+                    // (replacing an older unfinished one — the newest hole is the one
+                    // the reader meets first) and start closing it.
+                    val pageFloor = result.page.posts.minOfOrNull { it.seq }
+                    if (storedMaxSeq != null && pageFloor != null && pageFloor > storedMaxSeq + 1) {
+                        repository.saveGap(username, WebRepository.PendingGap(pageFloor, storedMaxSeq))
+                    }
+                    fillGap(username, fetchedAtMs)
                     lastFullFetchMs[username] = fetchedAtMs
                     return FetchOutcome.Fresh
                 }
@@ -747,38 +840,7 @@ class WebFeedSource(
                     repository.markNotModified(username, fetchedAtMs)
                     return FetchOutcome.NoOp
                 }
-                FetchResult.NotFound -> {
-                    repository.markFetchStatus(username, ChannelFetchStatus.NotFound, error = null)
-                    return FetchOutcome.NoOp
-                }
-                FetchResult.PrivateChannel -> {
-                    repository.markFetchStatus(username, ChannelFetchStatus.Private)
-                    return FetchOutcome.NoOp
-                }
-                is FetchResult.RateLimited -> {
-                    repository.markFetchStatus(
-                        username = username,
-                        status = ChannelFetchStatus.RateLimited,
-                        retryAfterMs = result.retryAfterMs,
-                    )
-                    return FetchOutcome.Transient
-                }
-                is FetchResult.NetworkError -> {
-                    repository.markFetchStatus(
-                        username = username,
-                        status = ChannelFetchStatus.Error,
-                        error = result.cause.message,
-                    )
-                    return FetchOutcome.Transient
-                }
-                FetchResult.ParseFailure -> {
-                    repository.markFetchStatus(
-                        username = username,
-                        status = ChannelFetchStatus.ParseFailure,
-                        error = "parse failed",
-                    )
-                    return FetchOutcome.NoOp
-                }
+                else -> return recordFailure(username, result)
             }
         } catch (t: Throwable) {
             // Belt: an exception thrown anywhere between the Loading marker and
@@ -1098,6 +1160,9 @@ class WebFeedSource(
 
         /** Older pages a sweep may fetch per channel to close a gap (~20 posts each). */
         private const val GAP_FILL_MAX_PAGES = 3
+
+        /** A hole reaching further back than this many ids is abandoned, not walked. */
+        private const val GAP_MAX_SEQ_SPAN = 400L
 
         /** Pages of newer posts one cheap sweep follows per channel (~20 posts each). */
         private const val NEWER_MAX_PAGES = 4

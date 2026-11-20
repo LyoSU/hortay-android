@@ -288,7 +288,23 @@ class WebRepository(
             for (post in page.posts) {
                 ingestPost(post, fetchedAtMs, forceMediaRefresh)
             }
+            dropDeletedPosts(ch.username, page.listedSeqs)
         }
+    }
+
+    /**
+     * Remove stored posts that the page's seq range no longer lists (deleted by the
+     * channel). Needs at least two listed posts to have a range at all; SQLite's bound
+     * variable limit is far above a page's ~20 ids.
+     */
+    private fun dropDeletedPosts(username: String, listedSeqs: List<Long>) {
+        if (listedSeqs.size < 2) return
+        postQueries.deleteMissingInRange(
+            channelUsername = username,
+            minSeq = listedSeqs.min(),
+            maxSeq = listedSeqs.max(),
+            listedSeqs = listedSeqs,
+        )
     }
 
     /**
@@ -351,18 +367,28 @@ class WebRepository(
         // loop with no visible recovery.
         //   • forceMediaRefresh: the fetch was forced precisely to refresh media URLs.
         //   • fetched_at_ms == 0: markMediaStale flagged this post's media as expired.
+        //
+        // The guard also compares the reactions, the forward header, and the SHAPE of
+        // the media and the link preview (their CDN URLs rotate on every fetch, so the
+        // raw JSON can't be compared). Text + views alone froze reaction counts on a
+        // post whose view counter had plateaued, and missed a media-only edit.
+        val parsedMs = parseIsoToMillis(post.publishedAt)
+        val forwardedJson = post.forwardedFrom?.let { json.encodeToString(WebForwardSource.serializer(), it) }
+        val reactionsJson = json.encodeToString(reactionListSerializer, post.reactions.toList())
         if (!forceMediaRefresh &&
             existing != null &&
             existing.text_html == post.textHtml &&
             existing.views == post.views &&
-            existing.fetched_at_ms != 0L
+            existing.fetched_at_ms != 0L &&
+            existing.reactions_json == reactionsJson &&
+            existing.forwarded_from_json == forwardedJson &&
+            sameMediaShape(existing.media_json, post.media) &&
+            samePreview(existing.web_preview_json, post.webPreview)
         ) {
             return
         }
         val mediaJson = json.encodeToString(mediaListSerializer, post.media.toList())
         val previewJson = post.webPreview?.let { json.encodeToString(WebPreview.serializer(), it) }
-        val forwardedJson = post.forwardedFrom?.let { json.encodeToString(WebForwardSource.serializer(), it) }
-        val reactionsJson = json.encodeToString(reactionListSerializer, post.reactions.toList())
         // Lowercased here (Unicode-aware) because SQLite's LOWER() only folds ASCII —
         // text_plain is a search-only column, see searchPlain in Post.sq.
         val plainText = WebTextRenderer.toPlainText(post.textHtml).lowercase()
@@ -375,7 +401,6 @@ class WebRepository(
         //     the page was received) instead of 0L, so the post isn't pinned at
         //     epoch 1970 as a phantom "ancient post". The ISO string is synthesised
         //     from the same instant because the UI derives the card date from it.
-        val parsedMs = parseIsoToMillis(post.publishedAt)
         val publishedIso: String
         val publishedMs: Long
         when {
@@ -422,6 +447,30 @@ class WebRepository(
             views = post.views,
             fetchedAtMs = fetchedAtMs,
         )
+    }
+
+    /** Stored media vs fresh media, ignoring the URLs (they rotate with the CDN token). */
+    private fun sameMediaShape(storedJson: String, fresh: List<WebMedia>): Boolean {
+        if (storedJson == "[]") return fresh.isEmpty()
+        val stored = runCatching { json.decodeFromString(mediaListSerializer, storedJson) }
+            .getOrNull() ?: return false
+        if (stored.size != fresh.size) return false
+        return stored.indices.all { i ->
+            val a = stored[i]
+            val b = fresh[i]
+            a.kind == b.kind && a.durationSec == b.durationSec && a.title == b.title &&
+                a.aspectRatio == b.aspectRatio && a.url.isBlank() == b.url.isBlank()
+        }
+    }
+
+    /** Stored link preview vs fresh one, ignoring the (rotating) image URL. */
+    private fun samePreview(storedJson: String?, fresh: WebPreview?): Boolean {
+        if (storedJson == null) return fresh == null
+        if (fresh == null) return false
+        val stored = runCatching { json.decodeFromString(WebPreview.serializer(), storedJson) }
+            .getOrNull() ?: return false
+        return stored.copy(imageUrl = null) == fresh.copy(imageUrl = null) &&
+            (stored.imageUrl == null) == (fresh.imageUrl == null)
     }
 
     suspend fun markFetchStatus(
@@ -607,6 +656,22 @@ class WebRepository(
         postQueries.selectMaxSeq(username).executeAsOneOrNull()?.max_seq
     }
 
+    /** An unfinished history back-fill: continue `?before=`[beforeSeq] down to [untilSeq]. */
+    data class PendingGap(val beforeSeq: Long, val untilSeq: Long)
+
+    suspend fun pendingGap(username: String): PendingGap? = withContext(ioDispatcher) {
+        db.channelGapQueries.selectByUsername(username).executeAsOneOrNull()
+            ?.let { PendingGap(beforeSeq = it.before_seq, untilSeq = it.until_seq) }
+    }
+
+    suspend fun saveGap(username: String, gap: PendingGap) = withContext(ioDispatcher) {
+        db.channelGapQueries.save(username, gap.beforeSeq, gap.untilSeq)
+    }
+
+    suspend fun clearGap(username: String) = withContext(ioDispatcher) {
+        db.channelGapQueries.deleteByUsername(username)
+    }
+
     /** Smallest seq on the channel's newest fetched page, or null when unknown. */
     suspend fun newestPageFloorSeq(username: String): Long? = withContext(ioDispatcher) {
         channelQueries.selectOlderCursor(username).executeAsOneOrNull()?.older_cursor?.toLongOrNull()
@@ -720,6 +785,7 @@ class WebRepository(
             if (preserveBookmarks) postQueries.deleteAllExceptBookmarked()
             else postQueries.deleteAll()
             customEmojiQueries.deleteAll()
+            db.channelGapQueries.deleteAll()
             channelQueries.resetCachedPayload()
         }
     }

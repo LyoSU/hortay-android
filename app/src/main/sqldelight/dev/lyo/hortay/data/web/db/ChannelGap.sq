@@ -1,0 +1,35 @@
+-- One unfinished history back-fill per channel (guest mode).
+--
+-- t.me/s/ serves about twenty posts per page. When a sweep's newest page does not
+-- reach down to the newest post already stored, the posts in between are a hole the
+-- sweep closes by walking `?before=` pages. That walk is capped per sweep and can be
+-- interrupted (network error, cancellation, process death). Without a record the next
+-- sweep started from the new maximum and the hole stayed forever, so the remaining
+-- range is kept here and resumed on the following sweeps.
+--
+--   before_seq — continue with `?before=<before_seq>` (the lowest seq fetched so far)
+--   until_seq  — the newest seq that was stored below the hole; reaching it closes it
+--
+-- Sidecar table, like channel_read_cursor: keeps the `SELECT *` channel projection
+-- unchanged, and ON DELETE CASCADE drops the record with its channel.
+
+CREATE TABLE channel_gap (
+    username TEXT NOT NULL PRIMARY KEY,
+    before_seq INTEGER NOT NULL,
+    until_seq INTEGER NOT NULL,
+    FOREIGN KEY(username) REFERENCES channel(username) ON DELETE CASCADE
+);
+
+selectByUsername:
+SELECT before_seq, until_seq FROM channel_gap WHERE username = :username;
+
+-- INSERT OR REPLACE (not ON CONFLICT DO UPDATE): portable to Android 8/9 SQLite.
+save:
+INSERT OR REPLACE INTO channel_gap(username, before_seq, until_seq)
+VALUES (:username, :beforeSeq, :untilSeq);
+
+deleteByUsername:
+DELETE FROM channel_gap WHERE username = :username;
+
+deleteAll:
+DELETE FROM channel_gap;

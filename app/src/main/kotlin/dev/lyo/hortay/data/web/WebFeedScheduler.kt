@@ -133,7 +133,11 @@ class WebFeedScheduler(
         // First refresh fires immediately on resume. The staleness window
         // inside WebFeedSource means a recent pull-to-refresh won't double
         // up — the coroutine just falls through.
-        runCatching { feedSource.refreshAsync(force = false).join() }
+        // Called directly, not `refreshAsync().join()`: that launched the sweep in the
+        // application scope and only waited for it, so cancelling this loop (leaving
+        // guest mode, going to the background) stopped the waiting but let the sweep
+        // go on downloading every channel.
+        runCatching { feedSource.refreshIfStale() }
             .onFailure { err ->
                 if (err is kotlinx.coroutines.CancellationException) throw err
                 Log.w(TAG, "tier-2 sweep failed; backing off then retrying", err)
