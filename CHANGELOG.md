@@ -171,6 +171,7 @@
 - The app no longer redraws every frame while idle — animated stickers and the pull-to-refresh indicator animate only when they are on screen and active.
 - Guest mode does less work on launch and when opening "Add channel".
 - Guest mode uses several times less data to check channels for new posts.
+- The guest-mode feed no longer rebuilds every post each time a channel is checked.
 - Photos and videos in the feed ask Telegram about each file once instead of twice.
 
 ### Architecture

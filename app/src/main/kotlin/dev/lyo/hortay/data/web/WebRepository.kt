@@ -842,6 +842,7 @@ class WebRepository(
     //   `_is_read` / `_is_bookmarked` — UI state lives in BookmarkStore / DataStore
     //     (is_bookmarked mirrors it for retention + the Saved query, see syncBookmarks)
     //   `_fetched_at_ms` — staleness gate, evaluated at the SQL layer
+    // (`_id` and `_fetched_at_ms` do feed the mapped-post memo below, nothing else.)
     private fun rowToTimelinePost(
         channel_username: String,
         seq: Long,
@@ -862,7 +863,26 @@ class WebRepository(
         channel_title: String,
         channel_avatar: String?,
     ): TimelinePost {
-        return WebPostAdapter.toTimelinePost(
+        // Memo of the mapped post. The feed queries JOIN `channel`, so every write to
+        // that table — two status writes per channel per sweep — re-runs them, and each
+        // run used to decode four JSON columns and rebuild the formatted text for up to
+        // a thousand rows that had not changed. Hashing the raw columns is far cheaper
+        // than that, and handing back the SAME instance also lets the downstream
+        // `distinctUntilChanged` and Compose compare by identity.
+        val memoKey = PostMemoKey(
+            fetchedAtMs = _fetched_at_ms,
+            channelTitle = channel_title,
+            channelAvatar = channel_avatar,
+            contentHash = java.util.Objects.hash(
+                published_at_iso, text_html, media_json, web_preview_json,
+                forwarded_from_json, reactions_json, views, extrasJson,
+            ),
+            locale = java.util.Locale.getDefault(),
+        )
+        synchronized(postMemo) { postMemo[_id] }
+            ?.takeIf { it.key == memoKey }
+            ?.let { return it.post }
+        val post = WebPostAdapter.toTimelinePost(
             seq = seq,
             publishedAtIso = published_at_iso,
             textHtml = text_html,
@@ -877,7 +897,28 @@ class WebRepository(
             channelAvatarUrl = channel_avatar,
             strings = strings,
         )
+        synchronized(postMemo) { postMemo[_id] = PostMemo(memoKey, post) }
+        return post
     }
+
+    /**
+     * Everything a mapped post depends on. [contentHash] folds the raw columns;
+     * [fetchedAtMs] (rewritten by every post upsert) makes a hash collision between
+     * two versions of one post practically impossible. [locale] because the mapper
+     * bakes localized strings (media badges, the "not shown on the web" notice) in.
+     */
+    private data class PostMemoKey(
+        val fetchedAtMs: Long,
+        val channelTitle: String,
+        val channelAvatar: String?,
+        val contentHash: Int,
+        val locale: java.util.Locale,
+    )
+
+    private class PostMemo(val key: PostMemoKey, val post: TimelinePost)
+
+    /** Keyed by post id; sized above the feed window ([DEFAULT_FEED_LIMIT]) plus a channel screen. */
+    private val postMemo = dev.lyo.hortay.ui.media.boundedLruCache<String, PostMemo>(POST_MEMO_SIZE, accessOrder = true)
 
     // Same convention as [rowToTimelinePost]: `_`-prefixed params are columns the
     // SQL projection emits but [ChannelEntry] doesn't need. Dropped here:
@@ -958,6 +999,9 @@ class WebRepository(
          * under 50ms cold on a low-end device.
          */
         const val DEFAULT_FEED_LIMIT = 1000L
+
+        /** Mapped-post memo capacity: the feed window plus an open channel screen. */
+        private const val POST_MEMO_SIZE = 2048
 
         const val DEFAULT_SEARCH_LIMIT = 200L
 
