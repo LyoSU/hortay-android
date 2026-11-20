@@ -38,7 +38,10 @@
 - Feed order in Settings is a two-option switch that explains the selected option underneath.
 - The comments screen has a slim one-line header showing the number of comments.
 - Each post has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
-- Posts read cleaner: the channel name and time share one line, post text is a little larger, and comments, forwards, views, Save and Share sit in one evenly spaced row of thin outline icons under the post.
+- Posts read cleaner: the channel name and time share one line, post text is a little larger, and comments, Share, Save and views sit in one evenly spaced row of thin outline icons under the post.
+- The Share button under a post now carries the forward count, instead of a separate forward counter that looked tappable but wasn't.
+- A post signed by its own author shows “Author in Channel” on one line with the channel's photo on the avatar corner, instead of a separate channel chip.
+- The reply preview above a post is a compact single line, and skips the author's name when it is a reply to the same author.
 - Swipeable photo albums in the feed show their position dots under the photos instead of in a dark pill that blended into them.
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 - Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.

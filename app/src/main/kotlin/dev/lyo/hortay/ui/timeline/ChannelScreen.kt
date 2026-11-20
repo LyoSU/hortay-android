@@ -996,7 +996,7 @@ fun ChannelScreen(
                                                 LocalShowFullPost provides showFull,
                                             ) {
                                                 Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
-                                                    PostCard(post = post, interactions = itemInteractions)
+                                                    PostCard(post = post, interactions = itemInteractions, showHostChannel = false)
                                                 }
                                             }
                                         }

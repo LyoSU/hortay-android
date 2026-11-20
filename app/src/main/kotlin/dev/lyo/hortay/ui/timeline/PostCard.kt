@@ -81,6 +81,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChannelContext
@@ -150,8 +153,15 @@ fun PostCard(
     /** What this merged-feed row stands for (forwards / a folded series); see [clusterFeed]. */
     annotation: FeedAnnotation? = null,
     onExpandSeries: () -> Unit = {},
+    /**
+     * Whether a personal-author post names its host channel ("in <Channel>" + avatar badge).
+     * The channel screen passes `false`: every post there has the same host, already named
+     * in the screen's own header.
+     */
+    showHostChannel: Boolean = true,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
+    val hostChannel = post.channelContext.takeIf { showHostChannel }
     val menuAnchor = remember { ContextMenuAnchor() }
     // Picker → chip hand-off for the choose animation: the sheet dismisses as it toggles,
     // so the chip in this card's action row plays it (see [ReactionEffectRequest]).
@@ -360,6 +370,7 @@ fun PostCard(
                     thumb = post.avatarThumb,
                     fileId = post.avatarFileId,
                     avatarUrl = post.avatarUrl,
+                    hostChannel = hostChannel,
                     onClick = onSenderClick,
                 )
                 Spacer(Modifier.width(AVATAR_GAP))
@@ -380,6 +391,8 @@ fun PostCard(
                     isDeleted = post.isDeleted,
                     revisionCount = post.revisionCount,
                     onTapRevisions = { onTapRevisions(post) },
+                    hostChannel = hostChannel,
+                    onHostChannelClick = { interactions.onChannelClick(post) },
                 )
 
                 // Quiet second line: the author signature of a signed channel post. Kept off
@@ -392,16 +405,6 @@ fun PostCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                // "у Channel" subtitle for personal-author posts (TDLib's new channel mode
-                // where admins post under their own identity). Tap behaves the same as the
-                // avatar/header — switches the feed filter to the host channel.
-                post.channelContext?.let { ctx ->
-                    Spacer(Modifier.height(HortaySpacing.xxs))
-                    InChannelChip(
-                        ctx = ctx,
-                        onClick = { interactions.onChannelClick(post) },
                     )
                 }
                 }
@@ -446,6 +449,11 @@ fun PostCard(
                     Spacer(Modifier.height(HortaySpacing.sm))
                     ReplyBlock(
                         it,
+                        // A reply to the same sender's own earlier post: the header right
+                        // above already names them.
+                        showAuthor = it.otherChannelAvatar != null ||
+                            it.replyToChatId != post.chatId ||
+                            it.authorName != post.senderName,
                         onClick = {
                             // A hand-picked quote lights up its fragment where the tap lands.
                             if (it.isQuote) QuoteHighlights.show(it.replyToChatId, it.replyToMessageId, it.excerpt)
@@ -732,23 +740,58 @@ private fun Avatar(
     thumb: ByteArray?,
     fileId: Int?,
     avatarUrl: String?,
+    /**
+     * The channel a personal-author post was published in. Its avatar rides the author's as
+     * a corner badge, so a feed of several multi-author channels shows at a glance which
+     * channel a face belongs to; the name is spelled out on the header line.
+     */
+    hostChannel: ChannelContext?,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick),
-    ) {
-        TdAvatar(
-            name = name,
-            thumb = thumb,
-            fileId = fileId,
-            size = AVATAR_SIZE,
-            background = avatarBg(name),
-            remoteUrl = avatarUrl,
-        )
+    Box {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable(role = Role.Button, onClick = onClick),
+        ) {
+            TdAvatar(
+                name = name,
+                thumb = thumb,
+                fileId = fileId,
+                size = AVATAR_SIZE,
+                background = avatarBg(name),
+                remoteUrl = avatarUrl,
+            )
+        }
+        if (hostChannel != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = HOST_BADGE_OVERHANG, y = HOST_BADGE_OVERHANG)
+                    .size(HOST_BADGE_SIZE)
+                    .clip(CircleShape)
+                    // A ring in the page colour separates the badge from the avatar under it.
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(1.5.dp),
+            ) {
+                TdAvatar(
+                    name = hostChannel.name,
+                    thumb = hostChannel.avatarThumb,
+                    fileId = hostChannel.avatarFileId,
+                    size = HOST_BADGE_SIZE - 3.dp,
+                    background = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    textStyle = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
     }
 }
+
+/** The host channel's avatar badge on a personal-author post's avatar. */
+private val HOST_BADGE_SIZE = 18.dp
+
+/** How far the badge hangs past the avatar's corner. */
+private val HOST_BADGE_OVERHANG = 3.dp
 
 @Composable
 private fun avatarBg(name: String): Color {
@@ -769,8 +812,15 @@ private fun avatarBg(name: String): Color {
 /**
  * The header line next to the avatar: the sender name (+ verification, + drill chevron), then
  * the quiet metadata — relative time and the deleted / revisions / edited / pinned marks — on
- * the SAME line, Threads-style ("Channel  5 хв"). The author signature and the "у Channel"
- * chip, when present, sit on a quiet line below (laid out by the caller).
+ * the SAME line, Threads-style ("Channel  5 хв"). The author signature, when present, sits on a
+ * quiet line below (laid out by the caller).
+ *
+ * A personal-author post (a channel whose admins post under their own names) names its
+ * channel in the metadata, before the time: "Author  у Channel · 5 хв". It used to be a
+ * separate chip with its own avatar on a line under the header, which gave such channels a
+ * taller header than every other post and one more container before the text. The channel
+ * name is the one metadata piece that may be ellipsised — when it does not fit beside the
+ * name, the whole metadata drops under it (see [NameAndMetaLayout]) and it gets the full line.
  *
  * History: the metadata used to be stacked under the name (Threads / Bluesky idiom) so a long
  * channel name never fought the timestamp for one line. [NameAndMetaLayout] keeps that
@@ -780,7 +830,7 @@ private fun avatarBg(name: String): Color {
  * several marks) does the metadata drop under the name — the old stacked layout, as a fallback.
  *
  * Only the name drills into the sender ([onChannelClick]); the metadata keeps its own
- * affordances (the revisions chip) and is otherwise inert, so the empty gap after a short
+ * affordances (the host channel, the revisions chip) and is otherwise inert, so the empty gap after a short
  * name never swallows taps meant for the card.
  */
 @Composable
@@ -795,6 +845,8 @@ private fun HeaderRow(
     isDeleted: Boolean = false,
     revisionCount: Int = 0,
     onTapRevisions: () -> Unit = {},
+    hostChannel: ChannelContext? = null,
+    onHostChannelClick: () -> Unit = {},
 ) {
     val metaColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET)
     NameAndMetaLayout(
@@ -829,6 +881,24 @@ private fun HeaderRow(
         },
         meta = {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (hostChannel != null) {
+                    Text(
+                        text = stringResource(R.string.post_in_channel, hostChannel.name),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clip(InlineChipCorner)
+                            .clickable(role = Role.Button, onClick = onHostChannelClick),
+                    )
+                    Text(
+                        text = " · ",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = metaColor,
+                    )
+                }
                 TimestampText(date)
                 // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
                 // chip subsumes the pencil — tapping opens the revision sheet AND
@@ -1018,61 +1088,40 @@ private fun WarningPill(label: String, color: Color) {
 }
 
 /**
- * Tiny "у &lt;Channel&gt;" affordance shown beneath the author name for personal-author
- * posts. Pip avatar (16 dp) + name in `onSurfaceVariant`; clickable hand-off lets the
- * reader jump to the host channel filter. We deliberately avoid a chip background — at
- * this size a fill would compete with the surrounding text density.
+ * "Forwarded from X" under the header. One quiet line in the metadata colour — the same
+ * voice as the "Also forwarded by" row and the header time — with only the source's name
+ * lifted to the text colour when it leads somewhere. It used to be all tertiary, a second
+ * accent colour between the header and a reply block that already carries the primary one.
  */
 @Composable
-private fun InChannelChip(ctx: ChannelContext, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .clip(InlineChipCorner)
-            .clickable(role = Role.Button, onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TdAvatar(
-            name = ctx.name,
-            thumb = ctx.avatarThumb,
-            fileId = ctx.avatarFileId,
-            size = 16.dp,
-            background = MaterialTheme.colorScheme.surfaceContainerHigh,
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = stringResource(R.string.post_in_channel, ctx.name),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
 private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
+    val quiet = MaterialTheme.colorScheme.onSurfaceVariant
+    val nameColor = MaterialTheme.colorScheme.onSurface
+    // A hidden source can come without any name (guest pages omit it).
+    val source = forwardLabel(origin)
+    val label = if (source.isBlank()) stringResource(R.string.post_forwarded)
+    else stringResource(R.string.post_forwarded_from, source)
+    val text = remember(label, source, onClick != null, nameColor) {
+        buildAnnotatedString {
+            append(label)
+            val at = if (source.isBlank() || onClick == null) -1 else label.indexOf(source)
+            if (at >= 0) {
+                addStyle(SpanStyle(color = nameColor, fontWeight = FontWeight.Medium), at, at + source.length)
+            }
+        }
+    }
     Row(
         modifier = if (onClick != null) {
             Modifier.clip(InlineChipCorner).clickable(role = Role.Button, onClick = onClick)
         } else Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Symbol(
-            // The post card's line family, so the "forwarded from" arrow is the same glyph
-            // as the forward count on the action line below.
-            name = "line_forward",
-            tint = MaterialTheme.colorScheme.tertiary,
-            size = 16.dp,
-        )
+        Symbol(name = "line_forward", tint = quiet, size = 16.dp)
         Spacer(Modifier.width(6.dp))
         Text(
-            // A hidden source can come without any name (guest pages omit it).
-            text = forwardLabel(origin).ifBlank { null }
-                ?.let { stringResource(R.string.post_forwarded_from, it) }
-                ?: stringResource(R.string.post_forwarded),
+            text = text,
             style = MaterialTheme.typography.labelMedium,
-            color = if (onClick != null) MaterialTheme.colorScheme.tertiary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = quiet,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1093,7 +1142,7 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
  *   • author + (if present) excerpt OR a kind label like "Фото" / "Відео" when the parent
  *     is media-only with no caption — Telegram's own clients do exactly this so the user
  *     immediately knows whether the reply is referring to text, a photo, voice, etc.
- *   • optional 44 dp thumbnail on the right — shown when TDLib gave us a parent media
+ *   • optional 36 dp thumbnail on the right — shown when TDLib gave us a parent media
  *     snapshot (photos, videos, animations, video notes, stickers, document covers).
  *
  * The whole card is clickable (`onClick`) and dispatches to [PostInteractions.onQuotedSourceClick].
@@ -1111,16 +1160,21 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
  *     family that already owns the accent bar and author name.
  *   • Outer container is a [Box] so the trailing-corner reply glyph
  *     ("↰" — `sym_reply`) can hover over the tinted bg at the top-right edge.
- *     The glyph is suppressed when a thumbnail is present: the 44 dp media tile
+ *     The glyph is suppressed when a thumbnail is present: the 36 dp media tile
  *     already signals "this is a quoted media post", and an icon over the tile's
  *     leading corner would crash visually.
+ *   • Compact by default: the block identifies the parent, it does not preview it. A plain
+ *     reply shows one line of the parent (a hand-picked quote up to [REPLY_QUOTE_MAX_LINES]),
+ *     and the author line is dropped ([showAuthor] = false) when the parent is the same
+ *     sender's own earlier post — the card's header already says who that is. Two lines of
+ *     parent text plus a name made every reply open with a block as tall as a short post.
  *   • Shape is [MaterialTheme.shapes.extraSmall] (8 dp) — small enough that the
  *     3 dp accent bar's corners read as designed-in softening rather than a
  *     clipping artefact, and one tier tighter than the host PostCard's `medium`
  *     so the chip nests cleanly inside it (M3E nested-radius rule).
  */
 @Composable
-private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
+private fun ReplyBlock(reply: ReplyPreview, showAuthor: Boolean = true, onClick: () -> Unit = {}) {
     val accent = MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
@@ -1150,11 +1204,11 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
                         // (no thumbnail path). With a thumbnail the icon is suppressed,
                         // so 8 dp is enough breathing room before the media tile.
                         end = if (reply.mediaThumb == null) 28.dp else 8.dp,
-                        top = 8.dp,
-                        bottom = 8.dp,
+                        top = 6.dp,
+                        bottom = 6.dp,
                     ),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (showAuthor) Row(verticalAlignment = Alignment.CenterVertically) {
                     // A reply to ANOTHER channel's post carries that channel's avatar, so
                     // it reads as a cross-post (tapping it leaves this channel) rather
                     // than as one more message of the same thread.
@@ -1201,19 +1255,21 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
                             text = bodyText,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
+                            // A plain reply only has to identify its parent; a hand-picked
+                            // quote is content the author chose, so it gets room.
+                            maxLines = if (reply.isQuote) REPLY_QUOTE_MAX_LINES else 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
             }
-            // Thumbnail (when available) — 44 dp square at the trailing edge.
+            // Thumbnail (when available) — [REPLY_THUMB_SIZE] square at the trailing edge.
             reply.mediaThumb?.let { thumb ->
                 Spacer(Modifier.width(8.dp))
                 Box(
                     modifier = Modifier
-                        .padding(end = 6.dp)
-                        .size(44.dp)
+                        .padding(end = 6.dp, top = 4.dp, bottom = 4.dp)
+                        .size(REPLY_THUMB_SIZE)
                         .clip(MaterialTheme.shapes.small)
                         // D1 — nested reply thumbnail is rectangular photographic content,
                         // so it carries the hairline frame on the SAME shape it clips to;
@@ -1245,6 +1301,12 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
     }
 }
 
+/** Lines of a hand-picked quote shown in the reply block. */
+private const val REPLY_QUOTE_MAX_LINES = 3
+
+/** The parent's media thumbnail in the reply block. */
+private val REPLY_THUMB_SIZE = 36.dp
+
 // Label / symbol mappings live in `ReplyKindResources.kt` so PostCard and CommentsScreen
 // share one source of truth — keeps icons and wording in lockstep across surfaces.
 
@@ -1254,8 +1316,8 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
  * screen edge, which read as broken.
  *
  * The action line is ONE evenly spaced run from the leading edge, Threads-style: comments
- * (tappable, opens the thread) · forwards · views (both read-only metadata, never clickable)
- * · Save · Share. Every item is the same [ActionItem] — the same [ACTION_ICON_SIZE] line
+ * (tappable, opens the thread) · forward (the share control, carrying the forward count) ·
+ * Save · views (read-only metadata, last). Every item is the same [ActionItem] — the same [ACTION_ICON_SIZE] line
  * glyph, the same count style, the same padding — so the eye reads one rhythm, not "stats on
  * the left, buttons on the right". Save used to live only inside the "⋯" sheet even though
  * the app has a whole Saved tab; one tap on the bookmark now keeps a post, and the sheet
@@ -1265,9 +1327,9 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
  * sat before, behind a flexible spacer): on a post with no stats the pair floated alone at
  * the far right with an empty line to its left, and on a post with stats the spacer opened a
  * hole in the middle of the line, so the row read as two unrelated clusters. Following the
- * stats, a stat-less post shows Save · Share where every other post's line starts, and a
+ * stats, a stat-less post shows Share · Save where every other post's line starts, and a
  * post with large counts ("13,5 тис.") simply pushes them right. The line is a [FlowRow], so
- * at large font scales the run wraps (Share first) instead of clipping or overlapping.
+ * at large font scales the run wraps (views first) instead of clipping or overlapping.
  *
  * Comments with no count stay hidden, including `commentCount == 0` posts that do have a
  * discussion group: Hortay only reads threads, so a bare comment glyph would invite an action
@@ -1396,13 +1458,18 @@ private fun ActionRow(
                 onClick = onCommentsClick,
             )
         }
-        // Forward count — read-only, mirrors the stat Telegram shows on a channel
-        // post. Same forward arrow as the "forwarded from" badge.
-        if (forwardCount > 0) {
-            ActionItem(symbol = "line_forward", count = formatViews(forwardCount))
-        }
-        if (views > 0) {
-            ActionItem(symbol = "line_views", count = formatViews(views))
+        // Forwarding is ONE item: the forward arrow carries the forward count and, where the
+        // card offers actions, is the Share button. They used to be two neighbours — a
+        // read-only "↗ 3" that looked tappable and was not, and a separate Share glyph —
+        // which asked the reader to tell a stat from a button by trial. A count of how many
+        // times a post was shared belongs on the control that shares it (Threads, X).
+        if (showPostActions || forwardCount > 0) {
+            ActionItem(
+                symbol = "line_forward",
+                count = if (forwardCount > 0) formatViews(forwardCount) else null,
+                contentDescription = if (showPostActions) stringResource(R.string.post_share) else null,
+                onClick = if (showPostActions) onShareClick else null,
+            )
         }
         if (showPostActions) {
             val saveTint by animateColorAsState(
@@ -1424,11 +1491,11 @@ private fun ActionRow(
                     onSaveClick()
                 },
             )
-            ActionItem(
-                symbol = "line_share",
-                contentDescription = stringResource(R.string.post_share),
-                onClick = onShareClick,
-            )
+        }
+        // Views trail the run: the only item that is never a control, so it reads as the
+        // line's closing metadata instead of sitting between two buttons.
+        if (views > 0) {
+            ActionItem(symbol = "line_views", count = formatViews(views))
         }
     }
 }
@@ -1469,7 +1536,7 @@ private fun Modifier.trimBottom(trim: Dp): Modifier = layout { measurable, const
 /**
  * One item of the post's action line: a [ACTION_ICON_SIZE] line glyph with an optional count
  * after it. Tappable items (comments, Save, Share) get a 48 dp touch target and a pill ripple;
- * read-only stats (forwards, views) are the same shape without a click, so the whole line
+ * read-only stats (views, and the forward count on a card without actions) are the same shape without a click, so the whole line
  * shares one rhythm. Every item carries [ACTION_ITEM_H_PADDING] on both sides — that padding
  * IS the spacing between items (no extra arrangement gap), which keeps the visible gap between
  * neighbouring glyph groups even whether an item is tappable or not.
