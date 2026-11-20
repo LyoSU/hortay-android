@@ -215,6 +215,7 @@
     <!-- کارت پست -->
     <string name="post_translated_chip">ترجمه‌شده · نمایش اصل</string>
     <string name="post_forwarded_from">فوروارد از %1$s</string>
+    <string name="post_forwarded">هدایت‌شده</string>
     <string name="post_show_original">نمایش متن اصلی</string>
     <string name="post_translate">ترجمه</string>
     <string name="post_save">ذخیره پست</string>

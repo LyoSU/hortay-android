@@ -221,6 +221,7 @@
     <!-- Scheda post -->
     <string name="post_translated_chip">Tradotto · Mostra originale</string>
     <string name="post_forwarded_from">Inoltrato da %1$s</string>
+    <string name="post_forwarded">Inoltrato</string>
     <string name="post_show_original">Mostra originale</string>
     <string name="post_translate">Traduci</string>
     <string name="post_save">Salva post</string>

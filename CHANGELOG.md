@@ -69,6 +69,8 @@
 - Tapping a reaction in guest mode explains that reactions need signing in, instead of doing nothing.
 - In guest mode, busy channels no longer lose the posts published between two refreshes.
 - In guest mode, posts with a document or an audio file show its name, mixed albums keep their photos and videos in order, and “pinned a message” notices no longer appear as empty posts.
+- In guest mode, single photos keep their real proportions instead of showing as squares, and posts forwarded from a private source are marked as forwarded.
+- A guest-mode channel that has no posts yet no longer shows a load error.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.

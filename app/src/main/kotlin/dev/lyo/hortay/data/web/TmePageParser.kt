@@ -39,9 +39,12 @@ object TmePageParser {
         // survived parsing. That is a selector regression on Telegram's side, not
         // an empty channel — report it as a parse failure instead of an "ok" fetch
         // with zero posts, which would hide the breakage behind a healthy status.
-        if (posts.isEmpty() && (findPostWrappers(doc).isNotEmpty() || doc.selectFirst("[data-post]") != null)) {
-            return null
-        }
+        //
+        // Service rows ("Channel created", "X pinned …") are skipped on purpose, so a
+        // page holding nothing else is a real, empty channel and not a regression.
+        val expectsPosts = doc.select("[data-post]").any { !it.hasClass("service_message") } ||
+            findPostWrappers(doc).any { it.selectFirst(".service_message") == null }
+        if (posts.isEmpty() && expectsPosts) return null
         // Cursor is the seq id of the OLDEST post; caller paginates with `?before=<seq>`.
         val olderCursor = posts.minByOrNull { it.seq }?.seq?.toString()
         return WebChannelPage(
@@ -217,7 +220,11 @@ object TmePageParser {
                 out += WebMedia(
                     kind = WebMedia.Kind.Photo,
                     url = url,
-                    aspectRatio = parsePaddingAspect(el) ?: parseDataRatio(el),
+                    // A standalone photo keeps its `padding-top` on the inner
+                    // `.tgme_widget_message_photo` spacer, not on the anchor itself.
+                    aspectRatio = parsePaddingAspect(el)
+                        ?: parsePaddingAspect(el.selectFirst(".tgme_widget_message_photo"))
+                        ?: parseDataRatio(el),
                     durationSec = null,
                     thumbnailUrl = null,
                 )
@@ -293,6 +300,9 @@ object TmePageParser {
             ?.attr("style")
             ?.let(::extractCssBackgroundUrl)
         val aspect = parsePaddingAspect(wrap) ?: player?.let(::parseDataRatio)
+        val duration = player?.selectFirst(".message_video_duration")
+            ?.text()
+            ?.let(::parseDurationToSeconds)
         if (rawSrc == null) {
             // "Media is too big" posts: t.me/s/ omits the `<video src>` element
             // entirely, leaving only the poster + a "VIEW IN TELEGRAM" link
@@ -310,7 +320,7 @@ object TmePageParser {
                 kind = WebMedia.Kind.Video,
                 url = "", // sentinel for unplayable
                 aspectRatio = aspect,
-                durationSec = null,
+                durationSec = duration,
                 thumbnailUrl = thumb,
             )
         }
@@ -324,9 +334,7 @@ object TmePageParser {
             },
             url = rawSrc,
             aspectRatio = aspect,
-            durationSec = player?.selectFirst(".message_video_duration")
-                ?.text()
-                ?.let(::parseDurationToSeconds),
+            durationSec = duration,
             thumbnailUrl = thumb,
         )
     }
@@ -368,14 +376,18 @@ object TmePageParser {
     }
 
     private fun parseForward(msg: Element): WebForwardSource? {
-        // Real markup pattern: an outer `.tgme_widget_message_forwarded_from` wrapper
-        // contains an `<a class="tgme_widget_message_forwarded_from_name">` whose
-        // text is the source channel's title. The wrapper carries an additional
-        // accent_color class so we match by the prefix only.
-        val link = msg.selectFirst("a.tgme_widget_message_forwarded_from_name") ?: return null
+        // `.tgme_widget_message_forwarded_from` holds the source as
+        // `.tgme_widget_message_forwarded_from_name`: an `<a href>` for a public
+        // channel, or a bare `<span>` — often with no text at all — when the source is
+        // private or hidden. An optional `_forwarded_from_author` carries the signature.
+        // The hidden form still means "this is a forward", so it must not be dropped.
+        val nameEl = msg.selectFirst(".tgme_widget_message_forwarded_from_name") ?: return null
+        val author = msg.selectFirst(".tgme_widget_message_forwarded_from_author")
+            ?.text()?.trim()?.ifEmpty { null }
         return WebForwardSource(
-            channelName = link.text().trim(),
-            channelLink = link.attr("href"),
+            channelName = nameEl.text().trim(),
+            channelLink = if (nameEl.tagName() == "a") nameEl.attr("href") else "",
+            author = author,
         )
     }
 

@@ -217,6 +217,7 @@
     <!-- Beitragskarte -->
     <string name="post_translated_chip">Übersetzt · Original anzeigen</string>
     <string name="post_forwarded_from">Weitergeleitet von %1$s</string>
+    <string name="post_forwarded">Weitergeleitet</string>
     <string name="post_show_original">Original anzeigen</string>
     <string name="post_translate">Übersetzen</string>
     <string name="post_save">Beitrag speichern</string>

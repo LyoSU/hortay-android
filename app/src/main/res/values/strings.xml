@@ -218,6 +218,7 @@
     <!-- Post card -->
     <string name="post_translated_chip">Translated · Show original</string>
     <string name="post_forwarded_from">Forwarded from %1$s</string>
+    <string name="post_forwarded">Forwarded</string>
     <string name="post_show_original">Show original</string>
     <string name="post_translate">Translate</string>
     <string name="post_save">Save post</string>

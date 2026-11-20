@@ -204,6 +204,77 @@ class TmePageParserTest {
     }
 
     @Test
+    fun `standalone photo proportions and unplayable video duration survive`() {
+        val html = pageWith(
+            """
+            <div class="tgme_widget_message_wrap">
+              <div class="tgme_widget_message" data-post="test/7">
+                <a class="tgme_widget_message_photo_wrap" style="width:800px;background-image:url('https://cdn.example/p.jpg')">
+                  <div class="tgme_widget_message_photo" style="padding-top:62.5%"></div>
+                </a>
+                <a class="tgme_widget_message_video_player not_supported" href="">
+                  <i class="tgme_widget_message_video_thumb" style="background-image:url('https://cdn.example/t.jpg')"></i>
+                  <div class="tgme_widget_message_video_wrap" style="width:1080px;padding-top:100%"></div>
+                  <time class="message_video_duration">1:15</time>
+                </a>
+                <a class="tgme_widget_message_date" href=""><time datetime="2025-01-01T00:00:00+00:00"></time></a>
+              </div>
+            </div>
+            """,
+        )
+        val (photo, video) = TmePageParser.parse(html, "test")!!.posts.single().media
+        assertEquals(1.6f, photo.aspectRatio)
+        assertEquals("", video.url)
+        assertEquals(75, video.durationSec)
+        assertEquals(1f, video.aspectRatio)
+    }
+
+    @Test
+    fun `a page with only a service row is an empty channel, not a parse failure`() {
+        val html = pageWith(
+            """
+            <div class="tgme_widget_message_wrap">
+              <div class="tgme_widget_message service_message" data-post="test/1">
+                <div class="tgme_widget_message_text">Channel created</div>
+              </div>
+            </div>
+            """,
+        )
+        val page = TmePageParser.parse(html, "test")
+        assertNotNull(page)
+        assertTrue(page!!.posts.isEmpty())
+    }
+
+    @Test
+    fun `a forward from a hidden source is still a forward`() {
+        val html = pageWith(
+            """
+            <div class="tgme_widget_message_wrap">
+              <div class="tgme_widget_message" data-post="test/7">
+                <div class="tgme_widget_message_forwarded_from accent_color">Forwarded from&nbsp;<span class="tgme_widget_message_forwarded_from_name"><span dir="auto"></span></span>&nbsp;(<span class="tgme_widget_message_forwarded_from_author" dir="auto">Jane Doe</span>)</div>
+                <div class="tgme_widget_message_text js-message_text">Hello</div>
+                <a class="tgme_widget_message_date" href=""><time datetime="2025-01-01T00:00:00+00:00"></time></a>
+              </div>
+            </div>
+            """,
+        )
+        val forward = TmePageParser.parse(html, "test")!!.posts.single().forwardedFrom
+        assertEquals(WebForwardSource(channelName = "", channelLink = "", author = "Jane Doe"), forward)
+    }
+
+    private fun pageWith(history: String): String = """
+        <html><body>
+          <div class="tgme_channel_info">
+            <div class="tgme_channel_info_header">
+              <div class="tgme_channel_info_header_title"><span>Test</span></div>
+              <div class="tgme_channel_info_header_username"><a href="">@test</a></div>
+            </div>
+          </div>
+          <section class="tgme_channel_history">$history</section>
+        </body></html>
+    """.trimIndent()
+
+    @Test
     fun `mixed albums keep photos and videos in page order`() {
         fun photo(n: Int) =
             """<a class="tgme_widget_message_photo_wrap" style="width:100px;background-image:url('https://cdn.example/p$n.jpg');padding-top:50%"></a>"""

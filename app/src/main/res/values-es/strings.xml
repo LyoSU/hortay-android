@@ -221,6 +221,7 @@
     <!-- Post card -->
     <string name="post_translated_chip">Traducido · Ver original</string>
     <string name="post_forwarded_from">Reenviado de %1$s</string>
+    <string name="post_forwarded">Reenviado</string>
     <string name="post_show_original">Ver original</string>
     <string name="post_translate">Traducir</string>
     <string name="post_save">Guardar publicación</string>

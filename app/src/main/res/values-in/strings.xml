@@ -210,6 +210,7 @@
     <!-- Kartu kiriman -->
     <string name="post_translated_chip">Diterjemahkan · Tampilkan asli</string>
     <string name="post_forwarded_from">Diteruskan dari %1$s</string>
+    <string name="post_forwarded">Diteruskan</string>
     <string name="post_show_original">Tampilkan asli</string>
     <string name="post_translate">Terjemahkan</string>
     <string name="post_save">Simpan kiriman</string>

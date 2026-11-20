@@ -143,8 +143,14 @@ data class WebPreview(
 @Serializable
 data class WebForwardSource(
     val channelName: String,
-    /** `https://t.me/<channel>(/<msg>)?` link from the forwarded-from header. */
+    /**
+     * `https://t.me/<channel>(/<msg>)?` link from the forwarded-from header. Empty when
+     * the source is private or hidden — the page then names it without a link, or not
+     * at all ([channelName] is empty too).
+     */
     val channelLink: String,
+    /** Author signature shown in brackets after the source, when the page has one. */
+    val author: String? = null,
 )
 
 /**

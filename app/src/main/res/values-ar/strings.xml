@@ -235,6 +235,7 @@
     <!-- بطاقة المنشور -->
     <string name="post_translated_chip">مترجَم · عرض الأصل</string>
     <string name="post_forwarded_from">مُعاد إرساله من %1$s</string>
+    <string name="post_forwarded">مُعاد توجيهه</string>
     <string name="post_show_original">عرض الأصل</string>
     <string name="post_translate">ترجمة</string>
     <string name="post_save">حفظ المنشور</string>

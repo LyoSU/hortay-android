@@ -217,6 +217,7 @@
     <!-- Gönderi kartı -->
     <string name="post_translated_chip">Çevrildi · Orijinali göster</string>
     <string name="post_forwarded_from">%1$s\'dan iletildi</string>
+    <string name="post_forwarded">İletildi</string>
     <string name="post_show_original">Orijinali göster</string>
     <string name="post_translate">Çevir</string>
     <string name="post_save">Gönderiyi kaydet</string>

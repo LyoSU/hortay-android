@@ -222,6 +222,7 @@
     <!-- Carte de publication -->
     <string name="post_translated_chip">Traduit · Voir l\'original</string>
     <string name="post_forwarded_from">Transféré depuis %1$s</string>
+    <string name="post_forwarded">Transféré</string>
     <string name="post_show_original">Voir l\'original</string>
     <string name="post_translate">Traduire</string>
     <string name="post_save">Enregistrer la publication</string>

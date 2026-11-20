@@ -91,17 +91,25 @@ object WebPostAdapter {
             date = publishedMs,
             editDate = 0L,
             forwardOrigin = forwarded?.let {
-                // The header links to the source POST (`https://t.me/<channel>/<id>`),
-                // so the channel is the first path segment — taking the last one hashed
-                // the message id into the chat id. The message id itself is left unset:
-                // the guest channel screen opens at its newest entry.
-                ForwardOrigin.Channel(
-                    channelName = it.channelName,
-                    authorSignature = null,
-                    sourceChatId = stableChatId(forwardSourceHandle(it.channelLink)),
-                    sourceHandle = null,
-                    sourceMessageId = null,
-                )
+                if (it.channelLink.isBlank()) {
+                    // Private or hidden source: no link, possibly no name either. Still
+                    // a forward — the chip then shows the signature, or a bare label.
+                    ForwardOrigin.HiddenUser(
+                        senderName = it.channelName.ifBlank { it.author.orEmpty() },
+                    )
+                } else {
+                    // The header links to the source POST (`https://t.me/<channel>/<id>`),
+                    // so the channel is the first path segment — taking the last one
+                    // hashed the message id into the chat id. The message id itself is
+                    // left unset: the guest channel screen opens at its newest entry.
+                    ForwardOrigin.Channel(
+                        channelName = it.channelName,
+                        authorSignature = it.author,
+                        sourceChatId = stableChatId(forwardSourceHandle(it.channelLink)),
+                        sourceHandle = null,
+                        sourceMessageId = null,
+                    )
+                }
             },
             authorSignature = null,
             reply = null,

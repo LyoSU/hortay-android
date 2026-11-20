@@ -223,6 +223,7 @@
     <!-- Post card -->
     <string name="post_translated_chip">Перекладено · Показати оригінал</string>
     <string name="post_forwarded_from">Переслано від %1$s</string>
+    <string name="post_forwarded">Переслано</string>
     <string name="post_show_original">Показати оригінал</string>
     <string name="post_translate">Перекласти</string>
     <string name="post_save">Зберегти пост</string>

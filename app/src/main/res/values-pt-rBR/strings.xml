@@ -222,6 +222,7 @@
     <!-- Card de publicação -->
     <string name="post_translated_chip">Traduzido · Ver original</string>
     <string name="post_forwarded_from">Encaminhado de %1$s</string>
+    <string name="post_forwarded">Encaminhado</string>
     <string name="post_show_original">Ver original</string>
     <string name="post_translate">Traduzir</string>
     <string name="post_save">Salvar publicação</string>

@@ -967,7 +967,10 @@ private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            text = stringResource(R.string.post_forwarded_from, forwardLabel(origin)),
+            // A hidden source can come without any name (guest pages omit it).
+            text = forwardLabel(origin).ifBlank { null }
+                ?.let { stringResource(R.string.post_forwarded_from, it) }
+                ?: stringResource(R.string.post_forwarded),
             style = MaterialTheme.typography.labelMedium,
             color = if (onClick != null) MaterialTheme.colorScheme.tertiary
             else MaterialTheme.colorScheme.onSurfaceVariant,
