@@ -79,6 +79,10 @@ val gitCommitCount: Int by lazy {
 
 android {
     namespace = "dev.lyo.hortay"
+    // Same NDK as :libwebm. Without a version here AGP looks for its own default NDK
+    // to strip the merged native libs, does not find it ("missing strip tool ...
+    // Packaging it as is") and ships libhortaywebm.so with ~7 MB of debug sections.
+    ndkVersion = "27.2.12479018"
     // compileSdk = 37 is forced by the Compose UI line pulled in transitively by
     // material3 1.5.0-rc01 (pinned in libs.versions.toml for M3 Expressive). targetSdk
     // stays at 36 — runtime behaviour we tested + Play certified — bumping just the
