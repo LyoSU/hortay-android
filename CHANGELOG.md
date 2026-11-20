@@ -196,7 +196,7 @@
 - CI retries dependency downloads before building, so a brief Maven or Gradle outage no longer fails the build.
 - Beta builds run only for commits pushed to the main branch, and releases must come from main, pass the unit tests and pass a 16 KB page-size check.
 - App downloads no longer carry translations for languages the app doesn't ship.
-- Beta builds are about 7 MB smaller.
+- The app is about 2 MB smaller on disk, and beta builds about 9 MB smaller.
 
 ## [0.12.0] — 2026-07-16
 

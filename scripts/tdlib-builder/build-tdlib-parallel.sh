@@ -61,6 +61,11 @@ cp -p ../java/org/drinkless/tdlib/Client.java tdlib/java/org/drinkless/tdlib/Cli
 mv org/drinkless/tdlib/TdApi.java tdlib/java/org/drinkless/tdlib/TdApi.java
 rm -rf org
 
+# android-26 = the app's minSdk. Upstream's script targets android-16, which rules out
+# packed relocations (the loader reads them from API 23). libtdjni.so carries ~100k
+# relative relocations: packing them with --pack-dyn-relocs=android shrinks .rela.dyn
+# from ~2.6 MB to a fraction. Raise this together with minSdk, never above it — a
+# library built for a newer platform does not load on an older device.
 build_one_abi() {
   local ABI=$1
   local LOG="build-${ABI}.log"
@@ -76,7 +81,8 @@ build_one_abi() {
       -GNinja \
       -DANDROID_ABI="$ABI" \
       -DANDROID_STL="$ANDROID_STL" \
-      -DANDROID_PLATFORM=android-16 \
+      -DANDROID_PLATFORM=android-26 \
+      -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--pack-dyn-relocs=android" \
       ..
     cmake --build . --target tdjni
     cp -p libtd*.so* "../tdlib/libs/$ABI/"
