@@ -356,10 +356,22 @@ fun WebModeScaffold(graph: AppGraph) {
     // channel) — fall back to opening t.me/<u> in the system browser so the tap
     // is never silently dead.
     val onFeedChannelOpen: (Long, Long?) -> Unit = remember(snackbarHostState) {
-        { chatId, _ ->
+        { chatId, messageId ->
             val u = resolveUsername(chatId)
-            if (u != null) pushWebChannel(u)
-            else systemUriHandler.openUri("https://t.me/")
+            if (u != null) {
+                pushWebChannel(u)
+            } else {
+                // Not followed: the id is a one-way hash, but the adapter remembers the
+                // handle of every forward source / reply target it mapped, so the link
+                // can point at the channel — and the post — instead of the home page.
+                val handle = WebPostAdapter.handleForChatId(chatId)
+                val url = when {
+                    handle == null -> "https://t.me/"
+                    messageId != null && messageId > 0L -> "https://t.me/$handle/$messageId"
+                    else -> "https://t.me/$handle"
+                }
+                systemUriHandler.openUri(url)
+            }
         }
     }
     // Reported by [TdMediaImage] when a guest-mode image fails with an expired-CDN-URL

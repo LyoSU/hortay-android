@@ -8,6 +8,8 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.Reactions
+import dev.lyo.hortay.data.ReplyMediaKind
+import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.TimelinePost
@@ -70,6 +72,7 @@ object WebPostAdapter {
         channelTitle: String,
         channelAvatarUrl: String?,
         strings: StringResolver,
+        extras: WebPostExtras = WebPostExtras(),
     ): TimelinePost {
         val publishedMs = parseIso(publishedAtIso)
         val formatted = htmlToFormatted(textHtml)
@@ -89,7 +92,9 @@ object WebPostAdapter {
             // TimelinePost.date is milliseconds (MessageMapper does `message.date * 1000`).
             // Web posts already have a millis-precise epoch from the parsed ISO timestamp.
             date = publishedMs,
-            editDate = 0L,
+            // The page says "edited" but not when. The UI only tests `editDate > 0`
+            // (the pencil mark), so the publish time stands in as a non-zero marker.
+            editDate = if (extras.isEdited) publishedMs else 0L,
             forwardOrigin = forwarded?.let {
                 if (it.channelLink.isBlank()) {
                     // Private or hidden source: no link, possibly no name either. Still
@@ -100,19 +105,40 @@ object WebPostAdapter {
                 } else {
                     // The header links to the source POST (`https://t.me/<channel>/<id>`),
                     // so the channel is the first path segment — taking the last one
-                    // hashed the message id into the chat id. The message id itself is
-                    // left unset: the guest channel screen opens at its newest entry.
+                    // hashed the message id into the chat id. The handle is remembered
+                    // ([sourceChatId]) so a tap on a channel the user doesn't follow can
+                    // still open the right t.me link.
                     ForwardOrigin.Channel(
                         channelName = it.channelName,
                         authorSignature = it.author,
-                        sourceChatId = stableChatId(forwardSourceHandle(it.channelLink)),
+                        sourceChatId = sourceChatId(forwardSourceHandle(it.channelLink)),
                         sourceHandle = null,
-                        sourceMessageId = null,
+                        sourceMessageId = linkMessageId(it.channelLink),
                     )
                 }
             },
-            authorSignature = null,
-            reply = null,
+            authorSignature = extras.authorSignature,
+            reply = extras.reply?.let { r ->
+                ReplyPreview(
+                    // The page omits the name for a reply inside the same channel only
+                    // when it has nothing to print; fall back to this channel's title.
+                    authorName = r.authorName.ifBlank { channelTitle },
+                    excerpt = r.excerpt,
+                    isQuote = false,
+                    replyToChatId = sourceChatId(forwardSourceHandle(r.link)),
+                    replyToMessageId = linkMessageId(r.link) ?: 0L,
+                    mediaThumb = r.thumbUrl?.let { url ->
+                        TdMedia(
+                            fileId = null,
+                            width = REPLY_THUMB_PX,
+                            height = REPLY_THUMB_PX,
+                            minithumbBytes = null,
+                            remoteUrl = url,
+                        )
+                    },
+                    mediaKind = if (r.thumbUrl != null) ReplyMediaKind.Photo else ReplyMediaKind.None,
+                )
+            },
             reactions = Reactions(
                 totalCount = reactionsList.sumOf { parseShortNumber(it.count) },
                 items = reactionsList.map { it.toReactionItem() },
@@ -157,12 +183,27 @@ object WebPostAdapter {
         }
         // Pure non-photo/video media (sticker / voice / document only). Fall back to
         // the text body with a media-kind badge — better than dropping the post.
-        val badge = media.joinToString("\n") { item ->
+        //
+        // A document's url is its post link (`https://t.me/<channel>/<id>`): the file
+        // itself can't be fetched anonymously, so the badge line links there — a tap
+        // offers to open the post in Telegram instead of being dead text.
+        val prefix = if (text.text.isBlank()) "" else "${text.text}\n\n"
+        val badges = StringBuilder()
+        val linkSpans = mutableListOf<FormattedText.Span>()
+        media.forEachIndexed { index, item ->
+            if (index > 0) badges.append('\n')
             val label = mediaPlaceholder(item.kind, strings)
-            if (item.title.isNullOrBlank()) label else "$label ${item.title}"
+            val line = if (item.title.isNullOrBlank()) label else "$label ${item.title}"
+            val start = prefix.length + badges.length
+            badges.append(line)
+            if (item.kind == WebMedia.Kind.Document && item.url.startsWith("https://t.me/")) {
+                linkSpans += FormattedText.Span(start, start + line.length, FormattedText.Style.TextUrl(item.url))
+            }
         }
-        val combined = if (text.text.isBlank()) badge else "${text.text}\n\n$badge"
-        return PostContent.Text(formatted = FormattedText(combined, text.spans), webPreview = webPreview)
+        return PostContent.Text(
+            formatted = FormattedText(prefix + badges, text.spans + linkSpans),
+            webPreview = webPreview,
+        )
     }
 
     private fun WebMedia.toAlbumItem(): AlbumItem? = when (kind) {
@@ -212,6 +253,30 @@ object WebPostAdapter {
     }
 
     private const val DEFAULT_MEDIA_WIDTH = 1024
+    private const val REPLY_THUMB_PX = 96
+
+    /**
+     * Handles behind the synthetic chat ids handed out for forward sources and reply
+     * targets. [stableChatId] is a one-way hash, and those channels are usually ones the
+     * user does NOT follow, so the subscription list can't map the id back — without
+     * this a tap on "Forwarded from X" could only open the Telegram home page.
+     * Process-lifetime, filled as posts are mapped; a few hundred short strings at most.
+     */
+    private val handleByChatId = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    private fun sourceChatId(handle: String): Long =
+        stableChatId(handle).also { handleByChatId[it] = handle.lowercase() }
+
+    /** The channel handle a guest-mode [chatId] was derived from, when it was seen. */
+    fun handleForChatId(chatId: Long): String? = handleByChatId[chatId]
+
+    /** Message id of a `https://t.me/<channel>/<id>` link (also `?single`), or null. */
+    internal fun linkMessageId(link: String): Long? =
+        link.substringAfter("://").substringBefore('?').split('/')
+            .filter { it.isNotEmpty() }
+            .drop(1)
+            .lastOrNull()
+            ?.toLongOrNull()
 
     /**
      * Channel handle from a forwarded-from link: `https://t.me/<channel>/<id>`, also with

@@ -104,6 +104,38 @@ data class WebPost(
      * for anon users (UI layer).
      */
     val reactions: ImmutableList<WebReaction>,
+    /** Signature, "edited" mark and reply header — see [WebPostExtras]. */
+    val extras: WebPostExtras = WebPostExtras(),
+)
+
+/**
+ * The parts of a post that have no column of their own (stored as one JSON object in
+ * `post.extras_json`). All defaults mean "the page said nothing", so an old row with a
+ * NULL column decodes to the same value as a plain post.
+ */
+@Immutable
+@Serializable
+data class WebPostExtras(
+    /** `.tgme_widget_message_from_author` — who of the channel's admins signed the post. */
+    val authorSignature: String? = null,
+    /** The footer says "edited". The page gives no edit time. */
+    val isEdited: Boolean = false,
+    val reply: WebReply? = null,
+) {
+    val isEmpty: Boolean get() = authorSignature == null && !isEdited && reply == null
+}
+
+/** The reply header above a post: `<a class="tgme_widget_message_reply" href>`. */
+@Immutable
+@Serializable
+data class WebReply(
+    /** `https://t.me/<channel>/<id>` of the post replied to. */
+    val link: String,
+    val authorName: String,
+    /** Plain-text excerpt as the page prints it (already ellipsized by Telegram). */
+    val excerpt: String,
+    /** Thumbnail of the parent's media, when it has one. Rotating CDN URL. */
+    val thumbUrl: String? = null,
 )
 
 @Immutable

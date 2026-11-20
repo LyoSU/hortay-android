@@ -262,6 +262,50 @@ class TmePageParserTest {
         assertEquals(WebForwardSource(channelName = "", channelLink = "", author = "Jane Doe"), forward)
     }
 
+    @Test
+    fun `signature, edited mark and reply header are read`() {
+        val html = pageWith(
+            """
+            <div class="tgme_widget_message_wrap">
+              <div class="tgme_widget_message" data-post="test/7">
+                <a class="tgme_widget_message_reply" href="https://t.me/other/41">
+                  <i class="tgme_widget_message_reply_thumb" style="background-image:url('https://cdn.example/r.jpg')"></i>
+                  <div class="tgme_widget_message_author"><span class="tgme_widget_message_author_name">Other</span></div>
+                  <div class="tgme_widget_message_text js-message_reply_text">Parent text…</div>
+                </a>
+                <div class="tgme_widget_message_text js-message_text">Body</div>
+                <span class="tgme_widget_message_meta"><span class="tgme_widget_message_from_author">Jane</span>,&nbsp;edited &nbsp;<a class="tgme_widget_message_date" href=""><time datetime="2025-01-01T00:00:00+00:00"></time></a></span>
+              </div>
+            </div>
+            <div class="tgme_widget_message_wrap">
+              <div class="tgme_widget_message" data-post="test/8">
+                <div class="tgme_widget_message_text js-message_text">Plain</div>
+                <span class="tgme_widget_message_meta"><span class="tgme_widget_message_from_author">edited</span>,&nbsp;<a class="tgme_widget_message_date" href=""><time datetime="2025-01-01T00:00:00+00:00"></time></a></span>
+              </div>
+            </div>
+            """,
+        )
+        val (first, second) = TmePageParser.parse(html, "test")!!.posts
+        assertEquals("Body", first.textHtml)
+        assertEquals(
+            WebPostExtras(
+                authorSignature = "Jane",
+                isEdited = true,
+                reply = WebReply("https://t.me/other/41", "Other", "Parent text…", "https://cdn.example/r.jpg"),
+            ),
+            first.extras,
+        )
+        // A signature that reads "edited" is not the edited mark.
+        assertEquals(WebPostExtras(authorSignature = "edited"), second.extras)
+    }
+
+    @Test
+    fun `link message id is read from post links`() {
+        assertEquals(214L, WebPostAdapter.linkMessageId("https://t.me/petyaikomp/214"))
+        assertEquals(116548L, WebPostAdapter.linkMessageId("https://t.me/nexta_live/116548?single"))
+        assertNull(WebPostAdapter.linkMessageId("https://t.me/petyaikomp"))
+    }
+
     private fun pageWith(history: String): String = """
         <html><body>
           <div class="tgme_channel_info">

@@ -74,6 +74,8 @@
 - A connection that drops while a guest-mode channel is loading no longer crashes "Add channel".
 - In guest mode, posts a channel deleted disappear from the feed, reaction counts keep updating on older posts, and a catch-up interrupted by a lost connection resumes on the next refresh.
 - Guest mode stops checking channels as soon as you sign in or leave the app.
+- In guest mode, posts show the author's signature, an edited mark and the post they reply to.
+- In guest mode, tapping "Forwarded from" on a channel you don't follow opens that post instead of the Telegram home page, and a document's name opens its post.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.

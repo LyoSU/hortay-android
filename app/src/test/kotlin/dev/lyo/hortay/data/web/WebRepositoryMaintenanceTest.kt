@@ -205,7 +205,7 @@ class WebRepositoryMaintenanceTest {
 
         repo.unsubscribe("chan")
         repo.vacuum(keepPerChannel = 0L)
-        val saved = db.postQueries.selectBookmarked { _, seq, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> seq }
+        val saved = db.postQueries.selectBookmarked { _, seq, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> seq }
             .executeAsList()
         assertEquals(listOf(1L), saved)
 

@@ -382,6 +382,7 @@ class WebRepository(
             existing.fetched_at_ms != 0L &&
             existing.reactions_json == reactionsJson &&
             existing.forwarded_from_json == forwardedJson &&
+            sameExtras(existing.extras_json, post.extras) &&
             sameMediaShape(existing.media_json, post.media) &&
             samePreview(existing.web_preview_json, post.webPreview)
         ) {
@@ -389,6 +390,8 @@ class WebRepository(
         }
         val mediaJson = json.encodeToString(mediaListSerializer, post.media.toList())
         val previewJson = post.webPreview?.let { json.encodeToString(WebPreview.serializer(), it) }
+        val extrasJson = post.extras.takeUnless { it.isEmpty }
+            ?.let { json.encodeToString(WebPostExtras.serializer(), it) }
         // Lowercased here (Unicode-aware) because SQLite's LOWER() only folds ASCII —
         // text_plain is a search-only column, see searchPlain in Post.sq.
         val plainText = WebTextRenderer.toPlainText(post.textHtml).lowercase()
@@ -432,6 +435,7 @@ class WebRepository(
             reactionsJson = reactionsJson,
             views = post.views,
             fetchedAtMs = fetchedAtMs,
+            extrasJson = extrasJson,
         )
         postQueries.upsertUpdate(
             channelUsername = channelUsername,
@@ -446,6 +450,7 @@ class WebRepository(
             reactionsJson = reactionsJson,
             views = post.views,
             fetchedAtMs = fetchedAtMs,
+            extrasJson = extrasJson,
         )
     }
 
@@ -462,6 +467,18 @@ class WebRepository(
                 a.aspectRatio == b.aspectRatio && a.url.isBlank() == b.url.isBlank()
         }
     }
+
+    /** Stored extras vs fresh ones, ignoring the reply thumbnail's (rotating) URL. */
+    private fun sameExtras(storedJson: String?, fresh: WebPostExtras): Boolean {
+        val stored = decodeExtras(storedJson)
+        fun WebPostExtras.stable() = copy(reply = reply?.copy(thumbUrl = null))
+        return stored.stable() == fresh.stable() &&
+            (stored.reply?.thumbUrl == null) == (fresh.reply?.thumbUrl == null)
+    }
+
+    private fun decodeExtras(storedJson: String?): WebPostExtras =
+        storedJson?.let { runCatching { json.decodeFromString(WebPostExtras.serializer(), it) }.getOrNull() }
+            ?: WebPostExtras()
 
     /** Stored link preview vs fresh one, ignoring the (rotating) image URL. */
     private fun samePreview(storedJson: String?, fresh: WebPreview?): Boolean {
@@ -841,6 +858,7 @@ class WebRepository(
         _is_read: Boolean,
         _is_bookmarked: Boolean,
         _fetched_at_ms: Long,
+        extrasJson: String?,
         channel_title: String,
         channel_avatar: String?,
     ): TimelinePost {
@@ -853,6 +871,7 @@ class WebRepository(
             forwarded = forwarded_from_json?.let { decodeForward(it) },
             viewsRaw = views,
             reactionsList = decodeReactions(reactions_json),
+            extras = decodeExtras(extrasJson),
             channelUsername = channel_username,
             channelTitle = channel_title,
             channelAvatarUrl = channel_avatar,

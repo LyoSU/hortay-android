@@ -450,11 +450,12 @@ internal fun classifyRedirect(code: Int, location: String): FetchResult =
         FetchResult.NetworkError(IOException("HTTP $code → $location"))
     }
 
-// Bare channel root: `t.me/<username>` with an optional trailing slash and no
+// Bare channel root: `t.me/<username>` — or the same as a relative `Location`
+// (`/<username>`), which HTTP allows — with an optional trailing slash and no
 // further path. Excludes post permalinks (`t.me/<u>/<seq>`) and the `/s/` preview
 // path (`t.me/s/<u>` carries an extra segment, so the anchored match rejects it).
 private val BARE_TME_ROOT_REGEX =
-    Regex("""^https?://t\.me/[A-Za-z][A-Za-z0-9_]{1,31}/?$""")
+    Regex("""^(?:https?://t\.me)?/[A-Za-z][A-Za-z0-9_]{1,31}/?$""")
 
 /** Result of a single fetch. Covers every branch the scheduler needs to handle. */
 sealed interface FetchResult {

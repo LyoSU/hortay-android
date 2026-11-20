@@ -89,8 +89,7 @@ object TmePageParser {
         // actual photo URL is on the nested IMG. Earlier we matched `img.tgme_page_photo_image`
         // which never hits because the class is on the `<i>`, not the `<img>`. Fixed selector
         // descends into the nested IMG.
-        val avatarUrl = doc.selectFirst(".tgme_page_photo_image img")?.attr("src")
-            ?.ifBlank { null }
+        val avatarUrl = safeSrc(doc.selectFirst(".tgme_page_photo_image img"))
 
         // Counters: each `.tgme_channel_info_counter` has a `.counter_value` and
         // `.counter_type`. The subscriber/member count is always the FIRST counter —
@@ -197,7 +196,33 @@ object TmePageParser {
             forwardedFrom = forwardedFrom,
             views = views,
             reactions = reactions.toPersistentList(),
+            extras = parseExtras(msg),
         )
+    }
+
+    private fun parseExtras(msg: Element): WebPostExtras {
+        // Footer: `<span class="tgme_widget_message_meta"><span class="…_from_author">
+        // Name</span>,&nbsp;edited &nbsp;<a class="…_date">`. "edited" is a bare text
+        // node, in English whatever the Accept-Language — read from the meta's OWN
+        // text so a signature that happens to say "edited" doesn't count.
+        val meta = msg.selectFirst(".tgme_widget_message_meta")
+        val signature = meta?.selectFirst(".tgme_widget_message_from_author")
+            ?.text()?.trim()?.ifEmpty { null }
+        val edited = meta?.ownText()?.contains("edited", ignoreCase = true) == true
+        // Reply header: author in `.tgme_widget_message_author_name`, excerpt in the
+        // `.js-message_reply_text` twin of the body's text class, optional media thumb.
+        val reply = msg.selectFirst("a.tgme_widget_message_reply[href]")?.let { el ->
+            val link = el.attr("href")
+            if (!isSafeHttpsUrl(link)) return@let null
+            WebReply(
+                link = link,
+                authorName = el.selectFirst(".tgme_widget_message_author_name")?.text()?.trim().orEmpty(),
+                excerpt = el.selectFirst(".tgme_widget_message_text")?.text()?.trim().orEmpty(),
+                thumbUrl = el.selectFirst(".tgme_widget_message_reply_thumb")
+                    ?.attr("style")?.let(::extractCssBackgroundUrl),
+            )
+        }
+        return WebPostExtras(authorSignature = signature, isEdited = edited, reply = reply)
     }
 
     private fun parseMedia(msg: Element): List<WebMedia> {
@@ -244,9 +269,8 @@ object TmePageParser {
 
         // Voice notes — `.tgme_widget_message_voice` with an `<audio>` source.
         msg.select(".tgme_widget_message_voice").forEach { voice ->
-            val src = voice.selectFirst("audio")?.attr("src")
-                ?: voice.attr("data-src")
-            if (src.isNullOrBlank()) return@forEach
+            val src = safeSrc(voice.selectFirst("audio")) ?: safeSrc(voice, "data-src")
+                ?: return@forEach
             out += WebMedia(
                 kind = WebMedia.Kind.Voice,
                 url = src,
@@ -282,9 +306,9 @@ object TmePageParser {
         // Static sticker thumbnails. t.me/s/ never serves the animated payload
         // (TGS/WebM) for stickers, only a WEBP fallback.
         msg.select(".tgme_widget_message_sticker").forEach { sticker ->
-            val src = sticker.selectFirst("img")?.attr("src")
+            val src = safeSrc(sticker.selectFirst("img"))
                 ?: extractCssBackgroundUrl(sticker.attr("style"))
-            if (src.isNullOrBlank()) return@forEach
+                ?: return@forEach
             out += WebMedia(
                 kind = WebMedia.Kind.Sticker,
                 url = src,
@@ -298,7 +322,7 @@ object TmePageParser {
     }
 
     private fun parseVideo(player: Element?, wrap: Element?): WebMedia? {
-        val rawSrc = wrap?.selectFirst("video")?.attr("src")?.ifBlank { null }
+        val rawSrc = safeSrc(wrap?.selectFirst("video"))
         val thumb = player?.selectFirst(".tgme_widget_message_video_thumb")
             ?.attr("style")
             ?.let(::extractCssBackgroundUrl)
@@ -468,8 +492,21 @@ object TmePageParser {
      * embed og:image from arbitrary HTTPS sites).
      */
     private fun isSafeHttpsUrl(url: String): Boolean {
-        return url.startsWith("https://", ignoreCase = true)
+        if (!url.startsWith("https://", ignoreCase = true)) return false
+        // A real host, with no `user@` part and nothing that isn't a URL character:
+        // these URLs are loaded automatically (Coil, ExoPlayer), so anything that isn't
+        // a plain https resource is dropped at the door. Deliberately NOT a host
+        // allowlist — Telegram's CDN hosts change, and a stale list would silently
+        // blank every image.
+        val authority = url.substring("https://".length).substringBefore('/')
+            .substringBefore('?').substringBefore('#')
+        return authority.isNotEmpty() && '@' !in authority &&
+            url.none { it.isWhitespace() || it.isISOControl() }
     }
+
+    /** `src` of an auto-loaded resource, or null when blank or not a plain https URL. */
+    private fun safeSrc(el: Element?, attr: String = "src"): String? =
+        el?.attr(attr)?.trim()?.ifEmpty { null }?.takeIf(::isSafeHttpsUrl)
 
     /**
      * Telegram preview lays out media with `padding-top:<ratio>%` inside the wrapper

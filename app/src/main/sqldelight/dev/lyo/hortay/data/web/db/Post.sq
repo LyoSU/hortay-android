@@ -52,6 +52,12 @@ CREATE TABLE post (
 
     fetched_at_ms INTEGER NOT NULL,
 
+    -- Everything else the page says about a post, as one JSON object (WebPostExtras):
+    -- author signature, the "edited" mark, the reply header. One column instead of
+    -- one per field so the next addition needs no migration. NULL on rows written
+    -- before schema 5 and on posts that have none of it.
+    extras_json TEXT,
+
     PRIMARY KEY (channel_username, seq),
     FOREIGN KEY (channel_username) REFERENCES channel(username) ON DELETE CASCADE
 );
@@ -145,11 +151,11 @@ upsertInsert:
 INSERT OR IGNORE INTO post(
     channel_username, seq, id, published_at_iso, published_at_ms,
     text_html, text_plain, media_json, web_preview_json, forwarded_from_json,
-    reactions_json, views, fetched_at_ms
+    reactions_json, views, fetched_at_ms, extras_json
 ) VALUES (
     :channelUsername, :seq, :id, :publishedAtIso, :publishedAtMs,
     :textHtml, :textPlain, :mediaJson, :webPreviewJson, :forwardedFromJson,
-    :reactionsJson, :views, :fetchedAtMs
+    :reactionsJson, :views, :fetchedAtMs, :extrasJson
 );
 
 upsertUpdate:
@@ -163,7 +169,8 @@ UPDATE post SET
     forwarded_from_json = :forwardedFromJson,
     reactions_json = :reactionsJson,
     views = :views,
-    fetched_at_ms = :fetchedAtMs
+    fetched_at_ms = :fetchedAtMs,
+    extras_json = :extrasJson
 WHERE channel_username = :channelUsername AND seq = :seq;
 
 -- Cheap fingerprint for the upsert path. ingestPost serialises 4 JSON blobs
@@ -192,7 +199,7 @@ UPDATE post SET text_plain = :textPlain WHERE id = :id;
 -- instead of overwriting it with the fetch-time fallback.
 selectFingerprint:
 SELECT text_html, views, fetched_at_ms, published_at_iso, published_at_ms,
-       media_json, web_preview_json, forwarded_from_json, reactions_json
+       media_json, web_preview_json, forwarded_from_json, reactions_json, extras_json
 FROM post
 WHERE channel_username = :channelUsername AND seq = :seq;
 
