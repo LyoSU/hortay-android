@@ -218,6 +218,34 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * The reaction a double tap on a post leaves, or null when the gesture is off.
+     *
+     * A setting and not a fixed behaviour because the gesture is not free: with a double
+     * tap to wait for, a single tap on a post opens it a beat later (the card cannot know
+     * a second tap is not coming). Off restores the instant open. Default on with
+     * [DEFAULT_QUICK_REACTION] — the one-gesture "like" readers know from other feeds.
+     * Stored as the emoji itself; an empty string is the explicit "off".
+     */
+    val quickReaction: Flow<String?> = dataStore.data.map { prefs ->
+        when (val stored = prefs[KEY_QUICK_REACTION]) {
+            null -> DEFAULT_QUICK_REACTION
+            "" -> null
+            else -> stored
+        }
+    }.distinctUntilChanged()
+
+    /** [quickReaction], pre-warmed like [emojiStyleState] so cards and Settings never start from the default. */
+    val quickReactionState: StateFlow<String?> = quickReaction.stateIn(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        SharingStarted.Eagerly,
+        DEFAULT_QUICK_REACTION,
+    )
+
+    suspend fun setQuickReaction(emoji: String?) {
+        dataStore.edit { it[KEY_QUICK_REACTION] = emoji.orEmpty() }
+    }
+
+    /**
      * Reels-style snap-fling toggle. When enabled, fling gestures on the
      * timeline LazyColumn settle on the nearest item boundary — each post
      * "clicks into place" at the top of the viewport instead of free-coasting
@@ -352,6 +380,7 @@ class SettingsStore(context: Context) {
         val KEY_PURE_BLACK = booleanPreferencesKey("pure_black")
         val KEY_TEXT_SCALE = stringPreferencesKey("text_scale")
         val KEY_EMOJI_STYLE = stringPreferencesKey("emoji_style")
+        val KEY_QUICK_REACTION = stringPreferencesKey("quick_reaction")
     }
 }
 
@@ -359,3 +388,10 @@ private val Context.settingsDataStore by preferencesDataStore(
     name = "settings",
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
+
+/** Telegram's heart reaction is the bare U+2764, without a variation selector. */
+const val DEFAULT_QUICK_REACTION = "\u2764"
+
+/** What Settings offers for the double-tap reaction: free reactions most channels allow. */
+val QUICK_REACTION_CHOICES: List<String> =
+    listOf("\u2764", "\uD83D\uDC4D", "\uD83D\uDD25", "\uD83D\uDE01", "\uD83D\uDC4F", "\uD83C\uDF89")

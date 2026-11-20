@@ -446,6 +446,15 @@ private fun SettingsMain(
                             onToggle = { next -> if (next != currentGroupFeed) scope.launch { settings.setGroupFeed(next) } },
                         )
                     }
+                    // Reactions need an account, so the gesture is offered where the other
+                    // signed-in feed rows are (groupFeedState is null in guest mode).
+                    if (groupFeedState != null) {
+                        val quickReaction by settings.quickReactionState.collectAsStateWithLifecycle()
+                        QuickReactionRow(
+                            current = quickReaction,
+                            onChange = { next -> if (next != quickReaction) scope.launch { settings.setQuickReaction(next) } },
+                        )
+                    }
                     if (archiveInAllFeedState != null) {
                         val currentArchiveInAll by archiveInAllFeedState.collectAsStateWithLifecycle()
                         ArchiveInAllFeedRow(

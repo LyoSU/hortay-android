@@ -398,6 +398,8 @@
     <string name="settings_archive_in_all_subtitle">يعرض منشورات القنوات المؤرشفة في موجز «الكل» أيضاً</string>
     <string name="settings_group_feed_title">تجميع إعادات التوجيه والسلاسل</string>
     <string name="settings_group_feed_subtitle">بطاقة واحدة لمنشور أعادت توجيهه عدة قنوات، وتُطوى منشورات القناة المتتالية تحت أولها</string>
+    <string name="settings_quick_reaction_title">تفاعل بالنقر المزدوج</string>
+    <string name="settings_quick_reaction_subtitle">انقر مرتين على المنشور للتفاعل بالرمز المختار. عندها يفتح النقر الواحد المنشور بعد لحظة.</string>
     <string name="feed_also_forwarded_by">أعاد توجيهه أيضًا %1$s</string>
     <string name="post_forwarded_by">أعاد توجيهه %1$s</string>
     <string name="feed_forwarded_by_many">أعاد توجيهه %1$s</string>

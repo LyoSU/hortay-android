@@ -17,6 +17,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import dev.lyo.hortay.data.DEFAULT_QUICK_REACTION
+import dev.lyo.hortay.data.QUICK_REACTION_CHOICES
+import dev.lyo.hortay.ui.timeline.ReactionEmojiGlyph
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -148,6 +161,78 @@ internal fun ArchiveInAllFeedRow(
         content = {
             Text(
                 text = stringResource(R.string.settings_archive_in_all_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}
+
+/**
+ * Settings → Feed row for [dev.lyo.hortay.data.SettingsStore.quickReaction]: the switch turns
+ * the double-tap gesture on and off, and while it is on the row offers the reaction it
+ * leaves. [current] null = off. Turning it back on starts from the default reaction.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun QuickReactionRow(
+    current: String?,
+    onChange: (String?) -> Unit,
+) {
+    val enabled = current != null
+    val shapes = settingsGroupedShapes()
+    SegmentedListItem(
+        onClick = { onChange(if (enabled) null else DEFAULT_QUICK_REACTION) },
+        shapes = shapes,
+        colors = settingsRowColors(),
+        leadingContent = {
+            SettingsIconTile(symbol = "favorite", active = enabled)
+        },
+        supportingContent = {
+            Column {
+                Text(
+                    text = stringResource(R.string.settings_quick_reaction_subtitle),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (enabled) {
+                    FlowRow(
+                        modifier = Modifier.padding(top = HortaySpacing.sm),
+                        horizontalArrangement = Arrangement.spacedBy(HortaySpacing.xs),
+                    ) {
+                        QUICK_REACTION_CHOICES.forEach { emoji ->
+                            val selected = emoji == current
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (selected) MaterialTheme.colorScheme.primaryContainer
+                                        else Color.Transparent,
+                                    )
+                                    .selectable(
+                                        selected = selected,
+                                        role = Role.RadioButton,
+                                        onClick = { if (!selected) onChange(emoji) },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ReactionEmojiGlyph(emoji = emoji, style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        trailingContent = {
+            Switch(
+                checked = enabled,
+                onCheckedChange = { on -> onChange(if (on) DEFAULT_QUICK_REACTION else null) },
+            )
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_quick_reaction_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )

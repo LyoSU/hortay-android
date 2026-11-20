@@ -370,6 +370,8 @@
     <string name="settings_archive_in_all_subtitle">Afficher aussi les publications des chaînes archivées dans « Toutes »</string>
     <string name="settings_group_feed_title">Regrouper partages et séries</string>
     <string name="settings_group_feed_subtitle">Une seule carte pour une publication partagée par plusieurs chaînes, et les rafales d’une chaîne se replient sous la première</string>
+    <string name="settings_quick_reaction_title">Réaction par double appui</string>
+    <string name="settings_quick_reaction_subtitle">Appuyez deux fois sur une publication pour réagir avec l\'emoji choisi. Un appui simple l\'ouvre alors un instant plus tard.</string>
     <string name="feed_also_forwarded_by">Aussi partagé par %1$s</string>
     <string name="post_forwarded_by">Partagé par %1$s</string>
     <string name="feed_forwarded_by_many">Partagé par %1$s</string>

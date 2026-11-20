@@ -115,6 +115,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "dynamic_feed" -> R.drawable.sym_dynamic_feed
         "edit" -> R.drawable.sym_edit
         "error" -> R.drawable.sym_error
+        "favorite" -> R.drawable.sym_favorite
         "flag" -> R.drawable.sym_flag
         "format_quote" -> R.drawable.sym_format_quote
         "forum" -> R.drawable.sym_forum

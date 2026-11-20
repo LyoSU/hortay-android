@@ -70,6 +70,8 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -311,9 +313,37 @@ fun PostCard(
                 )
             },
     ) {
+        // Double tap = the reader's quick reaction (Settings → Feed; null = off or guest).
+        // It only ever ADDS the reaction: a second double tap on an already-reacted post
+        // must not silently take it back, the chip under the post does that.
+        val quickReaction = LocalQuickReaction.current.takeIf { actionsEnabled && !post.isDeleted }
+        val haptics = LocalHapticFeedback.current
+        val onQuickReact: (() -> Unit)? = if (quickReaction != null) {
+            {
+                val kind = ReactionKind.Emoji(quickReaction)
+                val already = post.reactions.items.any { it.isChosen && it.kind == kind }
+                if (!already) {
+                    haptics.performHapticFeedback(HapticFeedbackType.ToggleOn)
+                    reactionEffect.request(kind)
+                    interactions.onReactionToggle(post, ReactionItem(kind, count = 0, isChosen = false))
+                }
+            }
+        } else null
+        // With a double tap to wait for, the single tap fires only after the double-tap
+        // window closes. The platform window (300 ms) made opening a post feel sticky, so
+        // the card listens for a shorter one — still comfortable for a deliberate double
+        // tap. Without the gesture the configuration is untouched and the tap is instant.
+        val baseViewConfiguration = LocalViewConfiguration.current
+        val cardViewConfiguration = remember(baseViewConfiguration, quickReaction != null) {
+            if (quickReaction == null) baseViewConfiguration
+            else object : ViewConfiguration by baseViewConfiguration {
+                override val doubleTapTimeoutMillis: Long get() = QUICK_REACTION_WINDOW_MS
+            }
+        }
         // Full-width layout: avatar + name + time share one header row and the body
         // spans the whole card width below it, so photos, albums and text get the ~18%
         // of the width a left avatar column used to eat. Telegram's own channel layout.
+        CompositionLocalProvider(LocalViewConfiguration provides cardViewConfiguration) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -322,6 +352,7 @@ fun PostCard(
                     indication = LocalIndication.current,
                     enabled = clickable || actionsEnabled,
                     onClick = { if (clickable) interactions.onPostClick(post) },
+                    onDoubleClick = onQuickReact,
                     onLongClickLabel = if (actionsEnabled) stringResource(R.string.post_more_actions) else null,
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
                 )
@@ -590,6 +621,7 @@ fun PostCard(
                 }
                 }
             }
+        }
         }
 
         // Hairline between cards, edge to edge (Threads). It used to be inset to the content
@@ -2259,3 +2291,10 @@ internal fun String.withEmojiPresentation(): String {
 
 private const val EMOJI_VARIATION_SELECTOR = "\uFE0F"
 private const val ZERO_WIDTH_JOINER = '\u200D'
+
+/**
+ * How long a post card waits for the second tap of a double tap. Every single tap on a card
+ * with the quick reaction on is delayed by this much, so it is kept well under the platform
+ * default (300 ms); much shorter and a relaxed double tap starts opening the post instead.
+ */
+private const val QUICK_REACTION_WINDOW_MS = 220L

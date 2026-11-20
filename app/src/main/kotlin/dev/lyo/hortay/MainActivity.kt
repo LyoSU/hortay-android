@@ -27,6 +27,7 @@ import dev.lyo.hortay.ui.media.LocalCustomEmojiAnimator
 import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalReactionEmojiIcons
+import dev.lyo.hortay.ui.timeline.LocalQuickReaction
 import dev.lyo.hortay.ui.media.LocalAudioPlaybackSession
 import dev.lyo.hortay.ui.media.LocalStickerOutline
 import dev.lyo.hortay.ui.media.LocalWebHttpClient
@@ -130,9 +131,11 @@ class MainActivity : ComponentActivity() {
                                 // EmojiStyle.System it is null too, so reaction glyphs issue no
                                 // TDLib call; flipping the setting recomposes only the glyphs.
                                 val emojiStyle by graph.emojiStyleState.collectAsStateWithLifecycle()
+                                val quickReaction by graph.settingsStore.quickReactionState.collectAsStateWithLifecycle()
                                 CompositionLocalProvider(
                                     LocalReactionEmojiIcons provides graph.reactionEmojiIcons
                                         .takeIf { emojiStyle == EmojiStyle.Telegram },
+                                    LocalQuickReaction provides quickReaction,
                                 ) {
                                     MediaViewerHost { MainScaffold(graph = graph) }
                                 }
