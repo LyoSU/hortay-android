@@ -28,6 +28,7 @@
 - Picking a reaction plays Telegram's animation for it, and the reactions in the long-press menu animate in as it opens.
 
 ### Changed
+- Long-pressing a post or a comment opens a compact menu right next to it — reactions in a floating capsule, actions in a small card — instead of a sheet covering half the screen.
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
 - Posts in the feed and channels now use the full screen width — the channel photo and name sit in a header row above the post, so photos and text are noticeably larger.
 - Reactions under a post wrap onto a new line instead of being cut off at the screen edge, and comment, forward and view counts sit on a quieter line of their own.

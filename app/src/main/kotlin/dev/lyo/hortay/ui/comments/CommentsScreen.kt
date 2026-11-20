@@ -93,6 +93,12 @@ import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.ReactionChip
 import dev.lyo.hortay.ui.timeline.ReactionEffectRequest
+import dev.lyo.hortay.ui.components.AnchoredContextMenu
+import dev.lyo.hortay.ui.components.ContextMenuAnchor
+import dev.lyo.hortay.ui.components.ContextMenuCapsule
+import dev.lyo.hortay.ui.components.ContextMenuCard
+import dev.lyo.hortay.ui.components.ContextMenuItem
+import dev.lyo.hortay.ui.components.contextMenuAnchor
 import dev.lyo.hortay.ui.timeline.ReactionPickerStrip
 import dev.lyo.hortay.ui.timeline.rememberReactionEffectRequest
 import dev.lyo.hortay.ui.timeline.label
@@ -765,6 +771,7 @@ fun CommentsScreen(
                         // Picker → chip hand-off for the choose animation (see
                         // [ReactionEffectRequest]); per item, so a recycled row starts clean.
                         val reactionEffect = rememberReactionEffectRequest()
+                        val menuAnchor = remember { ContextMenuAnchor() }
                         CommentNode(
                             row = row,
                             effectRequest = reactionEffect,
@@ -780,7 +787,7 @@ fun CommentsScreen(
                                 fadeInSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
                                 placementSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>(),
                                 fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
-                            ),
+                            ).contextMenuAnchor(menuAnchor),
                             onQuoteClick = { reply ->
                                 // Jump to the quoted comment, or to the post above the thread
                                 // when the quote is from it, and light up the quoted words.
@@ -814,7 +821,8 @@ fun CommentsScreen(
                             onLongPress = { pickerOpen = true },
                         )
                         if (pickerOpen) {
-                            CommentReactionSheet(
+                            CommentContextMenu(
+                                anchor = menuAnchor,
                                 currentReactions = row.message.reactions,
                                 commentText = row.message.content.captionPlain,
                                 fetchAvailableReactions = { fetchAvailableReactions(s.threadChatId, row.message.id) },
@@ -1199,23 +1207,21 @@ private fun CommentBubble(
 }
 
 /**
- * Long-press reaction picker for a single comment. Mirrors the strip at the top of the
- * feed's post action sheet ([dev.lyo.hortay.ui.timeline.ReactionPickerStrip]); reuses the
- * same component so feed and thread reactions look and behave identically. While the
- * available reactions load the sheet shows a spinner; if the chat exposes none it
- * dismisses itself rather than sitting empty.
+ * Long-press menu of a single comment: the reaction capsule above it and a Copy action
+ * below, anchored to the comment row — the same [AnchoredContextMenu] and
+ * [dev.lyo.hortay.ui.timeline.ReactionPickerStrip] the feed's post menu uses, so feed and
+ * thread reactions look and behave identically. If the chat exposes no reactions and the
+ * comment has no text there is nothing to offer, and the menu dismisses itself.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CommentReactionSheet(
+private fun CommentContextMenu(
+    anchor: ContextMenuAnchor,
     currentReactions: Reactions,
     commentText: String,
     fetchAvailableReactions: suspend () -> List<ReactionKind>,
     onPick: (kind: ReactionKind, alreadyChosen: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberExpandedSheetState()
-    val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     val canCopy = commentText.isNotBlank()
@@ -1225,27 +1231,18 @@ private fun CommentReactionSheet(
         available = fetchAvailableReactions()
         loaded = true
     }
-    // Nothing to offer at all (no reactions AND no text) → don't leave an empty sheet.
     LaunchedEffect(loaded, available) {
         if (loaded && available.isEmpty() && !canCopy) onDismiss()
     }
     val chosenKeys = remember(currentReactions) {
         currentReactions.items.filter { it.isChosen }.map { it.kind.stableKey }.toSet()
     }
-    fun dismissAnimated() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
-    }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(modifier = Modifier.padding(bottom = 24.dp)) {
-            if (!loaded) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    LoadingIndicator()
-                }
-            } else {
-                if (available.isNotEmpty()) {
+    AnchoredContextMenu(
+        anchor = anchor,
+        onDismiss = onDismiss,
+        header = {
+            if (available.isNotEmpty()) {
+                ContextMenuCapsule {
                     ReactionPickerStrip(
                         reactions = available,
                         chosenKeys = chosenKeys,
@@ -1254,40 +1251,29 @@ private fun CommentReactionSheet(
                             haptics.performHapticFeedback(
                                 if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
                             )
-                            onPick(kind, already)
-                            dismissAnimated()
+                            close { onPick(kind, already) }
                         },
                     )
                 }
-                if (canCopy) {
-                    if (available.isNotEmpty()) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = HortayAlpha.HAIRLINE),
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(role = Role.Button) {
+            }
+        },
+        actions = {
+            if (canCopy) {
+                ContextMenuCard {
+                    ContextMenuItem(
+                        symbol = "content_copy",
+                        label = stringResource(R.string.post_copy_text),
+                        onClick = {
+                            close {
                                 val cm = context.getSystemService(ClipboardManager::class.java)
                                 cm?.setPrimaryClip(ClipData.newPlainText("comment", commentText))
-                                dismissAnimated()
                             }
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Symbol(name = "content_copy", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 22.dp)
-                        Spacer(Modifier.width(20.dp))
-                        Text(
-                            text = stringResource(R.string.post_copy_text),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
+                        },
+                    )
                 }
             }
-        }
-    }
+        },
+    )
 }
 
 /**

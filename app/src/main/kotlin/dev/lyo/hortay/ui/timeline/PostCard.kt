@@ -7,6 +7,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import dev.lyo.hortay.ui.components.AnchoredContextMenu
+import dev.lyo.hortay.ui.components.ContextMenuAnchor
+import dev.lyo.hortay.ui.components.ContextMenuCapsule
+import dev.lyo.hortay.ui.components.ContextMenuCard
+import dev.lyo.hortay.ui.components.ContextMenuDivider
+import dev.lyo.hortay.ui.components.ContextMenuItem
+import dev.lyo.hortay.ui.components.contextMenuAnchor
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
@@ -135,6 +142,7 @@ fun PostCard(
     onExpandSeries: () -> Unit = {},
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
+    val menuAnchor = remember { ContextMenuAnchor() }
     // Picker → chip hand-off for the choose animation: the sheet dismisses as it toggles,
     // so the chip in this card's action row plays it (see [ReactionEffectRequest]).
     val reactionEffect = rememberReactionEffectRequest()
@@ -240,6 +248,7 @@ fun PostCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .contextMenuAnchor(menuAnchor)
             .semantics { if (isUnread) stateDescription = unreadStateDescription }
             // Only deleted posts dim. `.then(...)` instead of `.alpha(if … 1f)` so a live
             // post never installs an offscreen compositing layer it doesn't need — the
@@ -527,8 +536,9 @@ fun PostCard(
     }
 
     if (sheetOpen) {
-        PostActionSheet(
+        PostContextMenu(
             post = post,
+            anchor = menuAnchor,
             interactions = interactions,
             effectRequest = reactionEffect,
             onSelectText = { selectTextOpen = true },
@@ -1634,124 +1644,127 @@ private fun StatPill(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The post's long-press / "⋯" menu: the reaction capsule above the post and a compact
+ * card of actions below it, both anchored to the card (see [AnchoredContextMenu]).
+ *
+ * Deliberately no Comments action and no button group: tapping the card already opens
+ * the thread, Share and Save also sit in the card's own action row, and two filled
+ * buttons on top of the list outweighed everything else in the menu.
+ */
 @Composable
-private fun PostActionSheet(
+private fun PostContextMenu(
     post: TimelinePost,
+    anchor: ContextMenuAnchor,
     interactions: PostInteractions,
     effectRequest: ReactionEffectRequest,
     onSelectText: () -> Unit,
     onSummarize: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberExpandedSheetState()
-    val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val isBookmarked = interactions.isBookmarked(post)
-
-    // Run the user action immediately, then animate the sheet out and tell the parent to forget us.
-    fun runAndDismiss(action: () -> Unit) {
-        action()
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+    // Available reactions are fetched once when the menu opens (a single on-demand RPC;
+    // empty in guest mode → no capsule).
+    var available by remember(post.id) { mutableStateOf<List<ReactionKind>>(emptyList()) }
+    LaunchedEffect(post.id) { available = interactions.availableReactions(post) }
+    val chosenKeys = remember(post.reactions) {
+        post.reactions.items.filter { it.isChosen }.map { it.kind.stableKey }.toSet()
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
-        Column(modifier = Modifier.padding(bottom = 24.dp)) {
-            // Reaction picker strip — cast a reaction the post doesn't already carry,
-            // Telegram-style. Available reactions are fetched once when the sheet opens
-            // (a single on-demand RPC; empty in guest mode → strip is hidden).
-            var available by remember(post.id) { mutableStateOf<List<ReactionKind>>(emptyList()) }
-            LaunchedEffect(post.id) { available = interactions.availableReactions(post) }
+    AnchoredContextMenu(
+        anchor = anchor,
+        onDismiss = onDismiss,
+        header = {
             if (available.isNotEmpty()) {
-                val chosenKeys = remember(post.reactions) {
-                    post.reactions.items.filter { it.isChosen }.map { it.kind.stableKey }.toSet()
-                }
-                ReactionPickerStrip(
-                    reactions = available,
-                    chosenKeys = chosenKeys,
-                    onPick = { kind ->
-                        val already = kind.stableKey in chosenKeys
-                        haptics.performHapticFeedback(
-                            if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
-                        )
-                        // Choosing (not retracting) plays the choose animation on the
-                        // card's chip once the optimistic flip shows it as chosen.
-                        if (!already) effectRequest.request(kind)
-                        runAndDismiss {
-                            interactions.onReactionToggle(post, ReactionItem(kind, count = 0, isChosen = already))
-                        }
-                    },
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = HortayAlpha.HAIRLINE),
-                )
-            }
-            // Primary actions live in an Expressive ButtonGroup; Comments only when the
-            // channel has a linked discussion group (commentCount != null).
-            PostQuickActions(
-                showComments = post.commentCount != null,
-                onComments = { runAndDismiss { interactions.onPostClick(post) } },
-                onShare = { runAndDismiss { interactions.onShareClick(post) } },
-                onOpen = { runAndDismiss { interactions.onOpenClick(post) } },
-            )
-            // Secondary actions stay a vertical list.
-            SheetItem(
-                symbol = "bookmark",
-                label = stringResource(if (isBookmarked) R.string.post_unsave else R.string.post_save),
-                onClick = {
-                    // Toggle haptic on the save/unsave state flip, before the action runs.
-                    haptics.performHapticFeedback(
-                        if (isBookmarked) HapticFeedbackType.ToggleOff
-                        else HapticFeedbackType.ToggleOn,
-                    )
-                    runAndDismiss { interactions.onBookmarkClick(post) }
-                },
-            )
-            if (post.content.captionPlain.isNotBlank()) {
-                SheetItem(
-                    symbol = "content_copy",
-                    label = stringResource(R.string.post_copy_text),
-                    onClick = { runAndDismiss { interactions.onCopyClick(post) } },
-                )
-                SheetItem(
-                    symbol = "description",
-                    label = stringResource(R.string.post_select_text),
-                    onClick = { runAndDismiss { onSelectText() } },
-                )
-                if (interactions.translateEnabled) {
-                    val translated = interactions.isTranslated(post)
-                    SheetItem(
-                        symbol = "translate",
-                        label = stringResource(if (translated) R.string.post_show_original else R.string.post_translate),
-                        onClick = {
-                            runAndDismiss {
-                                if (translated) interactions.onClearTranslationClick(post)
-                                else interactions.onTranslateClick(post)
+                ContextMenuCapsule {
+                    ReactionPickerStrip(
+                        reactions = available,
+                        chosenKeys = chosenKeys,
+                        onPick = { kind ->
+                            val already = kind.stableKey in chosenKeys
+                            haptics.performHapticFeedback(
+                                if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                            )
+                            // Choosing (not retracting) plays the choose animation on the
+                            // card's chip once the optimistic flip shows it as chosen.
+                            if (!already) effectRequest.request(kind)
+                            close {
+                                interactions.onReactionToggle(post, ReactionItem(kind, count = 0, isChosen = already))
                             }
                         },
                     )
                 }
             }
-            if (onSummarize != null) {
-                SheetItem(
-                    symbol = "description",
-                    label = stringResource(R.string.post_summarize),
-                    onClick = { runAndDismiss { onSummarize() } },
+        },
+        actions = {
+            ContextMenuCard {
+                ContextMenuItem(
+                    symbol = "bookmark",
+                    label = stringResource(if (isBookmarked) R.string.post_unsave else R.string.post_save),
+                    onClick = {
+                        haptics.performHapticFeedback(
+                            if (isBookmarked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                        )
+                        close { interactions.onBookmarkClick(post) }
+                    },
                 )
-            }
-            if (interactions.canReport(post)) {
-                SheetItem(
-                    symbol = "flag",
-                    label = stringResource(R.string.report_action),
-                    onClick = { runAndDismiss { interactions.onReportClick(post) } },
+                ContextMenuItem(
+                    symbol = "share",
+                    label = stringResource(R.string.post_share),
+                    onClick = { close { interactions.onShareClick(post) } },
                 )
+                ContextMenuItem(
+                    symbol = "open_in_new",
+                    label = stringResource(R.string.post_open_telegram),
+                    onClick = { close { interactions.onOpenClick(post) } },
+                )
+                val hasText = post.content.captionPlain.isNotBlank()
+                if (hasText || onSummarize != null) ContextMenuDivider()
+                if (hasText) {
+                    ContextMenuItem(
+                        symbol = "content_copy",
+                        label = stringResource(R.string.post_copy_text),
+                        onClick = { close { interactions.onCopyClick(post) } },
+                    )
+                    ContextMenuItem(
+                        symbol = "description",
+                        label = stringResource(R.string.post_select_text),
+                        onClick = { close { onSelectText() } },
+                    )
+                    if (interactions.translateEnabled) {
+                        val translated = interactions.isTranslated(post)
+                        ContextMenuItem(
+                            symbol = "translate",
+                            label = stringResource(if (translated) R.string.post_show_original else R.string.post_translate),
+                            onClick = {
+                                close {
+                                    if (translated) interactions.onClearTranslationClick(post)
+                                    else interactions.onTranslateClick(post)
+                                }
+                            },
+                        )
+                    }
+                }
+                if (onSummarize != null) {
+                    ContextMenuItem(
+                        symbol = "lightbulb",
+                        label = stringResource(R.string.post_summarize),
+                        onClick = { close { onSummarize() } },
+                    )
+                }
+                if (interactions.canReport(post)) {
+                    ContextMenuDivider()
+                    ContextMenuItem(
+                        symbol = "flag",
+                        label = stringResource(R.string.report_action),
+                        destructive = true,
+                        onClick = { close { interactions.onReportClick(post) } },
+                    )
+                }
             }
-        }
-    }
+        },
+    )
 }
 
 /**
@@ -1785,8 +1798,8 @@ private fun SelectTextSheet(post: TimelinePost, onDismiss: () -> Unit) {
  * in the last slot. Expanded it is a grid of every available reaction on the same column
  * rhythm, scrolling inside a capped height — no sideways scrolling to hunt through.
  *
- * Reactions the user already cast read as "selected" (tertiaryContainer); the rest sit on
- * surfaceContainerHigh. Tapping casts (or retracts) via the same optimistic
+ * Reactions the user already cast read as "selected" (a tertiaryContainer disc); the rest
+ * are bare emoji on the menu capsule the strip is hosted in. Tapping casts (or retracts) via the same optimistic
  * [PostInteractions.onReactionToggle] path the inline chips use. The emoji glyph itself
  * is the screen-reader label for unicode reactions; custom-emoji targets stay unlabeled,
  * matching the existing [ReactionChip] a11y contract.
@@ -1801,9 +1814,7 @@ internal fun ReactionPickerStrip(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            // 2 dp tighter on every side than the visible rhythm (16 / 8 dp insets): each
-            // 44 dp disc reserves a 48 dp touch target, whose slop makes it up.
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
             .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
     ) {
         val perRow = ((maxWidth + REACTION_SLOT_GAP) / (REACTION_SLOT + REACTION_SLOT_GAP))
@@ -1853,7 +1864,6 @@ internal fun ReactionPickerStrip(
                                 .minimumInteractiveComponentSize()
                                 .size(REACTION_DISC)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                 .clickable(role = Role.Button) { expanded = true },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -1880,9 +1890,9 @@ private fun ReactionPickerTarget(
     appearOrder: Int,
     onPick: (ReactionKind) -> Unit,
 ) {
-    val background =
-        if (chosen) MaterialTheme.colorScheme.tertiaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh
+    // The strip sits in a floating capsule, so only a reaction the user already cast
+    // carries a disc; the rest are bare emoji on the capsule's own surface.
+    val background = if (chosen) MaterialTheme.colorScheme.tertiaryContainer else Color.Transparent
     Box(
         modifier = Modifier
             .minimumInteractiveComponentSize()
@@ -1895,12 +1905,12 @@ private fun ReactionPickerTarget(
         when (kind) {
             is ReactionKind.Emoji -> ReactionEmojiGlyph(
                 emoji = kind.text,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineSmall,
                 appearOrder = appearOrder,
             )
             is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
                 customEmojiId = kind.customEmojiId,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(28.dp),
                 contentDescription = null,
             )
             // Paid reactions are filtered out upstream (can't be cast from Hortay).
@@ -1915,92 +1925,6 @@ private val REACTION_SLOT_GAP = 4.dp
 
 /** Rows of the expanded reaction grid visible at once; the half row hints at scrolling. */
 private const val REACTION_GRID_MAX_ROWS = 5.5f
-
-/**
- * Primary post actions as a Material 3 Expressive [ButtonGroup] — connected buttons with
- * the press-squeeze morph. Comments is conditional on a linked discussion group existing.
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun PostQuickActions(
-    showComments: Boolean,
-    onComments: () -> Unit,
-    onShare: () -> Unit,
-    onOpen: () -> Unit,
-) {
-    val commentsLabel = stringResource(R.string.archive_scope_comments)
-    val shareLabel = stringResource(R.string.post_share)
-    val openLabel = stringResource(R.string.post_open_telegram)
-    ButtonGroup(
-        // Mandatory since material3 1.5.0-alpha23. With two-three fixed items the
-        // group never overflows on a phone-width card, but the API needs a menu
-        // affordance for the degenerate case (split-screen + max font scale).
-        overflowIndicator = { menuState ->
-            IconButton(
-                onClick = { if (menuState.isShowing) menuState.dismiss() else menuState.show() },
-            ) {
-                Symbol(name = "more_horiz", size = 18.dp)
-            }
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            // material3 1.5.0-alpha23 ButtonGroupMeasurePolicy shrinks maxWidth for the
-            // overflow indicator without clamping it against minWidth, so under the tight
-            // constraints fillMaxWidth produces (min == max) any label overflow — long
-            // uk/ru labels on a three-button row — crashes measure with "maxWidth must
-            // be >= than minWidth". Loosening minWidth lets the group take its designed
-            // overflow path (trailing "…" menu) instead.
-            .layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints.copy(minWidth = 0))
-                layout(constraints.maxWidth, placeable.height) {
-                    placeable.placeRelative(0, 0)
-                }
-            },
-    ) {
-        // clickableItem renders [label] as the button text; [icon] is the leading glyph.
-        if (showComments) {
-            clickableItem(
-                onClick = onComments,
-                label = commentsLabel,
-                icon = { Symbol(name = "chat_bubble", size = 18.dp) },
-            )
-        }
-        clickableItem(
-            onClick = onShare,
-            label = shareLabel,
-            icon = { Symbol(name = "share", size = 18.dp) },
-        )
-        clickableItem(
-            onClick = onOpen,
-            label = openLabel,
-            icon = { Symbol(name = "open_in_new", size = 18.dp) },
-        )
-    }
-}
-
-@Composable
-private fun SheetItem(
-    symbol: String,
-    label: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Symbol(
-            name = symbol,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 22.dp,
-        )
-        Spacer(Modifier.width(20.dp))
-        Text(text = label, style = MaterialTheme.typography.bodyLarge)
-    }
-}
 
 internal fun formatViews(count: Int): String {
     fun compact(value: Double, suffix: String): String {
