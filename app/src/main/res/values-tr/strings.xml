@@ -360,6 +360,8 @@
     <string name="settings_group_feed_title">İletmeleri ve serileri grupla</string>
     <string name="settings_group_feed_subtitle">Birden çok kanalın ilettiği gönderi için tek kart; bir kanalın art arda gönderileri ilkinin altında toplanır</string>
     <string name="feed_also_forwarded_by">Ayrıca iletenler: %1$s</string>
+    <string name="post_forwarded_by">İleten: %1$s</string>
+    <string name="feed_forwarded_by_many">İletenler: %1$s</string>
     <string name="feed_forwarders_two">%1$s ve %2$s</string>
     <plurals name="feed_forwarders_more">
         <item quantity="one">%1$s, %2$s ve %3$d kanal daha</item>

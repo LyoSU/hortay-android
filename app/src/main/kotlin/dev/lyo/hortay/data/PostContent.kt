@@ -718,7 +718,14 @@ sealed interface PollKind {
 
 enum class StickerFormat { Webp, Tgs, Webm }
 
-/** Metadata about who originally sent a forwarded post. */
+/**
+ * Metadata about who originally sent a forwarded post.
+ *
+ * `avatar` is the source's avatar ladder when the mapper could resolve the source (TDLib
+ * mode). With it the card is headed by the ORIGINAL source and the forwarding channel moves
+ * to a quiet line above; without it (guest pages, hidden senders) the forwarding channel
+ * keeps the header and the source is a text line under it.
+ */
 sealed interface ForwardOrigin {
     @Immutable
     data class User(
@@ -726,6 +733,7 @@ sealed interface ForwardOrigin {
         /** TDLib id of the original user sender. Null only on legacy forwards where the
          *  origin payload lacked the user id (the renderer falls back to the static name). */
         val userId: Long? = null,
+        val avatar: ChannelAvatarRef? = null,
     ) : ForwardOrigin
     @Immutable
     data class Channel(
@@ -739,6 +747,7 @@ sealed interface ForwardOrigin {
          *  non-zero for real channel forwards; the field is nullable only for
          *  the legacy fallback path in [MessageMapper.mapForwardOrigin]. */
         val sourceMessageId: Long?,
+        val avatar: ChannelAvatarRef? = null,
     ) : ForwardOrigin
     @Immutable
     data class HiddenUser(val senderName: String) : ForwardOrigin
@@ -748,6 +757,7 @@ sealed interface ForwardOrigin {
         val authorSignature: String?,
         val sourceChatId: Long,
         val sourceHandle: String?,
+        val avatar: ChannelAvatarRef? = null,
     ) : ForwardOrigin
 }
 

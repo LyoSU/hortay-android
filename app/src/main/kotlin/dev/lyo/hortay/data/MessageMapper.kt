@@ -251,10 +251,14 @@ class MessageMapper(
     }
 
     private suspend fun mapForwardOrigin(origin: TdApi.MessageOrigin): ForwardOrigin = when (origin) {
-        is TdApi.MessageOriginUser -> ForwardOrigin.User(
-            userName = fetchUser(origin.senderUserId).name,
-            userId = origin.senderUserId,
-        )
+        is TdApi.MessageOriginUser -> {
+            val resolved = fetchUser(origin.senderUserId)
+            ForwardOrigin.User(
+                userName = resolved.name,
+                userId = origin.senderUserId,
+                avatar = ChannelAvatarRef(thumb = resolved.avatarThumb, fileId = resolved.avatarFileId),
+            )
+        }
         is TdApi.MessageOriginChat -> {
             val resolved = fetchChat(origin.senderChatId)
             ForwardOrigin.Chat(
@@ -262,6 +266,7 @@ class MessageMapper(
                 authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
                 sourceChatId = origin.senderChatId,
                 sourceHandle = resolved.handle,
+                avatar = ChannelAvatarRef(thumb = resolved.avatarThumb, fileId = resolved.avatarFileId),
             )
         }
         is TdApi.MessageOriginHiddenUser -> ForwardOrigin.HiddenUser(origin.senderName.orEmpty())
@@ -273,6 +278,7 @@ class MessageMapper(
                 sourceChatId = origin.chatId,
                 sourceHandle = resolved.handle,
                 sourceMessageId = origin.messageId.takeIf { it != 0L },
+                avatar = ChannelAvatarRef(thumb = resolved.avatarThumb, fileId = resolved.avatarFileId),
             )
         }
         else -> ForwardOrigin.HiddenUser("")

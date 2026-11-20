@@ -39,6 +39,7 @@
 - The comments screen has a slim one-line header showing the number of comments.
 - Each post has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
 - Posts read cleaner: the channel name and time share one line, post text is a little larger, and comments, Share, Save and views sit in one evenly spaced row of thin outline icons under the post.
+- A forwarded post is headed by its original channel or author, with “Forwarded by …” on a quiet line above, instead of the forwarding channel's name over someone else's post.
 - The Share button under a post now carries the forward count, instead of a separate forward counter that looked tappable but wasn't.
 - A post signed by its own author shows “Author in Channel” on one line with the channel's photo on the avatar corner, instead of a separate channel chip.
 - The reply preview above a post is a compact single line, and skips the author's name when it is a reply to the same author.

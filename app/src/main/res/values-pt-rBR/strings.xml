@@ -370,6 +370,8 @@
     <string name="settings_group_feed_title">Agrupar encaminhamentos e séries</string>
     <string name="settings_group_feed_subtitle">Um cartão para uma publicação encaminhada por vários canais, e as sequências de um canal se recolhem sob a primeira</string>
     <string name="feed_also_forwarded_by">Também encaminhado por %1$s</string>
+    <string name="post_forwarded_by">Encaminhado por %1$s</string>
+    <string name="feed_forwarded_by_many">Encaminhado por %1$s</string>
     <string name="feed_forwarders_two">%1$s e %2$s</string>
     <plurals name="feed_forwarders_more">
         <item quantity="one">%1$s, %2$s e mais %3$d</item>

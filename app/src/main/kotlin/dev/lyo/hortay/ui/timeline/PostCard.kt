@@ -86,6 +86,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.ChannelAvatarRef
 import dev.lyo.hortay.data.ChannelContext
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.ReactionItem
@@ -94,6 +95,7 @@ import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.TimelinePost
+import kotlinx.collections.immutable.toImmutableList
 import dev.lyo.hortay.data.isUnreadAt
 import dev.lyo.hortay.data.stableKey
 import androidx.compose.ui.geometry.CornerRadius
@@ -360,45 +362,82 @@ fun PostCard(
             val scopeHandle = if (post.parentId == null) post.senderHandle else null
             HashtagScope(scopeHandle) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                annotation?.forwardedBy?.takeIf { it.isNotEmpty() }?.let { forwarders ->
-                    ForwardedByRow(forwarders)
+                // A forward whose source can be drawn is headed by that SOURCE, the way a
+                // repost reads everywhere else: the content is the original author's, so
+                // their face and name sit next to it, and the channel that forwarded it
+                // is a quiet line above. Before, the forwarding channel headed a post it
+                // did not write and the real author was a grey line that was easy to miss.
+                val origin = post.forwardOrigin
+                val source = remember(origin) { origin?.headerSource() }
+                // Forwarded from a user we can resolve → user-profile sheet. Legacy
+                // forwards without a userId stay inert (no target to open).
+                val onSourceClick: (() -> Unit)? = when (origin) {
+                    is ForwardOrigin.User -> origin.userId?.let { uid -> { userOpener.open(uid) } }
+                    is ForwardOrigin.Channel,
+                    is ForwardOrigin.Chat -> ({ interactions.onForwardSourceClick(post) })
+                    is ForwardOrigin.HiddenUser, null -> null
+                }
+                val alsoForwardedBy = annotation?.forwardedBy ?: kotlinx.collections.immutable.persistentListOf()
+                if (source != null) {
+                    // Inside the forwarding channel's own screen "forwarded by <this
+                    // channel>" repeats the screen title on every forward — unless a
+                    // named author did the forwarding, or other channels did too.
+                    val showForwarder = showHostChannel || post.channelContext != null
+                    if (showForwarder || alsoForwardedBy.isNotEmpty()) {
+                        val forwarders = remember(post, alsoForwardedBy, showForwarder) {
+                            buildList {
+                                if (showForwarder) add(post.asForwarderBadge())
+                                addAll(alsoForwardedBy)
+                            }.toImmutableList()
+                        }
+                        ForwardedByRow(
+                            forwarders = forwarders,
+                            label = if (forwarders.size == 1) R.string.post_forwarded_by else R.string.feed_forwarded_by_many,
+                            onClick = onSenderClick.takeIf { showForwarder },
+                        )
+                        Spacer(Modifier.height(HortaySpacing.sm))
+                    }
+                } else if (alsoForwardedBy.isNotEmpty()) {
+                    ForwardedByRow(alsoForwardedBy, label = R.string.feed_also_forwarded_by)
                     Spacer(Modifier.height(HortaySpacing.sm))
                 }
+                val onHeaderClick = if (source != null) onSourceClick ?: {} else onSenderClick
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Avatar(
-                    name = post.senderName,
-                    thumb = post.avatarThumb,
-                    fileId = post.avatarFileId,
-                    avatarUrl = post.avatarUrl,
-                    hostChannel = hostChannel,
-                    onClick = onSenderClick,
+                    name = source?.name ?: post.senderName,
+                    thumb = if (source != null) source.avatar.thumb else post.avatarThumb,
+                    fileId = if (source != null) source.avatar.fileId else post.avatarFileId,
+                    avatarUrl = if (source != null) null else post.avatarUrl,
+                    hostChannel = hostChannel.takeIf { source == null },
+                    onClick = onHeaderClick,
                 )
                 Spacer(Modifier.width(AVATAR_GAP))
                 Column(modifier = Modifier.weight(1f)) {
                     HeaderRow(
-                    senderName = post.senderName,
+                    senderName = source?.name ?: post.senderName,
                     editDate = post.editDate,
                     date = post.date,
                     pinned = post.isPinned,
-                    verification = post.verification,
-                    // Visual cue that this tap drills into another channel — only the
-                    // foreign-chat case (admin posting "as one of my other channels")
-                    // navigates to a separate destination. User-profile sheet and
-                    // host-channel filter stay on the same screen, so they get no
-                    // chevron — keeps the affordance honest.
-                    showDrillChevron = post.senderChatId != null,
-                    onChannelClick = onSenderClick,
+                    // The badge verifies the forwarding channel, not the source it heads.
+                    verification = post.verification.takeIf { source == null },
+                    // Visual cue that this tap drills into another channel — the
+                    // foreign-chat case (admin posting "as one of my other channels") and
+                    // a forward's source channel navigate to a separate destination.
+                    // User-profile sheet and host-channel filter stay on the same screen,
+                    // so they get no chevron — keeps the affordance honest.
+                    showDrillChevron = if (source != null) origin !is ForwardOrigin.User else post.senderChatId != null,
+                    onChannelClick = onHeaderClick,
                     isDeleted = post.isDeleted,
                     revisionCount = post.revisionCount,
                     onTapRevisions = { onTapRevisions(post) },
-                    hostChannel = hostChannel,
+                    hostChannel = hostChannel.takeIf { source == null },
                     onHostChannelClick = { interactions.onChannelClick(post) },
                 )
 
                 // Quiet second line: the author signature of a signed channel post. Kept off
                 // the name line so a long channel name + time + marks never has to share
                 // the width with a third, equally truncatable string.
-                post.authorSignature?.takeIf { it.isNotBlank() }?.let { signature ->
+                (if (source != null) source.signature else post.authorSignature)?.takeIf { it.isNotBlank() }?.let { signature ->
                     Text(
                         text = signature,
                         style = MaterialTheme.typography.bodySmall,
@@ -429,20 +468,10 @@ fun PostCard(
                 }
                 }
 
-                post.forwardOrigin?.let { origin ->
+                // The text fallback for a source that cannot head the card (no avatar).
+                if (origin != null && source == null) {
                     Spacer(Modifier.height(6.dp))
-                    ForwardChip(
-                        origin = origin,
-                        onClick = when (origin) {
-                            // Forwarded from a user we can resolve → user-profile sheet.
-                            // Legacy forwards without a userId stay inert (no target to
-                            // open) — preserves the current behaviour for those.
-                            is ForwardOrigin.User -> origin.userId?.let { uid -> { userOpener.open(uid) } }
-                            is ForwardOrigin.Channel,
-                            is ForwardOrigin.Chat -> ({ interactions.onForwardSourceClick(post) })
-                            is ForwardOrigin.HiddenUser -> null
-                        },
-                    )
+                    ForwardChip(origin = origin, onClick = onSourceClick)
                 }
 
                 post.reply?.let {
@@ -587,12 +616,38 @@ fun PostCard(
     }
 }
 
+/** What heads a forward's card: the original source, when it has an avatar to draw. */
+private class ForwardSource(val name: String, val signature: String?, val avatar: ChannelAvatarRef)
+
+private fun ForwardOrigin.headerSource(): ForwardSource? = when (this) {
+    is ForwardOrigin.Channel -> avatar?.let { ForwardSource(channelName, authorSignature, it) }
+    is ForwardOrigin.Chat -> avatar?.let { ForwardSource(chatName, authorSignature, it) }
+    is ForwardOrigin.User -> avatar?.takeIf { userId != null }?.let { ForwardSource(userName, null, it) }
+    is ForwardOrigin.HiddenUser -> null
+}
+
+/** The post's own sender (the channel, or its named author) as a forwarder of the row above. */
+private fun TimelinePost.asForwarderBadge() = ChannelBadge(
+    chatId = chatId,
+    title = senderName,
+    thumb = avatarThumb,
+    fileId = avatarFileId,
+    avatarUrl = avatarUrl,
+    latestPostDate = date,
+)
+
 /**
- * "Also forwarded by A, B and N more" above a post that stands for several channels' copies of the
- * same original ([clusterFeed] hid the others). Up to three overlapping avatars.
+ * "Forwarded by A" / "Also forwarded by A, B and N more" above a post: who brought this
+ * original into the feed. Either the post's own channel when the source heads the card,
+ * the channels whose copies [clusterFeed] hid, or both. Up to three overlapping avatars.
+ * [onClick] opens the first forwarder (the post's own channel).
  */
 @Composable
-private fun ForwardedByRow(forwarders: kotlinx.collections.immutable.ImmutableList<ChannelBadge>) {
+private fun ForwardedByRow(
+    forwarders: kotlinx.collections.immutable.ImmutableList<ChannelBadge>,
+    @androidx.annotation.StringRes label: Int,
+    onClick: (() -> Unit)? = null,
+) {
     val names = when (forwarders.size) {
         0 -> ""
         1 -> forwarders[0].title
@@ -608,7 +663,12 @@ private fun ForwardedByRow(forwarders: kotlinx.collections.immutable.ImmutableLi
             )
         }
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = if (onClick != null) {
+            Modifier.clip(InlineChipCorner).clickable(role = Role.Button, onClick = onClick)
+        } else Modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Symbol(name = "line_forward", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp)
         Spacer(Modifier.width(6.dp))
         Box {
@@ -632,7 +692,7 @@ private fun ForwardedByRow(forwarders: kotlinx.collections.immutable.ImmutableLi
         }
         Spacer(Modifier.width(6.dp))
         Text(
-            text = stringResource(R.string.feed_also_forwarded_by, names),
+            text = stringResource(label, names),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -1088,7 +1148,8 @@ private fun WarningPill(label: String, color: Color) {
 }
 
 /**
- * "Forwarded from X" under the header. One quiet line in the metadata colour — the same
+ * "Forwarded from X" under the header — the fallback for a source that cannot head the
+ * card itself (guest pages and hidden senders carry no avatar). One quiet line in the metadata colour — the same
  * voice as the "Also forwarded by" row and the header time — with only the source's name
  * lifted to the text colour when it leads somewhere. It used to be all tertiary, a second
  * accent colour between the header and a reply block that already carries the primary one.
