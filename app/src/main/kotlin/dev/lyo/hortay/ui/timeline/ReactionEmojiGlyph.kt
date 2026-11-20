@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.timeline
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,9 +18,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -92,6 +98,13 @@ import kotlin.math.roundToInt
  * for the next one. The wait matters for a chip that is NEW with this very pick — the first
  * reaction on a post — whose icon binds a frame or two after the effect is asked for.
  * Nothing here gates the tap or the optimistic reaction flip, which run before any of it.
+ *
+ * [fitTextToBox] (the reaction chip only; needs a sized [modifier]): the box is the
+ * modifier's, not the text's, and the text emoji is drawn scaled so its ink fills the box
+ * like the artwork does ([fittedEmoji]) instead of at [style]'s font size. Vendor emoji
+ * fonts draw very different ink for one font size — Samsung's is visibly smaller than
+ * Noto's — so a font-size guess left a fallback glyph a size smaller than the Telegram
+ * artwork beside it. [style] is unused in that mode.
  */
 @Composable
 internal fun ReactionEmojiGlyph(
@@ -100,6 +113,7 @@ internal fun ReactionEmojiGlyph(
     modifier: Modifier = Modifier,
     chooseEffectTrigger: Int = 0,
     appearOrder: Int = NO_APPEAR,
+    fitTextToBox: Boolean = false,
 ) {
     val resolver = LocalReactionEmojiIcons.current
     val icon: ReactionEmojiIcon? = if (resolver != null) {
@@ -193,11 +207,22 @@ internal fun ReactionEmojiGlyph(
         },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = emoji.withEmojiPresentation(),
-            style = style,
-            modifier = Modifier.graphicsLayer { alpha = if (innerPlaying) 0f else 1f - artworkAlpha },
-        )
+        val display = emoji.withEmojiPresentation()
+        if (fitTextToBox) {
+            Spacer(
+                Modifier
+                    .matchParentSize()
+                    .semantics { contentDescription = display }
+                    .graphicsLayer { alpha = if (innerPlaying) 0f else 1f - artworkAlpha }
+                    .fittedEmoji(display),
+            )
+        } else {
+            Text(
+                text = display,
+                style = style,
+                modifier = Modifier.graphicsLayer { alpha = if (innerPlaying) 0f else 1f - artworkAlpha },
+            )
+        }
         if (icon != null) {
             TdMediaImage(
                 media = icon.media,
@@ -286,6 +311,38 @@ private fun Modifier.drawOversized(scale: Float): Modifier = layout { measurable
         placeable.place((width - side) / 2, (height - side) / 2)
     }
 }
+
+/**
+ * Draws [text] (one emoji) centred, scaled so its ink — the glyph's measured bounds, not
+ * the font's line box — spans [EMOJI_INK_FRACTION] of the node's smaller side, whatever the
+ * device's emoji font. Measured once per node size in [drawWithCache] (one `getTextBounds`
+ * at a reference size, then a linear scale); the draw itself only calls `drawText` with the
+ * cached paint and offsets, so nothing is measured or allocated per frame. Independent of
+ * the font scale: the size comes from the node, in px.
+ */
+internal fun Modifier.fittedEmoji(text: String): Modifier = drawWithCache {
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    paint.textSize = EMOJI_MEASURE_TEXT_SIZE_PX
+    val bounds = android.graphics.Rect()
+    paint.getTextBounds(text, 0, text.length, bounds)
+    val ink = maxOf(bounds.width(), bounds.height())
+    if (ink <= 0 || size.minDimension <= 0f) return@drawWithCache onDrawBehind {}
+    val scale = size.minDimension * EMOJI_INK_FRACTION / ink
+    paint.textSize = EMOJI_MEASURE_TEXT_SIZE_PX * scale
+    val x = (size.width - bounds.width() * scale) / 2f - bounds.left * scale
+    val y = (size.height - bounds.height() * scale) / 2f - bounds.top * scale
+    onDrawBehind { drawIntoCanvas { it.nativeCanvas.drawText(text, x, y, paint) } }
+}
+
+/** Reference text size for measuring an emoji's ink in [fittedEmoji]; the result scales linearly. */
+private const val EMOJI_MEASURE_TEXT_SIZE_PX = 100f
+
+/**
+ * Share of the box a fitted text emoji's ink spans: Telegram's static reaction artwork leaves
+ * a small transparent margin (its ink is ~0.92–0.97 of the box on device), so a fallback
+ * glyph at the full box would read a touch larger than the artwork that replaces it.
+ */
+private const val EMOJI_INK_FRACTION = 0.92f
 
 /**
  * One-shot hand-off from a long-press reaction picker to the reaction chips of the same

@@ -26,7 +26,8 @@ class ReactionEmojiIconRepositoryTest {
         val scope = CoroutineScope(SupervisorJob() + dispatcher)
         val td = FakeTdSender()
         val style = MutableStateFlow(style)
-        val repo = ReactionEmojiIconRepository(td, scope, this.style, ioDispatcher = dispatcher)
+        var now = 0L
+        val repo = ReactionEmojiIconRepository(td, scope, this.style, ioDispatcher = dispatcher, nowMs = { now })
     }
 
     @Test
@@ -137,6 +138,40 @@ class ReactionEmojiIconRepositoryTest {
     }
 
     @Test
+    fun `a transient failure is retried after the cooldown, not memoised`() = runTest {
+        val f = Fixture(this)
+        var calls = 0
+        f.td.onAny("GetEmojiReaction") { req ->
+            calls++
+            if (calls == 1) TdApi.Error(TdClient.SEND_TIMEOUT_CODE, "SEND_TIMEOUT")
+            else emojiReaction((req as TdApi.GetEmojiReaction).emoji, webpIcon(fileId = 7))
+        }
+
+        f.repo.request(NERD)
+        assertFalse(f.repo.isMissing(NERD), "a timeout is not a definite miss")
+        f.repo.request(NERD)
+        assertEquals(1, f.td.rpcCount("GetEmojiReaction"), "no retry inside the cooldown")
+
+        f.now += 30_000L
+        f.repo.request(NERD)
+        assertEquals(2, f.td.rpcCount("GetEmojiReaction"))
+        assertEquals(7, f.repo.get(NERD)?.media?.fileId)
+        f.scope.cancel()
+    }
+
+    @Test
+    fun `a rate-limited lookup is transient too`() = runTest {
+        val f = Fixture(this)
+        f.td.onAny("GetEmojiReaction") { TdApi.Error(429, "Too Many Requests: retry after 5") }
+
+        f.repo.request(NERD)
+
+        assertFalse(f.repo.isMissing(NERD))
+        assertNull(f.repo.get(NERD))
+        f.scope.cancel()
+    }
+
+    @Test
     fun `an icon without a static raster counts as missing`() = runTest {
         val f = Fixture(this)
         val animatedOnly = TdApi.Sticker(
@@ -240,5 +275,6 @@ class ReactionEmojiIconRepositoryTest {
         const val HEART = "❤"
         const val FIRE = "🔥"
         const val THUMBS_UP = "👍"
+        const val NERD = "🤓"
     }
 }

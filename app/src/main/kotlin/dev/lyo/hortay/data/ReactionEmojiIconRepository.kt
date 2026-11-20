@@ -38,9 +38,14 @@ import java.util.concurrent.atomic.AtomicInteger
  *     reactions that are actually composed on screen are resolved — nothing on cold
  *     start, no harvest over the feed.
  *   - **At most once per emoji per session.** [requested] dedupes concurrent and
- *     repeated lookups; a failure is remembered in [missing] and never retried until
- *     the next session. The number of distinct standard reaction emoji Telegram ships
- *     is small (tens), which bounds the total for the whole session.
+ *     repeated lookups. A definite "no artwork" — TDLib's 404 (its reaction list has no
+ *     such emoji) or a response without a usable static raster — is remembered in
+ *     [missing] and never retried until the next session. Any OTHER failure (send
+ *     timeout, FLOOD_WAIT, a network or server error) is transient: the emoji is
+ *     forgotten so a glyph composed after [TRANSIENT_RETRY_MS] asks again. Memoising
+ *     those too left a standard reaction (seen with 🤓) on the device-font fallback for
+ *     the rest of the session after one unlucky call. The number of distinct standard
+ *     reaction emoji Telegram ships is small (tens), which bounds the total.
  *   - **Serial.** One [sendLock] keeps at most one call in flight, so a screen-full of
  *     fresh emoji resolves as a short queue rather than a parallel burst. Every call goes
  *     through [TdSender.send], i.e. through `TdClient`'s central FLOOD_WAIT gate.
@@ -57,6 +62,7 @@ class ReactionEmojiIconRepository(
     private val scope: CoroutineScope,
     private val style: StateFlow<EmojiStyle>,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
 
     private val _icons = MutableStateFlow<PersistentMap<String, ReactionEmojiIcon>>(persistentMapOf())
@@ -69,6 +75,9 @@ class ReactionEmojiIconRepository(
 
     /** Emoji TDLib had no usable artwork for (or failed on) — never re-requested in-session. */
     private val missing = ConcurrentHashMap.newKeySet<String>()
+
+    /** Emoji whose last lookup failed transiently → earliest [nowMs] for the next try. */
+    private val retryAfter = ConcurrentHashMap<String, Long>()
 
     private val sendLock = Mutex()
     private val epoch = AtomicInteger(0)
@@ -87,17 +96,26 @@ class ReactionEmojiIconRepository(
     fun request(emoji: String) {
         if (emoji.isEmpty()) return
         if (style.value != EmojiStyle.Telegram) return
+        val retryAt = retryAfter[emoji]
+        if (retryAt != null && nowMs() < retryAt) return
         if (!requested.add(emoji)) return
         val startEpoch = epoch.get()
         scope.launch(ioDispatcher) {
-            val icon = sendLock.withLock {
+            val result = sendLock.withLock {
                 if (epoch.get() != startEpoch) return@launch
                 suspendRunCatching { td.send(TdApi.GetEmojiReaction(emoji)) }
-                    .warnUnlessCancelled(TAG, "GetEmojiReaction")
-                    .getOrNull()
-                    ?.toReactionEmojiIcon(emoji)
+                    .warnUnlessCancelled(TAG, "GetEmojiReaction($emoji)")
             }
             if (epoch.get() != startEpoch) return@launch
+            val failure = result.exceptionOrNull()
+            if (failure != null && !(failure is TdClient.TdException && failure.code == NOT_FOUND)) {
+                // Transient: forget it, so a glyph composed after the cooldown asks again.
+                retryAfter[emoji] = nowMs() + TRANSIENT_RETRY_MS
+                requested.remove(emoji)
+                return@launch
+            }
+            retryAfter.remove(emoji)
+            val icon = result.getOrNull()?.toReactionEmojiIcon(emoji)
             if (icon == null) {
                 missing.add(emoji)
             } else {
@@ -115,11 +133,18 @@ class ReactionEmojiIconRepository(
         epoch.incrementAndGet()
         requested.clear()
         missing.clear()
+        retryAfter.clear()
         _icons.value = persistentMapOf()
     }
 
     private companion object {
         const val TAG = "ReactionEmojiIcons"
+
+        /** TDLib's answer to `getEmojiReaction` for an emoji its reaction list doesn't have. */
+        const val NOT_FOUND = 404
+
+        /** Cooldown before an emoji whose lookup failed transiently is asked for again. */
+        const val TRANSIENT_RETRY_MS = 30_000L
     }
 }
 
