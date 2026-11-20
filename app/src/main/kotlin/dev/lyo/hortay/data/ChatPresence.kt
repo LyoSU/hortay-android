@@ -312,15 +312,16 @@ internal object ChatPresence {
         }
     }
 
+    /** Returns whether TDLib accepted the call; a failure is logged, never thrown. */
     suspend fun viewMessages(
         td: TdSender,
         chatId: Long,
         messageIds: List<Long>,
         source: TdApi.MessageSource,
         forceRead: Boolean,
-    ) {
-        if (messageIds.isEmpty()) return
-        runCatching {
+    ): Boolean {
+        if (messageIds.isEmpty()) return true
+        return runCatching {
             td.send(
                 TdApi.ViewMessages(
                     chatId,
@@ -330,5 +331,6 @@ internal object ChatPresence {
                 ),
             )
         }.warnUnlessCancelled(TAG, "viewMessages($chatId, n=${messageIds.size}, force=$forceRead)")
+            .isSuccess
     }
 }

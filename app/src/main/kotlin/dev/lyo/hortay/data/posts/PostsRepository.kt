@@ -1636,21 +1636,48 @@ class PostsRepository(
      * spaced by [MARK_READ_SPACING_MS] so a few hundred channels trickle out instead of
      * landing as one burst; the central FLOOD_WAIT gate still applies on top. Suspends
      * until done — launch it in the session scope so logout cancels it.
+     *
+     * Unlike the dwell ack in [viewMessages], the local cursor moves only AFTER TDLib
+     * accepted the call: a channel whose ack failed must keep its unread badge rather
+     * than read as done here while Telegram still shows it unread. A failed call is
+     * retried once — a FLOOD_WAIT reply arms the central gate, so the retry waits the
+     * penalty out instead of walking back into it. A second confirmation while a run is
+     * still trickling out is ignored (returns 0).
      */
     suspend fun markChannelsRead(chatIds: Collection<Long>): Int {
-        val unread = _chatUnreadCounts.value
-        var acked = 0
-        for (chatId in chatIds) {
-            if ((unread[chatId] ?: 0) <= 0) continue
-            val lastId = runCatching { td.send(TdApi.GetChat(chatId)) }
-                .warnUnlessCancelled(TAG, "markChannelsRead/getChat")
-                .getOrNull()?.lastMessage?.id ?: continue
-            if (acked > 0) delay(MARK_READ_SPACING_MS)
-            viewMessages(chatId, listOf(lastId))
-            acked++
+        if (!markReadMutex.tryLock()) return 0
+        try {
+            val unread = _chatUnreadCounts.value
+            var acked = 0
+            var sent = false
+            for (chatId in chatIds) {
+                if ((unread[chatId] ?: 0) <= 0) continue
+                val lastId = runCatching { td.send(TdApi.GetChat(chatId)) }
+                    .warnUnlessCancelled(TAG, "markChannelsRead/getChat")
+                    .getOrNull()?.lastMessage?.id ?: continue
+                if (sent) delay(MARK_READ_SPACING_MS)
+                sent = true
+                if (ackNewest(chatId, lastId) || ackNewest(chatId, lastId)) {
+                    advanceReadCursor(chatId, lastId)
+                    acked++
+                }
+            }
+            return acked
+        } finally {
+            markReadMutex.unlock()
         }
-        return acked
     }
+
+    private val markReadMutex = Mutex()
+
+    private suspend fun ackNewest(chatId: Long, messageId: Long): Boolean =
+        ChatPresence.viewMessages(
+            td = td,
+            chatId = chatId,
+            messageIds = listOf(messageId),
+            source = TdApi.MessageSourceChatHistory(),
+            forceRead = !ChatPresence.isOpen(chatId),
+        )
 
     /**
      * Routes one TDLib update to its handler. Runs on the single update collector in
