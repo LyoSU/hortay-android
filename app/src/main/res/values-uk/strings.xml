@@ -734,15 +734,12 @@
     <string name="archive_filter_all">Усі</string>
     <string name="archive_filter_edited">Редаговані</string>
     <string name="archive_filter_deleted">Видалені</string>
-    <string name="archive_scope_all">Усе</string>
     <string name="archive_scope_posts">Пости</string>
     <string name="archive_scope_comments">Коментарі</string>
     <string name="archive_empty_enabled">Поки нічого. Як тільки канал відредагує або видалить пост, він зʼявиться тут.</string>
     <string name="archive_search_placeholder">Пошук в архіві</string>
-    <string name="archive_purged">Запис видалено</string>
 
     <!-- Archive: row -->
-    <string name="archive_row_kind_edited">Редаговано</string>
     <string name="archive_row_kind_deleted">Видалено</string>
 
     <!-- Archive: revision sheet -->
@@ -776,11 +773,7 @@
 
     <!-- Archive: settings screen -->
     <string name="settings_archive_title">Архів постів</string>
-    <string name="archive_master_toggle">Зберігати знімки</string>
     <string name="archive_master_subtitle">Лише на цьому пристрої. Очищається після виходу з акаунта.</string>
-    <string name="archive_capture_edits">Зберігати редагування</string>
-    <string name="archive_capture_deletes">Зберігати видалення</string>
-    <string name="archive_retention_label">Термін зберігання</string>
     <plurals name="archive_retention_days">
         <item quantity="one">%d день</item>
         <item quantity="few">%d дні</item>
@@ -788,13 +781,10 @@
         <item quantity="other">%d дня</item>
     </plurals>
     <string name="archive_retention_unlimited">Без обмежень</string>
-    <string name="archive_max_records_label">Максимум записів</string>
     <string name="archive_records_unlimited">Без обмежень</string>
     <string name="archive_clear_all">Очистити архів</string>
-    <string name="archive_clear_confirm">Усі знімки буде видалено назавжди. Канали цього не помітять.</string>
     <string name="archive_clear_yes">Очистити</string>
     <string name="archive_disable_title">Вимкнути архів</string>
-    <string name="archive_disable_body">Припинити зберігати нові знімки. Що зробити з наявними?</string>
     <string name="archive_disable_keep">Залишити, не зберігати нові</string>
     <string name="archive_disable_purge">Видалити й вимкнути</string>
 
@@ -805,25 +795,13 @@
 
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Зберігати редагування й видалення?</string>
-    <string name="archive_onboarding_what">Hortay зберігає текст та метадані медіа, коли канал редагує або видаляє пост. Самі фото й відео не завантажуються — лише маленькі мініатюри.</string>
+    <string name="archive_onboarding_what">Коли канал редагує або видаляє пост, Hortay зберігає його текст, а також фото й відео, які вже є на цьому пристрої. Нічого додатково не завантажується.</string>
     <string name="archive_onboarding_where">Локально на цьому пристрої. Нікуди не надсилається.</string>
     <string name="archive_onboarding_logout">Автоматично очищається, коли виходиш з акаунта</string>
     <string name="archive_onboarding_enable">Увімкнути</string>
     <string name="archive_onboarding_cancel">Скасувати</string>
 
     <!-- Archive: settings sections -->
-    <string name="archive_section_capture">Що зберігати</string>
-    <string name="archive_section_retention">Зберігання</string>
-    <string name="archive_section_events">Типи подій</string>
-    <string name="archive_section_archive">Архів</string>
-    <string name="archive_open_browser">Переглянути архів</string>
-    <string name="archive_storage_label">Обсяг</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="one">%d запис</item>
-        <item quantity="few">%d записи</item>
-        <item quantity="many">%d записів</item>
-        <item quantity="other">%d запису</item>
-    </plurals>
     <string name="settings_logout_dialog_text_archive">Локальний архів редагувань і видалень буде стерто назавжди. Потрібно буде знову ввести номер і код підтвердження</string>
     <string name="post_unread_state">Непрочитано</string>
     <string name="discover_add_channel">Знайти канали</string>
@@ -979,4 +957,66 @@
     <string name="reactions_who_reacted">Подивитися, хто відреагував</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s, реакція %2$s</string>
+    <string name="archive_master_toggle">Вести архів постів</string>
+    <string name="archive_master_description">Зберігає попередні версії відредагованих постів і пости, які канали видалили. Усе лишається тільки на цьому пристрої й нікуди не надсилається. Стирається, коли виходиш з акаунта.</string>
+    <string name="archive_capture_edits">Редагування</string>
+    <string name="archive_capture_edits_subtitle">Попередні версії постів, які змінив канал</string>
+    <string name="archive_capture_deletes">Видалення</string>
+    <string name="archive_capture_deletes_subtitle">Пости такими, якими вони були до видалення</string>
+    <string name="archive_section_events">Що зберігати</string>
+    <string name="archive_section_retention">Зберігання</string>
+    <string name="archive_section_archive">Дані архіву</string>
+    <string name="archive_section_channels">Канали</string>
+    <string name="archive_retention_label">Скільки зберігати</string>
+    <string name="archive_max_records_label">Ліміт записів</string>
+    <string name="archive_max_records_subtitle">Коли ліміт вичерпано, найстаріші записи зникають першими</string>
+    <string name="archive_storage_label">Займає місця</string>
+    <string name="archive_clear_confirm">Усе з архіву буде видалено назавжди. Канали цього не помітять.</string>
+    <string name="archive_disable_body">Нові зміни більше не зберігатимуться. Що зробити з тим, що вже є в архіві?</string>
+    <string name="archive_purged">Прибрано з архіву</string>
+    <string name="archive_scope_all">Пости й коментарі</string>
+    <string name="archive_open_browser">Відкрити архів</string>
+    <string name="archive_open_empty">Поки нічого не збережено</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="one">%d видалений</item>
+        <item quantity="few">%d видалені</item>
+        <item quantity="many">%d видалених</item>
+        <item quantity="other">%d видаленого</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="one">%d змінений</item>
+        <item quantity="few">%d змінені</item>
+        <item quantity="many">%d змінених</item>
+        <item quantity="other">%d зміненого</item>
+    </plurals>
+    <string name="archive_excluded_title">Канали без архіву</string>
+    <string name="archive_excluded_none">Немає, архів веде всі канали</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="one">%d канал</item>
+        <item quantity="few">%d канали</item>
+        <item quantity="many">%d каналів</item>
+        <item quantity="other">%d каналу</item>
+    </plurals>
+    <string name="archive_excluded_hint">Редагування й видалення в цих каналах не зберігаються. Те, що вже є в архіві, лишається.</string>
+    <string name="archive_excluded_empty">Канали зʼявляться тут, щойно архів побачить у них пост.</string>
+    <string name="archive_unknown_channel">Невідомий канал</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="one">Змінено · %d версія</item>
+        <item quantity="few">Змінено · %d версії</item>
+        <item quantity="many">Змінено · %d версій</item>
+        <item quantity="other">Змінено · %d версії</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · коментар</string>
+    <string name="archive_row_comment">Коментар</string>
+    <string name="archive_row_no_text">Без тексту</string>
+    <string name="archive_day_today">Сьогодні</string>
+    <string name="archive_day_yesterday">Учора</string>
+    <string name="archive_empty_title">Тут поки порожньо</string>
+    <string name="archive_empty_off_title">Архів вимкнено</string>
+    <string name="archive_empty_off_body">Увімкни його, щоб зберігати пости, які канали змінюють або видаляють.</string>
+    <string name="archive_open_settings">Відкрити налаштування</string>
+    <string name="archive_off_banner">Архів вимкнено, тож нові зміни не зберігаються</string>
+    <string name="archive_no_matches_title">Нічого не знайдено</string>
+    <string name="archive_no_matches_body">Спробуй інший фільтр або запит</string>
+    <string name="archive_remove_action">Прибрати з архіву</string>
 </resources>

@@ -731,12 +731,8 @@
     <string name="hidden_channels_unhide_for">Вернуть %1$s в ленту</string>
 
     <!-- Post archive -->
-    <string name="archive_capture_deletes">Сохранять удаления</string>
-    <string name="archive_capture_edits">Сохранять редактирования</string>
     <string name="archive_clear_all">Очистить архив</string>
-    <string name="archive_clear_confirm">Это навсегда удалит все снимки. Каналы этого не заметят.</string>
     <string name="archive_clear_yes">Очистить</string>
-    <string name="archive_disable_body">Прекратить сохранять новые снимки. Что сделать с имеющимися?</string>
     <string name="archive_disable_keep">Оставить, не сохранять новые</string>
     <string name="archive_disable_purge">Удалить и отключить</string>
     <string name="archive_disable_title">Отключить архив</string>
@@ -748,16 +744,12 @@
     <string name="archive_filter_deleted">Удалённые</string>
     <string name="archive_filter_edited">Изменённые</string>
     <string name="archive_master_subtitle">Локально на этом устройстве. Очищается при выходе.</string>
-    <string name="archive_master_toggle">Сохранять снимки</string>
-    <string name="archive_max_records_label">Максимум записей</string>
     <string name="archive_onboarding_cancel">Отмена</string>
     <string name="archive_onboarding_enable">Включить</string>
     <string name="archive_onboarding_logout">Автоматически очищается при выходе из аккаунта</string>
     <string name="archive_onboarding_title">Сохранять редактирования и удаления?</string>
-    <string name="archive_onboarding_what">Hortay сохраняет текст и метаданные медиа, когда канал редактирует или удаляет пост. Сами фото и видео не скачиваются — только небольшие миниатюры.</string>
+    <string name="archive_onboarding_what">Когда канал редактирует или удаляет пост, Hortay сохраняет его текст, а также фото и видео, которые уже есть на этом устройстве. Ничего дополнительно не скачивается.</string>
     <string name="archive_onboarding_where">Хранится локально на этом устройстве. Никуда не отправляется.</string>
-    <string name="archive_open_browser">Открыть архив</string>
-    <string name="archive_purged">Запись удалена</string>
     <string name="archive_records_unlimited">Без ограничений</string>
     <plurals name="archive_retention_days">
         <item quantity="one">%d день</item>
@@ -765,26 +757,12 @@
         <item quantity="many">%d дней</item>
         <item quantity="other">%d дня</item>
     </plurals>
-    <string name="archive_retention_label">Срок хранения</string>
     <string name="archive_retention_unlimited">Без ограничений</string>
     <string name="archive_row_kind_deleted">Удалено</string>
-    <string name="archive_row_kind_edited">Изменено</string>
-    <string name="archive_scope_all">Всё</string>
     <string name="archive_scope_comments">Комментарии</string>
     <string name="archive_scope_posts">Посты</string>
     <string name="archive_screen_title">Архив</string>
     <string name="archive_search_placeholder">Поиск в архиве</string>
-    <string name="archive_section_archive">Архив</string>
-    <string name="archive_section_capture">Запись</string>
-    <string name="archive_section_events">Типы событий</string>
-    <string name="archive_section_retention">Хранение</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="one">%d снимок</item>
-        <item quantity="few">%d снимка</item>
-        <item quantity="many">%d снимков</item>
-        <item quantity="other">%d снимка</item>
-    </plurals>
-    <string name="archive_storage_label">Объём</string>
     <string name="post_deleted_badge">удалено</string>
     <plurals name="post_edited_chip_count">
         <item quantity="one">ред. ×%d</item>
@@ -975,4 +953,66 @@
     <string name="reactions_who_reacted">Посмотреть, кто отреагировал</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s, реакция %2$s</string>
+    <string name="archive_master_toggle">Вести архив постов</string>
+    <string name="archive_master_description">Сохраняет прежние версии отредактированных постов и посты, которые каналы удалили. Всё остаётся только на этом устройстве и никуда не отправляется. Стирается при выходе из аккаунта.</string>
+    <string name="archive_capture_edits">Правки</string>
+    <string name="archive_capture_edits_subtitle">Прежние версии постов, которые изменил канал</string>
+    <string name="archive_capture_deletes">Удаления</string>
+    <string name="archive_capture_deletes_subtitle">Посты в том виде, в каком они были до удаления</string>
+    <string name="archive_section_events">Что сохранять</string>
+    <string name="archive_section_retention">Хранение</string>
+    <string name="archive_section_archive">Данные архива</string>
+    <string name="archive_section_channels">Каналы</string>
+    <string name="archive_retention_label">Сколько хранить</string>
+    <string name="archive_max_records_label">Лимит записей</string>
+    <string name="archive_max_records_subtitle">Когда лимит исчерпан, первыми уходят самые старые записи</string>
+    <string name="archive_storage_label">Занимает места</string>
+    <string name="archive_clear_confirm">Всё из архива будет удалено навсегда. Каналы этого не заметят.</string>
+    <string name="archive_disable_body">Новые изменения больше не будут сохраняться. Что сделать с тем, что уже есть в архиве?</string>
+    <string name="archive_purged">Убрано из архива</string>
+    <string name="archive_scope_all">Посты и комментарии</string>
+    <string name="archive_open_browser">Открыть архив</string>
+    <string name="archive_open_empty">Пока ничего не сохранено</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="one">%d удалённый</item>
+        <item quantity="few">%d удалённых</item>
+        <item quantity="many">%d удалённых</item>
+        <item quantity="other">%d удалённого</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="one">%d изменённый</item>
+        <item quantity="few">%d изменённых</item>
+        <item quantity="many">%d изменённых</item>
+        <item quantity="other">%d изменённого</item>
+    </plurals>
+    <string name="archive_excluded_title">Каналы без архива</string>
+    <string name="archive_excluded_none">Нет, архив ведётся для всех каналов</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="one">%d канал</item>
+        <item quantity="few">%d канала</item>
+        <item quantity="many">%d каналов</item>
+        <item quantity="other">%d канала</item>
+    </plurals>
+    <string name="archive_excluded_hint">Правки и удаления в этих каналах не сохраняются. То, что уже в архиве, остаётся.</string>
+    <string name="archive_excluded_empty">Каналы появятся здесь, как только архив увидит в них пост.</string>
+    <string name="archive_unknown_channel">Неизвестный канал</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="one">Изменено · %d версия</item>
+        <item quantity="few">Изменено · %d версии</item>
+        <item quantity="many">Изменено · %d версий</item>
+        <item quantity="other">Изменено · %d версии</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · комментарий</string>
+    <string name="archive_row_comment">Комментарий</string>
+    <string name="archive_row_no_text">Без текста</string>
+    <string name="archive_day_today">Сегодня</string>
+    <string name="archive_day_yesterday">Вчера</string>
+    <string name="archive_empty_title">Здесь пока пусто</string>
+    <string name="archive_empty_off_title">Архив выключен</string>
+    <string name="archive_empty_off_body">Включите его, чтобы сохранять посты, которые каналы меняют или удаляют.</string>
+    <string name="archive_open_settings">Открыть настройки</string>
+    <string name="archive_off_banner">Архив выключен, поэтому новые изменения не сохраняются</string>
+    <string name="archive_no_matches_title">Ничего не найдено</string>
+    <string name="archive_no_matches_body">Попробуйте другой фильтр или запрос</string>
+    <string name="archive_remove_action">Убрать из архива</string>
 </resources>

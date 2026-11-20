@@ -693,12 +693,8 @@
     <string name="hidden_channels_unhide_for">نمایش %1$s در فید</string>
 
     <!-- Post archive -->
-    <string name="archive_capture_deletes">ثبت حذف‌ها</string>
-    <string name="archive_capture_edits">ثبت ویرایش‌ها</string>
     <string name="archive_clear_all">پاک کردن آرشیو</string>
-    <string name="archive_clear_confirm">این کار همه نسخه‌ها را برای همیشه حذف می‌کند. کانال‌ها متوجه نمی‌شوند.</string>
     <string name="archive_clear_yes">پاک کن</string>
-    <string name="archive_disable_body">دیگر نسخه‌ی جدیدی ذخیره نمی‌شود. نسخه‌های موجود چطور؟</string>
     <string name="archive_disable_keep">نگه دار، فقط متوقف کن</string>
     <string name="archive_disable_purge">حذف کن و غیرفعال</string>
     <string name="archive_disable_title">غیرفعال کردن آرشیو</string>
@@ -710,39 +706,23 @@
     <string name="archive_filter_deleted">حذف‌شده</string>
     <string name="archive_filter_edited">ویرایش‌شده</string>
     <string name="archive_master_subtitle">فقط روی این دستگاه. با خروج از حساب پاک می‌شود.</string>
-    <string name="archive_master_toggle">ذخیره‌ی نسخه‌ها</string>
-    <string name="archive_max_records_label">حداکثر رکورد</string>
     <string name="archive_onboarding_cancel">انصراف</string>
     <string name="archive_onboarding_enable">فعال</string>
     <string name="archive_onboarding_logout">با خروج از حساب به‌طور خودکار پاک می‌شود</string>
     <string name="archive_onboarding_title">ویرایش‌ها و حذف‌ها ذخیره شوند؟</string>
-    <string name="archive_onboarding_what">Hortay متن و متادیتای رسانه را هنگام ویرایش یا حذف پست توسط کانال ذخیره می‌کند. عکس‌ها و ویدیوها دانلود نمی‌شوند — فقط تصاویر کوچک.</string>
+    <string name="archive_onboarding_what">وقتی کانالی پستی را ویرایش یا حذف می‌کند، Hortay متن آن و عکس‌ها و ویدیوهایی را که از قبل روی این دستگاه هستند نگه می‌دارد. چیز اضافه‌ای دانلود نمی‌شود.</string>
     <string name="archive_onboarding_where">فقط روی این دستگاه ذخیره می‌شود. هرگز آپلود نمی‌شود.</string>
-    <string name="archive_open_browser">باز کردن آرشیو</string>
-    <string name="archive_purged">نسخه حذف شد</string>
     <string name="archive_records_unlimited">بدون محدودیت</string>
     <plurals name="archive_retention_days">
         <item quantity="one">%d روز</item>
         <item quantity="other">%d روز</item>
     </plurals>
-    <string name="archive_retention_label">نگهداری</string>
     <string name="archive_retention_unlimited">بدون محدودیت</string>
     <string name="archive_row_kind_deleted">حذف‌شده</string>
-    <string name="archive_row_kind_edited">ویرایش‌شده</string>
-    <string name="archive_scope_all">همه دامنه‌ها</string>
     <string name="archive_scope_comments">نظرات</string>
     <string name="archive_scope_posts">پست‌ها</string>
     <string name="archive_screen_title">آرشیو</string>
     <string name="archive_search_placeholder">جستجو در آرشیو</string>
-    <string name="archive_section_archive">آرشیو</string>
-    <string name="archive_section_capture">ثبت</string>
-    <string name="archive_section_events">نوع رویداد</string>
-    <string name="archive_section_retention">نگهداری</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="one">%d نسخه</item>
-        <item quantity="other">%d نسخه</item>
-    </plurals>
-    <string name="archive_storage_label">فضای ذخیره‌سازی</string>
     <string name="post_deleted_badge">حذف‌شده</string>
     <plurals name="post_edited_chip_count">
         <item quantity="one">ویرایش‌شده ×%d</item>
@@ -923,4 +903,58 @@
     <string name="reactions_who_reacted">ببین چه کسی واکنش نشان داد</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s با %2$s واکنش نشان داد</string>
+    <string name="archive_master_toggle">نگه‌داشتن آرشیو پست‌ها</string>
+    <string name="archive_master_description">نسخه‌های قبلی پست‌های ویرایش‌شده و پست‌هایی را که کانال‌ها حذف می‌کنند نگه می‌دارد. همه‌چیز فقط روی همین دستگاه می‌ماند و به هیچ جا فرستاده نمی‌شود. با خروج از حساب پاک می‌شود.</string>
+    <string name="archive_capture_edits">ویرایش‌ها</string>
+    <string name="archive_capture_edits_subtitle">نسخه‌های قبلی پست‌هایی که کانال تغییر می‌دهد</string>
+    <string name="archive_capture_deletes">حذف‌ها</string>
+    <string name="archive_capture_deletes_subtitle">پست‌ها همان‌طور که پیش از حذف بودند</string>
+    <string name="archive_section_events">چه چیزهایی نگه داشته شود</string>
+    <string name="archive_section_retention">فضای ذخیره‌سازی</string>
+    <string name="archive_section_archive">داده‌های آرشیو</string>
+    <string name="archive_section_channels">کانال‌ها</string>
+    <string name="archive_retention_label">مدت نگه‌داری</string>
+    <string name="archive_max_records_label">سقف موارد</string>
+    <string name="archive_max_records_subtitle">با رسیدن به سقف، قدیمی‌ترین موارد اول حذف می‌شوند</string>
+    <string name="archive_storage_label">فضای اشغال‌شده</string>
+    <string name="archive_clear_confirm">همه‌چیز در آرشیو برای همیشه پاک می‌شود. کانال‌ها متوجه نمی‌شوند.</string>
+    <string name="archive_disable_body">تغییرات جدید دیگر ذخیره نمی‌شوند. با آنچه الان در آرشیو است چه کنیم؟</string>
+    <string name="archive_purged">از آرشیو حذف شد</string>
+    <string name="archive_scope_all">پست‌ها و نظرات</string>
+    <string name="archive_open_browser">باز کردن آرشیو</string>
+    <string name="archive_open_empty">هنوز چیزی ذخیره نشده</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="one">%d حذف‌شده</item>
+        <item quantity="other">%d حذف‌شده</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="one">%d ویرایش‌شده</item>
+        <item quantity="other">%d ویرایش‌شده</item>
+    </plurals>
+    <string name="archive_excluded_title">کانال‌های مستثنا</string>
+    <string name="archive_excluded_none">هیچ، همه‌ی کانال‌ها آرشیو می‌شوند</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="one">%d کانال</item>
+        <item quantity="other">%d کانال</item>
+    </plurals>
+    <string name="archive_excluded_hint">ویرایش‌ها و حذف‌ها در این کانال‌ها ذخیره نمی‌شوند. آنچه قبلاً آرشیو شده می‌ماند.</string>
+    <string name="archive_excluded_empty">کانال‌ها وقتی آرشیو پستی از آن‌ها ببیند اینجا نشان داده می‌شوند.</string>
+    <string name="archive_unknown_channel">کانال ناشناس</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="one">ویرایش‌شده · %d نسخه</item>
+        <item quantity="other">ویرایش‌شده · %d نسخه</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · نظر</string>
+    <string name="archive_row_comment">نظر</string>
+    <string name="archive_row_no_text">بدون متن</string>
+    <string name="archive_day_today">امروز</string>
+    <string name="archive_day_yesterday">دیروز</string>
+    <string name="archive_empty_title">هنوز چیزی اینجا نیست</string>
+    <string name="archive_empty_off_title">آرشیو خاموش است</string>
+    <string name="archive_empty_off_body">روشنش کن تا پست‌هایی که کانال‌ها ویرایش یا حذف می‌کنند نگه داشته شوند.</string>
+    <string name="archive_open_settings">باز کردن تنظیمات</string>
+    <string name="archive_off_banner">آرشیو خاموش است، پس تغییرات جدید ذخیره نمی‌شوند</string>
+    <string name="archive_no_matches_title">چیزی پیدا نشد</string>
+    <string name="archive_no_matches_body">فیلتر یا جستجوی دیگری را امتحان کن</string>
+    <string name="archive_remove_action">حذف از آرشیو</string>
 </resources>

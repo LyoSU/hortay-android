@@ -141,10 +141,19 @@ internal fun RenderNavKey(
         )
 
         is ArchiveKey -> {
-            val vm = viewModel { ArchiveViewModel(graph.archiveRepository) }
+            val vm = viewModel {
+                ArchiveViewModel(graph.archiveRepository, graph.archiveSettingsState, graph.channelDirectory::chatAvatar)
+            }
             ArchiveScreen(
                 viewModel = vm,
                 onBack = onPopNav,
+                onOpenSettings = {
+                    // Opened from the archive settings page: go back to it instead of
+                    // stacking a second copy on top.
+                    val stack = graph.backStack
+                    if (stack.getOrNull(stack.lastIndex - 1) == ArchiveSettingsKey) onPopNav()
+                    else stack.add(ArchiveSettingsKey)
+                },
                 mediaResolver = graph.archivedMediaResolver,
             )
         }

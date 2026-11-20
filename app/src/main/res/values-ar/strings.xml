@@ -763,12 +763,8 @@
     <string name="hidden_channels_unhide_for">إظهار %1$s في الخلاصة</string>
 
     <!-- Post archive -->
-    <string name="archive_capture_deletes">تسجيل الحذف</string>
-    <string name="archive_capture_edits">تسجيل التعديلات</string>
     <string name="archive_clear_all">مسح الأرشيف</string>
-    <string name="archive_clear_confirm">سيُحذف كل اللقطات نهائياً. القنوات لن تلاحظ ذلك.</string>
     <string name="archive_clear_yes">مسح</string>
-    <string name="archive_disable_body">أوقف حفظ اللقطات الجديدة. ماذا تريد أن تفعل بالموجودة؟</string>
     <string name="archive_disable_keep">احتفظ بها وأوقف الحفظ</string>
     <string name="archive_disable_purge">احذف وعطّل</string>
     <string name="archive_disable_title">تعطيل الأرشيف</string>
@@ -780,16 +776,12 @@
     <string name="archive_filter_deleted">المحذوفة</string>
     <string name="archive_filter_edited">المعدَّلة</string>
     <string name="archive_master_subtitle">محلياً على هذا الجهاز. يُمسح عند تسجيل الخروج.</string>
-    <string name="archive_master_toggle">حفظ اللقطات</string>
-    <string name="archive_max_records_label">الحد الأقصى للسجلات</string>
     <string name="archive_onboarding_cancel">إلغاء</string>
     <string name="archive_onboarding_enable">تفعيل</string>
     <string name="archive_onboarding_logout">يُمسح تلقائياً عند تسجيل الخروج</string>
     <string name="archive_onboarding_title">حفظ التعديلات والمحذوفات؟</string>
-    <string name="archive_onboarding_what">يحفظ Hortay النص وبيانات الوسائط حين تُعدّل قناة منشوراً أو تحذفه. الصور والفيديوهات نفسها لا تُنزَّل — فقط مصغّرات صغيرة.</string>
+    <string name="archive_onboarding_what">عندما تعدّل قناة منشوراً أو تحذفه، يحتفظ Hortay بنصّه وبالصور والفيديوهات الموجودة مسبقاً على هذا الجهاز. لا يُنزَّل أي شيء إضافي.</string>
     <string name="archive_onboarding_where">مخزَّن محلياً على هذا الجهاز. لا يُرفع أبداً.</string>
-    <string name="archive_open_browser">فتح الأرشيف</string>
-    <string name="archive_purged">تم حذف اللقطة</string>
     <string name="archive_records_unlimited">بلا حدود</string>
     <plurals name="archive_retention_days">
         <item quantity="zero">%d يوم</item>
@@ -799,28 +791,12 @@
         <item quantity="many">%d يومًا</item>
         <item quantity="other">%d يوم</item>
     </plurals>
-    <string name="archive_retention_label">مدة الاحتفاظ</string>
     <string name="archive_retention_unlimited">بلا حدود</string>
     <string name="archive_row_kind_deleted">محذوف</string>
-    <string name="archive_row_kind_edited">معدَّل</string>
-    <string name="archive_scope_all">كل النطاقات</string>
     <string name="archive_scope_comments">التعليقات</string>
     <string name="archive_scope_posts">المنشورات</string>
     <string name="archive_screen_title">الأرشيف</string>
     <string name="archive_search_placeholder">البحث في الأرشيف</string>
-    <string name="archive_section_archive">الأرشيف</string>
-    <string name="archive_section_capture">التسجيل</string>
-    <string name="archive_section_events">أنواع الأحداث</string>
-    <string name="archive_section_retention">الاحتفاظ</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="zero">لا توجد لقطات</item>
-        <item quantity="one">لقطة واحدة</item>
-        <item quantity="two">%d لقطتان</item>
-        <item quantity="few">%d لقطات</item>
-        <item quantity="many">%d لقطة</item>
-        <item quantity="other">%d لقطة</item>
-    </plurals>
-    <string name="archive_storage_label">التخزين</string>
     <string name="post_deleted_badge">محذوف</string>
     <plurals name="post_edited_chip_count">
         <item quantity="zero">معدَّل</item>
@@ -1021,4 +997,74 @@
     <string name="reactions_who_reacted">اعرض من تفاعل</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s تفاعل بـ %2$s</string>
+    <string name="archive_master_toggle">الاحتفاظ بأرشيف المنشورات</string>
+    <string name="archive_master_description">يحتفظ بالنسخ السابقة من المنشورات المعدّلة وبالمنشورات التي تحذفها القنوات. يبقى كل شيء على هذا الجهاز فقط ولا يُرسل إلى أي مكان. يُمسح عند تسجيل الخروج.</string>
+    <string name="archive_capture_edits">التعديلات</string>
+    <string name="archive_capture_edits_subtitle">النسخ السابقة من المنشورات التي تغيّرها القناة</string>
+    <string name="archive_capture_deletes">المحذوفات</string>
+    <string name="archive_capture_deletes_subtitle">المنشورات كما كانت قبل أن تحذفها القناة</string>
+    <string name="archive_section_events">ما يُحتفظ به</string>
+    <string name="archive_section_retention">التخزين</string>
+    <string name="archive_section_archive">بيانات الأرشيف</string>
+    <string name="archive_section_channels">القنوات</string>
+    <string name="archive_retention_label">مدة الاحتفاظ</string>
+    <string name="archive_max_records_label">حد الإدخالات</string>
+    <string name="archive_max_records_subtitle">عند تجاوز الحد تُحذف أقدم الإدخالات أولاً</string>
+    <string name="archive_storage_label">المساحة المستخدمة</string>
+    <string name="archive_clear_confirm">سيُحذف كل ما في الأرشيف نهائياً. لن تلاحظ القنوات ذلك.</string>
+    <string name="archive_disable_body">لن تُحفظ التغييرات الجديدة بعد الآن. ماذا نفعل بما في الأرشيف حالياً؟</string>
+    <string name="archive_purged">أُزيل من الأرشيف</string>
+    <string name="archive_scope_all">المنشورات والتعليقات</string>
+    <string name="archive_open_browser">فتح الأرشيف</string>
+    <string name="archive_open_empty">لم يُحفظ شيء بعد</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="zero">%d محذوف</item>
+        <item quantity="one">%d محذوف</item>
+        <item quantity="two">%d محذوفان</item>
+        <item quantity="few">%d محذوفة</item>
+        <item quantity="many">%d محذوفاً</item>
+        <item quantity="other">%d محذوف</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="zero">%d معدّل</item>
+        <item quantity="one">%d معدّل</item>
+        <item quantity="two">%d معدّلان</item>
+        <item quantity="few">%d معدّلة</item>
+        <item quantity="many">%d معدّلاً</item>
+        <item quantity="other">%d معدّل</item>
+    </plurals>
+    <string name="archive_excluded_title">القنوات المستثناة</string>
+    <string name="archive_excluded_none">لا شيء، تُؤرشف كل القنوات</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="zero">%d قناة</item>
+        <item quantity="one">%d قناة</item>
+        <item quantity="two">%d قناتان</item>
+        <item quantity="few">%d قنوات</item>
+        <item quantity="many">%d قناة</item>
+        <item quantity="other">%d قناة</item>
+    </plurals>
+    <string name="archive_excluded_hint">لا تُحفظ التعديلات والمحذوفات في هذه القنوات. ما أُرشف من قبل يبقى.</string>
+    <string name="archive_excluded_empty">ستظهر القنوات هنا بعد أن يرى الأرشيف منشوراً منها.</string>
+    <string name="archive_unknown_channel">قناة غير معروفة</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="zero">معدّل · %d نسخة</item>
+        <item quantity="one">معدّل · %d نسخة</item>
+        <item quantity="two">معدّل · %d نسختان</item>
+        <item quantity="few">معدّل · %d نسخ</item>
+        <item quantity="many">معدّل · %d نسخة</item>
+        <item quantity="other">معدّل · %d نسخة</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · تعليق</string>
+    <string name="archive_row_comment">تعليق</string>
+    <string name="archive_row_no_text">بلا نص</string>
+    <string name="archive_day_today">اليوم</string>
+    <string name="archive_day_yesterday">أمس</string>
+    <string name="archive_empty_title">لا شيء هنا بعد</string>
+    <string name="archive_empty_off_title">الأرشيف متوقف</string>
+    <string name="archive_empty_off_body">فعّله للاحتفاظ بالمنشورات التي تعدّلها القنوات أو تحذفها.</string>
+    <string name="archive_open_settings">فتح الإعدادات</string>
+    <string name="archive_off_banner">الأرشيف متوقف، لذا لا تُحفظ التغييرات الجديدة</string>
+    <string name="archive_no_matches_title">لم يُعثر على شيء</string>
+    <string name="archive_no_matches_body">جرّب عامل تصفية أو بحثاً آخر</string>
+    <string name="archive_remove_action">إزالة من الأرشيف</string>
 </resources>

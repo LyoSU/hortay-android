@@ -37,6 +37,9 @@
 - Picking a reaction plays Telegram's animation for it, and the reactions in the long-press menu animate in as it opens.
 
 ### Changed
+- The post archive lists one entry per post with its channel, time and a preview, grouped by day, with counts on the Deleted and Edited filters.
+- Post archive settings follow the look of the rest of Settings, show how many posts were deleted and edited, and count saved photos and videos in the space used.
+- Post archive settings can skip chosen channels.
 - A post's edit history shows its versions as a row of time chips with a one-line note on what changed, keeps the post's formatting and links, and marks the changed words in place.
 - Long-pressing a post or a comment opens a compact menu right next to it — reactions in a floating capsule, actions in a small card — instead of a sheet covering half the screen.
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
@@ -141,6 +144,10 @@
 - The edit-history sheet of a post no longer flickers empty while it's open.
 - The edit history shows a sharp photo whenever the picture is already on the device, instead of a blurred preview.
 - The post archive no longer records one edit twice when two edits arrive close together.
+- The post archive catches edits made while the app was closed, the next time the post loads.
+- The post archive no longer records a new version of a post whose text, formatting and media did not change.
+- The post archive no longer fills up with empty "Deleted" entries for messages it never saved.
+- The post archive's introduction no longer says photos and videos are never kept.
 - A reaction emoji without Telegram artwork is drawn at the same size as the others, and artwork that failed to load is tried again.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
 - Rotating the phone no longer closes the fullscreen video, jumps back to the Feed tab or closes open sheets.

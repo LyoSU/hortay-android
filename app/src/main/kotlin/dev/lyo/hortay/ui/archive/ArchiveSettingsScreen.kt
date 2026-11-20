@@ -2,67 +2,94 @@
 
 package dev.lyo.hortay.ui.archive
 
-import androidx.compose.ui.res.stringArrayResource
-import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.archive.ArchiveSettings
+import dev.lyo.hortay.data.archive.ArchivedChannelEntry
+import dev.lyo.hortay.data.archive.ChatRef
+import dev.lyo.hortay.ui.components.HortayTopBar
+import dev.lyo.hortay.ui.components.HortayTopBarSize
+import dev.lyo.hortay.ui.components.formatByteSize
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
+import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.media.rememberDeferredLoading
 import dev.lyo.hortay.ui.settings.SectionLabel
+import dev.lyo.hortay.ui.settings.SettingsGroup
+import dev.lyo.hortay.ui.settings.SettingsIconTile
 import dev.lyo.hortay.ui.settings.SettingsRow
+import dev.lyo.hortay.ui.settings.settingsGroupedShapes
+import dev.lyo.hortay.ui.settings.settingsRowColors
+import dev.lyo.hortay.ui.theme.tabularFigures
+import dev.lyo.hortay.ui.timeline.READING_WIDTH_CAP
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableSet
 import kotlinx.coroutines.launch
 
 /**
- * Settings → Post archive management screen.
+ * Settings → Post archive, in the grouped-block style of the rest of Settings.
  *
- * Layout follows the project's existing settings idiom: [SectionLabel] +
- * [SegmentedListItem] sub-rows grouped per section, so the visual rhythm
- * matches Feed / Storage / Privacy etc. Toggle rows use SegmentedListItem
- * directly (the shared [SettingsRow] is chevron-or-nothing trailing).
- *
- * Sections:
- *   1. [archive_section_capture]    — master enable toggle
- *   2. [archive_section_retention]  — TTL + cap dropdowns
- *   3. [archive_section_events]     — what kinds of events to capture
- *   4. [archive_section_archive]    — open archive list, storage size, export, clear
+ * Top to bottom: the master switch with a plain-words description; "Open archive" with the
+ * real numbers (messages, not stored rows); what to keep (edits, deletions); storage
+ * (retention, entry limit, space used); channels the archive skips; export and clear.
+ * While the archive is off only the master switch shows — plus, when something is still
+ * stored, the way into it, its size, export and clear.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,14 +99,17 @@ fun ArchiveSettingsScreen(
     onOpenArchive: () -> Unit = {},
 ) {
     val s by viewModel.settings.collectAsStateWithLifecycle()
-    val count by viewModel.snapshotCount.collectAsStateWithLifecycle()
+    val counts by viewModel.counts.collectAsStateWithLifecycle()
     val bytes by viewModel.storageBytes.collectAsStateWithLifecycle()
+    val channels by viewModel.channels.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showOnboarding by remember { mutableStateOf(false) }
     var showDisableDialog by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var showExportConfirm by remember { mutableStateOf(false) }
+    var showExcluded by rememberSaveable { mutableStateOf(false) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
@@ -93,10 +123,15 @@ fun ArchiveSettingsScreen(
         }
     }
 
+    val hasData = (counts?.all ?: 0) > 0 || (bytes ?: 0L) > 0L
+
     Scaffold(
+        modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_archive_title)) },
+            HortayTopBar(
+                title = stringResource(R.string.settings_archive_title),
+                size = HortayTopBarSize.Large,
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Symbol(
@@ -109,112 +144,145 @@ fun ArchiveSettingsScreen(
                 },
             )
         },
+        containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            SectionLabel(stringResource(R.string.archive_section_capture))
-            MasterToggleRow(
-                enabled = s.enabled,
-                onChange = { wantOn ->
-                    if (wantOn && !s.onboardingSeen) showOnboarding = true
-                    else if (wantOn) viewModel.confirmEnableFromOnboarding()
-                    else showDisableDialog = true
-                },
-            )
-
-            if (s.enabled) {
-                Spacer(Modifier.height(8.dp))
-                SectionLabel(stringResource(R.string.archive_section_retention))
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    DropdownRow(
-                        symbol = "timer",
-                        title = stringResource(R.string.archive_retention_label),
-                        value = retentionLabel(s.retentionDays),
-                        options = ArchiveSettings.RETENTION_OPTIONS,
-                        labelOf = ::retentionLabel,
-                        onPick = viewModel::setRetentionDays,
-                        index = 0,
-                        count = 2,
-                    )
-                    DropdownRow(
-                        symbol = "storage",
-                        title = stringResource(R.string.archive_max_records_label),
-                        value = recordsLabel(s.maxRecords),
-                        options = ArchiveSettings.MAX_RECORDS_OPTIONS,
-                        labelOf = ::recordsLabel,
-                        onPick = viewModel::setMaxRecords,
-                        index = 1,
-                        count = 2,
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = READING_WIDTH_CAP)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = padding.calculateTopPadding(),
+                        bottom = padding.calculateBottomPadding() + 24.dp,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SettingsGroup {
+                    ArchiveToggleRow(
+                        symbol = "history",
+                        title = stringResource(R.string.archive_master_toggle),
+                        subtitle = stringResource(R.string.archive_master_description),
+                        checked = s.enabled,
+                        onCheckedChange = { wantOn ->
+                            when {
+                                wantOn && !s.onboardingSeen -> showOnboarding = true
+                                wantOn -> viewModel.confirmEnableFromOnboarding()
+                                else -> showDisableDialog = true
+                            }
+                        },
                     )
                 }
 
-                Spacer(Modifier.height(8.dp))
-                SectionLabel(stringResource(R.string.archive_section_events))
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ToggleRow(
-                        symbol = "edit",
-                        title = stringResource(R.string.archive_capture_edits),
-                        checked = s.captureEdits,
-                        onCheckedChange = viewModel::setCaptureEdits,
-                        index = 0,
-                        count = 2,
-                    )
-                    ToggleRow(
-                        symbol = "delete",
-                        title = stringResource(R.string.archive_capture_deletes),
-                        checked = s.captureDeletes,
-                        onCheckedChange = viewModel::setCaptureDeletes,
-                        index = 1,
-                        count = 2,
-                    )
+                if (s.enabled || hasData) {
+                    SettingsGroup {
+                        SettingsRow(
+                            symbol = "delete_sweep",
+                            title = stringResource(R.string.archive_open_browser),
+                            subtitle = openArchiveSummary(counts),
+                            chevron = true,
+                            grouped = true,
+                            onClick = onOpenArchive,
+                        )
+                    }
                 }
 
-                Spacer(Modifier.height(8.dp))
-                SectionLabel(stringResource(R.string.archive_section_archive))
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    SettingsRow(
-                        symbol = "delete_sweep",
-                        title = stringResource(R.string.archive_open_browser),
-                        subtitle = pluralStringResource(
-                            R.plurals.archive_snapshot_count, count, count,
-                        ),
-                        chevron = true,
-                        index = 0,
-                        count = 4,
-                        onClick = onOpenArchive,
-                    )
-                    SettingsRow(
-                        symbol = "storage",
-                        title = stringResource(R.string.archive_storage_label),
-                        subtitle = formatByteSize(bytes, stringArrayResource(R.array.size_units)),
-                        index = 1,
-                        count = 4,
-                    )
-                    SettingsRow(
-                        symbol = "share",
-                        title = stringResource(R.string.archive_export_json),
-                        chevron = true,
-                        index = 2,
-                        count = 4,
-                        onClick = { showExportConfirm = true },
-                    )
-                    SettingsRow(
-                        symbol = "delete",
-                        title = stringResource(R.string.archive_clear_all),
-                        tint = MaterialTheme.colorScheme.error,
-                        index = 3,
-                        count = 4,
-                        onClick = { showClearConfirm = true },
-                    )
+                if (s.enabled) {
+                    Column {
+                        SectionLabel(stringResource(R.string.archive_section_events))
+                        SettingsGroup {
+                            ArchiveToggleRow(
+                                symbol = "edit",
+                                title = stringResource(R.string.archive_capture_edits),
+                                subtitle = stringResource(R.string.archive_capture_edits_subtitle),
+                                checked = s.captureEdits,
+                                onCheckedChange = viewModel::setCaptureEdits,
+                            )
+                            ArchiveToggleRow(
+                                symbol = "delete",
+                                title = stringResource(R.string.archive_capture_deletes),
+                                subtitle = stringResource(R.string.archive_capture_deletes_subtitle),
+                                checked = s.captureDeletes,
+                                onCheckedChange = viewModel::setCaptureDeletes,
+                            )
+                        }
+                    }
+                }
+
+                if (s.enabled || hasData) {
+                    Column {
+                        SectionLabel(stringResource(R.string.archive_section_retention))
+                        SettingsGroup {
+                            if (s.enabled) {
+                                DropdownRow(
+                                    symbol = "timer",
+                                    title = stringResource(R.string.archive_retention_label),
+                                    subtitle = null,
+                                    value = retentionLabel(s.retentionDays),
+                                    options = ArchiveSettings.RETENTION_OPTIONS,
+                                    labelOf = { retentionLabel(it) },
+                                    onPick = viewModel::setRetentionDays,
+                                )
+                                DropdownRow(
+                                    symbol = "storage",
+                                    title = stringResource(R.string.archive_max_records_label),
+                                    subtitle = stringResource(R.string.archive_max_records_subtitle),
+                                    value = recordsLabel(s.maxRecords),
+                                    options = ArchiveSettings.MAX_RECORDS_OPTIONS,
+                                    labelOf = { recordsLabel(it) },
+                                    onPick = viewModel::setMaxRecords,
+                                )
+                            }
+                            StorageSizeRow(bytes)
+                        }
+                    }
+                }
+
+                if (s.enabled) {
+                    Column {
+                        SectionLabel(stringResource(R.string.archive_section_channels))
+                        SettingsGroup {
+                            val excluded = s.excludedChats.size
+                            SettingsRow(
+                                symbol = "visibility_off",
+                                title = stringResource(R.string.archive_excluded_title),
+                                subtitle = if (excluded == 0) {
+                                    stringResource(R.string.archive_excluded_none)
+                                } else {
+                                    pluralStringResource(R.plurals.archive_excluded_count, excluded, excluded)
+                                },
+                                chevron = true,
+                                grouped = true,
+                                onClick = { showExcluded = true },
+                            )
+                        }
+                    }
+                }
+
+                if (hasData) {
+                    Column {
+                        SectionLabel(stringResource(R.string.archive_section_archive))
+                        SettingsGroup {
+                            SettingsRow(
+                                symbol = "ios_share",
+                                title = stringResource(R.string.archive_export_json),
+                                chevron = true,
+                                grouped = true,
+                                onClick = { showExportConfirm = true },
+                            )
+                            SettingsRow(
+                                symbol = "delete",
+                                title = stringResource(R.string.archive_clear_all),
+                                tint = MaterialTheme.colorScheme.error,
+                                grouped = true,
+                                onClick = { showClearConfirm = true },
+                            )
+                        }
+                    }
                 }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -234,6 +302,14 @@ fun ArchiveSettingsScreen(
             onCancel = { showDisableDialog = false },
         )
     }
+    if (showExcluded) {
+        ExcludedChannelsSheet(
+            channels = channels,
+            excluded = s.excludedChats,
+            onToggle = viewModel::setExcluded,
+            onDismiss = { showExcluded = false },
+        )
+    }
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
@@ -241,7 +317,7 @@ fun ArchiveSettingsScreen(
             text = { Text(stringResource(R.string.archive_clear_confirm)) },
             confirmButton = {
                 TextButton(onClick = { viewModel.clearAll(); showClearConfirm = false }) {
-                    Text(stringResource(R.string.archive_clear_yes))
+                    Text(stringResource(R.string.archive_clear_yes), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -259,7 +335,7 @@ fun ArchiveSettingsScreen(
                 Text(
                     stringResource(
                         R.string.archive_export_size_warning,
-                        (bytes / 1024 / 1024).coerceAtLeast(1L),
+                        ((bytes ?: 0L) / 1024 / 1024).coerceAtLeast(1L),
                     ),
                 )
             },
@@ -278,52 +354,41 @@ fun ArchiveSettingsScreen(
     }
 }
 
+/** "N deleted · M edited", or a plain "nothing yet"; empty while the first count is loading. */
 @Composable
-private fun MasterToggleRow(enabled: Boolean, onChange: (Boolean) -> Unit) {
-    val shapes = ListItemDefaults.segmentedShapes(0, 1, ListItemDefaults.shapes())
-    SegmentedListItem(
-        onClick = { onChange(!enabled) },
-        shapes = shapes,
-        leadingContent = {
-            Symbol(
-                name = "delete_sweep",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
-        },
-        supportingContent = {
-            Text(
-                text = stringResource(R.string.archive_master_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        trailingContent = { Switch(checked = enabled, onCheckedChange = onChange) },
-        content = {
-            Text(
-                text = stringResource(R.string.archive_master_toggle),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-        },
+private fun openArchiveSummary(counts: ArchiveCounts?): String? = when {
+    counts == null -> null
+    counts.all == 0 -> stringResource(R.string.archive_open_empty)
+    else -> stringResource(
+        R.string.archive_open_summary,
+        pluralStringResource(R.plurals.archive_count_deleted, counts.deleted, counts.deleted),
+        pluralStringResource(R.plurals.archive_count_edited, counts.edited, counts.edited),
     )
 }
 
+/** A Settings switch row whose icon tile lights up while the switch is on. */
 @Composable
-private fun ToggleRow(
+private fun ArchiveToggleRow(
     symbol: String,
     title: String,
+    subtitle: String?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    index: Int,
-    count: Int,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(index, count, ListItemDefaults.shapes())
     SegmentedListItem(
         onClick = { onCheckedChange(!checked) },
-        shapes = shapes,
-        leadingContent = { Symbol(name = symbol, size = 22.dp) },
+        shapes = settingsGroupedShapes(),
+        colors = settingsRowColors(),
+        leadingContent = { SettingsIconTile(symbol = symbol, active = checked) },
+        supportingContent = subtitle?.let {
+            {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
         trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
         content = {
             Text(
@@ -339,26 +404,41 @@ private fun ToggleRow(
 private fun DropdownRow(
     symbol: String,
     title: String,
+    subtitle: String?,
     value: String,
     options: ImmutableList<Int>,
     labelOf: @Composable (Int) -> String,
     onPick: (Int) -> Unit,
-    index: Int,
-    count: Int,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val shapes = ListItemDefaults.segmentedShapes(index, count, ListItemDefaults.shapes())
     SegmentedListItem(
         onClick = { expanded = true },
-        shapes = shapes,
-        leadingContent = { Symbol(name = symbol, size = 22.dp) },
-        trailingContent = {
-            Box {
+        shapes = settingsGroupedShapes(),
+        colors = settingsRowColors(),
+        leadingContent = { SettingsIconTile(symbol = symbol) },
+        supportingContent = subtitle?.let {
+            {
                 Text(
-                    text = value,
+                    text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        },
+        trailingContent = {
+            Box {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Symbol(
+                        name = "keyboard_arrow_down",
+                        tint = MaterialTheme.colorScheme.primary,
+                        size = 18.dp,
+                    )
+                }
                 DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
                     options.forEach { o ->
                         DropdownMenuItem(
@@ -378,6 +458,134 @@ private fun DropdownRow(
         },
     )
 }
+
+/**
+ * "Space used" with its value on the trailing side. The value is read off the main thread;
+ * until it lands the slot stays empty, and a loading indicator appears only if the read
+ * outlasts the usual grace — never a "0 B" placeholder.
+ */
+@Composable
+private fun StorageSizeRow(bytes: Long?) {
+    val showLoading = rememberDeferredLoading(pending = bytes == null, key = Unit)
+    val units = stringArrayResource(R.array.size_units)
+    SegmentedListItem(
+        onClick = {},
+        shapes = settingsGroupedShapes(),
+        colors = settingsRowColors(),
+        leadingContent = { SettingsIconTile(symbol = "storage") },
+        trailingContent = {
+            when {
+                bytes != null -> Text(
+                    text = formatByteSize(bytes, units),
+                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                showLoading -> LoadingIndicator(Modifier.size(24.dp))
+            }
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.archive_storage_label),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}
+
+/**
+ * Channels the archive skips. Lists every channel the archive has seen (that is where a
+ * channel's name and photo come from), with a checkbox per channel; skipped channels the
+ * archive no longer knows by name are kept at the end so they can still be let back in.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExcludedChannelsSheet(
+    channels: ImmutableList<ArchivedChannelEntry>,
+    excluded: ImmutableSet<ChatRef>,
+    onToggle: (ChatRef, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val unknownLabel = stringResource(R.string.archive_unknown_channel)
+    val rows = remember(channels, excluded, unknownLabel) {
+        val known = channels.map { it.chat to it }
+        val knownRefs = known.mapTo(HashSet()) { it.first }
+        known.map { (chat, c) -> ExcludedRow(chat, c.title, c.photoMinithumb) } +
+            excluded.filterNot { it in knownRefs }.map { ExcludedRow(it, unknownLabel, null) }
+    }
+    val shown = remember(rows, query) {
+        val q = query.trim()
+        if (q.isEmpty()) rows else rows.filter { it.title.contains(q, ignoreCase = true) }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberExpandedSheetState()) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text(
+                text = stringResource(R.string.archive_excluded_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = stringResource(R.string.archive_excluded_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (rows.size > SEARCH_THRESHOLD) {
+                DiscoverSearchField(
+                    value = query,
+                    onValueChange = { query = it },
+                    hint = stringResource(R.string.channels_search_hint),
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+        }
+        if (rows.isEmpty()) {
+            Text(
+                text = stringResource(R.string.archive_excluded_empty),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+            )
+        } else {
+            LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+                items(items = shown, key = { "${it.chat.kind.name}:${it.chat.key}" }, contentType = { "channel" }) { row ->
+                    val isExcluded = row.chat in excluded
+                    val toggle = remember(row.chat) { { value: Boolean -> onToggle(row.chat, value) } }
+                    ExcludedChannelItem(row = row, excluded = isExcluded, onToggle = toggle)
+                }
+            }
+        }
+    }
+}
+
+@Immutable
+private data class ExcludedRow(val chat: ChatRef, val title: String, val thumb: ByteArray?)
+
+@Composable
+private fun ExcludedChannelItem(row: ExcludedRow, excluded: Boolean, onToggle: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .toggleable(value = excluded, role = Role.Checkbox, onValueChange = onToggle)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TdAvatar(name = row.title, thumb = row.thumb, fileId = null, size = 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = row.title,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Checkbox(checked = excluded, onCheckedChange = null)
+    }
+}
+
+private const val SEARCH_THRESHOLD = 8
 
 @Composable
 private fun DisableDialog(onKeep: () -> Unit, onDelete: () -> Unit, onCancel: () -> Unit) {
@@ -415,4 +623,3 @@ private fun retentionLabel(days: Int): String =
 private fun recordsLabel(n: Int): String =
     if (n == Int.MAX_VALUE) stringResource(R.string.archive_records_unlimited)
     else java.text.NumberFormat.getIntegerInstance().format(n)
-

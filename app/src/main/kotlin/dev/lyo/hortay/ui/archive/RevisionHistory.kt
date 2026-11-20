@@ -5,6 +5,7 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.archive.ArchivedContent
 import dev.lyo.hortay.data.archive.ArchivedEntityKeys
 import dev.lyo.hortay.data.archive.ArchivedMediaRef
+import dev.lyo.hortay.data.archive.ContentNormalizer
 import dev.lyo.hortay.data.archive.PostSnapshot
 import dev.lyo.hortay.data.archive.SnapshotKind
 import dev.lyo.hortay.data.archive.diff.TextDiff
@@ -47,7 +48,7 @@ data class RevisionEntry(
  * Collapses [snapshots] (ascending by time) into picker entries.
  *
  * Rule: a VERSION snapshot whose user-visible content — text, entities (offset / length /
- * type) and media identity — equals the previous kept VERSION is folded into it; so is a
+ * type, in [ContentNormalizer.canonicalEntities] form) and media identity — equals the previous kept VERSION is folded into it; so is a
  * DELETED marker that follows another DELETED marker. Unreadable rows are always kept (the
  * reader is told the version can't be shown) and are never used as a diff base. Rows are
  * not touched — this is display only.
@@ -110,14 +111,16 @@ private fun classify(prev: VisibleKey, cur: VisibleKey): RevisionChange {
     }
 }
 
-private data class VisibleKey(val text: String, val entities: List<Triple<Int, Int, String>>, val media: String?)
+private data class VisibleKey(val text: String, val entities: List<ContentNormalizer.CanonicalEntity>, val media: String?)
 
 private fun PostSnapshot.isUnreadable(): Boolean = (content as? ArchivedContent.Tdlib)?.isUnreadable == true
 
 private fun visibleKey(snap: PostSnapshot): VisibleKey = when (val c = snap.content) {
     is ArchivedContent.Tdlib -> VisibleKey(
         text = c.meta.text,
-        entities = parseEntities(c.meta.entitiesJson).map { Triple(it.offset, it.length, it.type) },
+        // The content hash's canonical form: per-read TDLib entities (media timestamps, bot
+        // commands), re-split style runs and list order never make two versions here.
+        entities = ContentNormalizer.canonicalEntities(c.meta.entitiesJson),
         media = c.meta.mediaRef?.let { ref ->
             if (ref.uniqueId.isNotEmpty()) "${ref.type}:${ref.uniqueId}" else "${ref.type}:${ref.width}x${ref.height}"
         } ?: c.meta.mediaSummaryJson,

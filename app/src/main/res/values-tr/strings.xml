@@ -694,12 +694,8 @@
     <string name="hidden_channels_unhide_for">%1$s kanalını akışta göster</string>
 
     <!-- Post archive -->
-    <string name="archive_capture_deletes">Silmeleri kaydet</string>
-    <string name="archive_capture_edits">Düzenlemeleri kaydet</string>
     <string name="archive_clear_all">Arşivi temizle</string>
-    <string name="archive_clear_confirm">Bu işlem tüm anlık görüntüleri kalıcı olarak siler. Kanallar bunu görmez.</string>
     <string name="archive_clear_yes">Temizle</string>
-    <string name="archive_disable_body">Yeni anlık görüntü kaydedilmesin. Mevcut olanlar ne olsun?</string>
     <string name="archive_disable_keep">Koru, kaydetmeyi durdur</string>
     <string name="archive_disable_purge">Sil ve devre dışı bırak</string>
     <string name="archive_disable_title">Arşivi devre dışı bırak</string>
@@ -711,39 +707,23 @@
     <string name="archive_filter_deleted">Silinmiş</string>
     <string name="archive_filter_edited">Düzenlenmiş</string>
     <string name="archive_master_subtitle">Bu cihazda yerel olarak. Çıkış yapınca temizlenir.</string>
-    <string name="archive_master_toggle">Anlık görüntüleri kaydet</string>
-    <string name="archive_max_records_label">Maksimum kayıt sayısı</string>
     <string name="archive_onboarding_cancel">İptal</string>
     <string name="archive_onboarding_enable">Etkinleştir</string>
     <string name="archive_onboarding_logout">Çıkış yapınca otomatik olarak temizlenir</string>
     <string name="archive_onboarding_title">Düzenlemeler ve silmeler kaydedilsin mi?</string>
-    <string name="archive_onboarding_what">Hortay, bir kanal gönderi düzenlediğinde veya sildiğinde metni ve medya meta verilerini kaydeder. Fotoğraf ve videolar indirilmez — yalnızca küçük önizlemeler saklanır.</string>
+    <string name="archive_onboarding_what">Bir kanal gönderiyi düzenlediğinde veya sildiğinde Hortay metnini ve bu cihazda zaten bulunan fotoğraf ve videoları saklar. Ek olarak hiçbir şey indirilmez.</string>
     <string name="archive_onboarding_where">Bu cihazda yerel olarak saklanır. Hiçbir yere yüklenmez.</string>
-    <string name="archive_open_browser">Arşivi aç</string>
-    <string name="archive_purged">Anlık görüntü silindi</string>
     <string name="archive_records_unlimited">Sınırsız</string>
     <plurals name="archive_retention_days">
         <item quantity="one">%d gün</item>
         <item quantity="other">%d gün</item>
     </plurals>
-    <string name="archive_retention_label">Saklama süresi</string>
     <string name="archive_retention_unlimited">Sınırsız</string>
     <string name="archive_row_kind_deleted">Silindi</string>
-    <string name="archive_row_kind_edited">Düzenlendi</string>
-    <string name="archive_scope_all">Tüm kapsamlar</string>
     <string name="archive_scope_comments">Yorumlar</string>
     <string name="archive_scope_posts">Gönderiler</string>
     <string name="archive_screen_title">Arşiv</string>
     <string name="archive_search_placeholder">Arşivde ara</string>
-    <string name="archive_section_archive">Arşiv</string>
-    <string name="archive_section_capture">Yakalama</string>
-    <string name="archive_section_events">Olay türleri</string>
-    <string name="archive_section_retention">Saklama</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="one">%d anlık görüntü</item>
-        <item quantity="other">%d anlık görüntü</item>
-    </plurals>
-    <string name="archive_storage_label">Depolama</string>
     <string name="post_deleted_badge">silindi</string>
     <plurals name="post_edited_chip_count">
         <item quantity="one">düzenlendi</item>
@@ -924,4 +904,58 @@
     <string name="reactions_who_reacted">Kimin tepki verdiğini gör</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s, %2$s ile tepki verdi</string>
+    <string name="archive_master_toggle">Gönderi arşivi tut</string>
+    <string name="archive_master_description">Düzenlenen gönderilerin önceki sürümlerini ve kanalların sildiği gönderileri saklar. Her şey yalnızca bu cihazda kalır, hiçbir yere gönderilmez. Oturumu kapattığında silinir.</string>
+    <string name="archive_capture_edits">Düzenlemeler</string>
+    <string name="archive_capture_edits_subtitle">Kanalın değiştirdiği gönderilerin önceki sürümleri</string>
+    <string name="archive_capture_deletes">Silmeler</string>
+    <string name="archive_capture_deletes_subtitle">Gönderilerin kanal silmeden önceki hâli</string>
+    <string name="archive_section_events">Neler saklansın</string>
+    <string name="archive_section_retention">Depolama</string>
+    <string name="archive_section_archive">Arşiv verileri</string>
+    <string name="archive_section_channels">Kanallar</string>
+    <string name="archive_retention_label">Saklama süresi</string>
+    <string name="archive_max_records_label">Kayıt sınırı</string>
+    <string name="archive_max_records_subtitle">Sınır aşılınca önce en eski kayıtlar silinir</string>
+    <string name="archive_storage_label">Kullanılan alan</string>
+    <string name="archive_clear_confirm">Arşivdeki her şey kalıcı olarak silinecek. Kanallar bunu fark etmez.</string>
+    <string name="archive_disable_body">Yeni değişiklikler artık kaydedilmeyecek. Arşivde zaten olanlar ne olsun?</string>
+    <string name="archive_purged">Arşivden kaldırıldı</string>
+    <string name="archive_scope_all">Gönderiler ve yorumlar</string>
+    <string name="archive_open_browser">Arşivi aç</string>
+    <string name="archive_open_empty">Henüz bir şey kaydedilmedi</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="one">%d silinen</item>
+        <item quantity="other">%d silinen</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="one">%d düzenlenen</item>
+        <item quantity="other">%d düzenlenen</item>
+    </plurals>
+    <string name="archive_excluded_title">Hariç tutulan kanallar</string>
+    <string name="archive_excluded_none">Yok, tüm kanallar arşivleniyor</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="one">%d kanal</item>
+        <item quantity="other">%d kanal</item>
+    </plurals>
+    <string name="archive_excluded_hint">Bu kanallardaki düzenlemeler ve silmeler kaydedilmez. Zaten arşivde olanlar kalır.</string>
+    <string name="archive_excluded_empty">Arşiv bir kanaldan gönderi gördüğünde kanal burada görünür.</string>
+    <string name="archive_unknown_channel">Bilinmeyen kanal</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="one">Düzenlendi · %d sürüm</item>
+        <item quantity="other">Düzenlendi · %d sürüm</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · yorum</string>
+    <string name="archive_row_comment">Yorum</string>
+    <string name="archive_row_no_text">Metin yok</string>
+    <string name="archive_day_today">Bugün</string>
+    <string name="archive_day_yesterday">Dün</string>
+    <string name="archive_empty_title">Burada henüz bir şey yok</string>
+    <string name="archive_empty_off_title">Arşiv kapalı</string>
+    <string name="archive_empty_off_body">Kanalların düzenlediği veya sildiği gönderileri saklamak için aç.</string>
+    <string name="archive_open_settings">Ayarları aç</string>
+    <string name="archive_off_banner">Arşiv kapalı, bu yüzden yeni değişiklikler kaydedilmiyor</string>
+    <string name="archive_no_matches_title">Hiçbir şey bulunamadı</string>
+    <string name="archive_no_matches_body">Başka bir filtre veya arama dene</string>
+    <string name="archive_remove_action">Arşivden kaldır</string>
 </resources>

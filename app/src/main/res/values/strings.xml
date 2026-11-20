@@ -729,15 +729,12 @@
     <string name="archive_filter_all">All</string>
     <string name="archive_filter_edited">Edited</string>
     <string name="archive_filter_deleted">Deleted</string>
-    <string name="archive_scope_all">All scopes</string>
     <string name="archive_scope_posts">Posts</string>
     <string name="archive_scope_comments">Comments</string>
     <string name="archive_empty_enabled">Nothing yet. When a channel edits or deletes a post, it appears here.</string>
     <string name="archive_search_placeholder">Search archive</string>
-    <string name="archive_purged">Snapshot removed</string>
 
     <!-- Archive: row -->
-    <string name="archive_row_kind_edited">Edited</string>
     <string name="archive_row_kind_deleted">Deleted</string>
 
     <!-- Archive: revision sheet -->
@@ -769,23 +766,16 @@
 
     <!-- Archive: settings screen -->
     <string name="settings_archive_title">Post archive</string>
-    <string name="archive_master_toggle">Save snapshots</string>
     <string name="archive_master_subtitle">Locally on this device. Cleared on sign-out.</string>
-    <string name="archive_capture_edits">Capture edits</string>
-    <string name="archive_capture_deletes">Capture deletions</string>
-    <string name="archive_retention_label">Retention</string>
     <plurals name="archive_retention_days">
         <item quantity="one">%d day</item>
         <item quantity="other">%d days</item>
     </plurals>
     <string name="archive_retention_unlimited">No limit</string>
-    <string name="archive_max_records_label">Max records</string>
     <string name="archive_records_unlimited">No limit</string>
     <string name="archive_clear_all">Clear archive</string>
-    <string name="archive_clear_confirm">This permanently removes all snapshots. Channels won\'t notice.</string>
     <string name="archive_clear_yes">Clear</string>
     <string name="archive_disable_title">Disable archive</string>
-    <string name="archive_disable_body">Stop saving new snapshots. What about existing ones?</string>
     <string name="archive_disable_keep">Keep, stop saving</string>
     <string name="archive_disable_purge">Delete and disable</string>
 
@@ -796,23 +786,13 @@
 
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Save edits and deletions?</string>
-    <string name="archive_onboarding_what">Hortay saves text and media metadata when a channel edits or deletes a post. Photos and videos themselves are not downloaded — only small thumbnails.</string>
+    <string name="archive_onboarding_what">When a channel edits or deletes a post, Hortay keeps its text plus any photos and videos already on this device. Nothing extra is downloaded.</string>
     <string name="archive_onboarding_where">Stored locally on this device. Never uploaded.</string>
     <string name="archive_onboarding_logout">Cleared automatically when you sign out</string>
     <string name="archive_onboarding_enable">Enable</string>
     <string name="archive_onboarding_cancel">Cancel</string>
 
     <!-- Archive: settings sections -->
-    <string name="archive_section_capture">Capture</string>
-    <string name="archive_section_retention">Retention</string>
-    <string name="archive_section_events">Event types</string>
-    <string name="archive_section_archive">Archive</string>
-    <string name="archive_open_browser">Open archive</string>
-    <string name="archive_storage_label">Storage</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="one">%d snapshot</item>
-        <item quantity="other">%d snapshots</item>
-    </plurals>
     <string name="settings_logout_dialog_text_archive">Your local archive of edited and deleted posts will be erased for good. You\'ll need to enter your number and confirmation code again</string>
     <string name="post_unread_state">Unread</string>
     <string name="discover_add_channel">Find channels</string>
@@ -965,4 +945,61 @@
     <string name="reactions_who_reacted">See who reacted</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s reacted with %2$s</string>
+    <!-- Archive browser and settings -->
+    <string name="archive_master_toggle">Keep a post archive</string>
+    <string name="archive_master_description">Keeps earlier versions of edited posts and posts that channels delete. Everything stays on this device and is never sent anywhere. Erased when you sign out.</string>
+    <string name="archive_capture_edits">Edits</string>
+    <string name="archive_capture_edits_subtitle">Earlier versions of posts a channel changes</string>
+    <string name="archive_capture_deletes">Deletions</string>
+    <string name="archive_capture_deletes_subtitle">Posts as they were before a channel deleted them</string>
+    <string name="archive_section_events">What to keep</string>
+    <string name="archive_section_retention">Storage</string>
+    <string name="archive_section_archive">Archive data</string>
+    <string name="archive_section_channels">Channels</string>
+    <string name="archive_retention_label">Keep for</string>
+    <string name="archive_max_records_label">Entry limit</string>
+    <string name="archive_max_records_subtitle">Past the limit, the oldest entries go first</string>
+    <string name="archive_storage_label">Space used</string>
+    <string name="archive_clear_confirm">Everything in the archive will be deleted for good. Channels won\'t notice.</string>
+    <string name="archive_disable_body">New changes won\'t be saved anymore. What about what\'s already in the archive?</string>
+    <string name="archive_purged">Removed from archive</string>
+    <string name="archive_scope_all">Posts and comments</string>
+    <string name="archive_open_browser">Open archive</string>
+    <string name="archive_open_empty">Nothing saved yet</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="one">%d deleted</item>
+        <item quantity="other">%d deleted</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="one">%d edited</item>
+        <item quantity="other">%d edited</item>
+    </plurals>
+    <string name="archive_excluded_title">Skipped channels</string>
+    <string name="archive_excluded_none">None, every channel is archived</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="one">%d channel</item>
+        <item quantity="other">%d channels</item>
+    </plurals>
+    <string name="archive_excluded_hint">Edits and deletions in these channels aren\'t saved. Anything already archived stays.</string>
+    <string name="archive_excluded_empty">Channels show up here once the archive has seen a post from them.</string>
+    <string name="archive_unknown_channel">Unknown channel</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="one">Edited · %d version</item>
+        <item quantity="other">Edited · %d versions</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · comment</string>
+    <string name="archive_row_comment">Comment</string>
+    <string name="archive_row_no_text">No text</string>
+    <string name="archive_day_today">Today</string>
+    <string name="archive_day_yesterday">Yesterday</string>
+    <string name="archive_empty_title">Nothing here yet</string>
+    <string name="archive_empty_off_title">The archive is off</string>
+    <string name="archive_empty_off_body">Turn it on to keep posts that channels edit or delete.</string>
+    <string name="archive_open_settings">Open settings</string>
+    <string name="archive_off_banner">The archive is off, so new changes aren\'t saved</string>
+    <string name="archive_no_matches_title">Nothing found</string>
+    <string name="archive_no_matches_body">Try another filter or search</string>
+    <string name="archive_remove_action">Remove from archive</string>
+    <string name="archive_open_summary" translatable="false">%1$s · %2$s</string>
+    <string name="archive_filter_count" translatable="false">%1$s · %2$d</string>
 </resources>

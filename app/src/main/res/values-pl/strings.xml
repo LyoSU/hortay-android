@@ -728,12 +728,8 @@
     <string name="hidden_channels_unhide_for">Pokaż %1$s w feedzie</string>
 
     <!-- Post archive -->
-    <string name="archive_capture_deletes">Rejestruj usunięcia</string>
-    <string name="archive_capture_edits">Rejestruj edycje</string>
     <string name="archive_clear_all">Wyczyść archiwum</string>
-    <string name="archive_clear_confirm">To trwale usuwa wszystkie zapisy. Kanały nie zostaną powiadomione.</string>
     <string name="archive_clear_yes">Wyczyść</string>
-    <string name="archive_disable_body">Nowe zapisy nie będą już dodawane. Co zrobić z istniejącymi?</string>
     <string name="archive_disable_keep">Zachowaj, zatrzymaj zapisywanie</string>
     <string name="archive_disable_purge">Usuń i wyłącz</string>
     <string name="archive_disable_title">Wyłączyć archiwum</string>
@@ -745,16 +741,12 @@
     <string name="archive_filter_deleted">Usunięte</string>
     <string name="archive_filter_edited">Edytowane</string>
     <string name="archive_master_subtitle">Lokalnie na tym urządzeniu. Czyszczone przy wylogowaniu.</string>
-    <string name="archive_master_toggle">Zapisuj migawki</string>
-    <string name="archive_max_records_label">Maks. liczba zapisów</string>
     <string name="archive_onboarding_cancel">Anuluj</string>
     <string name="archive_onboarding_enable">Włącz</string>
     <string name="archive_onboarding_logout">Czyszczone automatycznie przy wylogowaniu</string>
     <string name="archive_onboarding_title">Zapisywać edycje i usunięcia?</string>
-    <string name="archive_onboarding_what">Hortay zapisuje tekst i metadane mediów, gdy kanał edytuje lub usuwa wpis. Zdjęcia i filmy nie są pobierane — tylko małe miniatury.</string>
+    <string name="archive_onboarding_what">Gdy kanał edytuje lub usuwa wpis, Hortay zachowuje jego tekst oraz zdjęcia i filmy, które są już na tym urządzeniu. Nic więcej nie jest pobierane.</string>
     <string name="archive_onboarding_where">Przechowywane lokalnie na tym urządzeniu. Nigdy nie są wysyłane.</string>
-    <string name="archive_open_browser">Otwórz archiwum</string>
-    <string name="archive_purged">Migawka usunięta</string>
     <string name="archive_records_unlimited">Bez limitu</string>
     <plurals name="archive_retention_days">
         <item quantity="one">%d dzień</item>
@@ -762,26 +754,12 @@
         <item quantity="many">%d dni</item>
         <item quantity="other">%d dnia</item>
     </plurals>
-    <string name="archive_retention_label">Czas przechowywania</string>
     <string name="archive_retention_unlimited">Bez limitu</string>
     <string name="archive_row_kind_deleted">Usunięto</string>
-    <string name="archive_row_kind_edited">Edytowano</string>
-    <string name="archive_scope_all">Wszystkie zakresy</string>
     <string name="archive_scope_comments">Komentarze</string>
     <string name="archive_scope_posts">Wpisy</string>
     <string name="archive_screen_title">Archiwum</string>
     <string name="archive_search_placeholder">Szukaj w archiwum</string>
-    <string name="archive_section_archive">Archiwum</string>
-    <string name="archive_section_capture">Rejestrowanie</string>
-    <string name="archive_section_events">Typy zdarzeń</string>
-    <string name="archive_section_retention">Czas przechowywania</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="one">%d migawka</item>
-        <item quantity="few">%d migawki</item>
-        <item quantity="many">%d migawek</item>
-        <item quantity="other">%d migawki</item>
-    </plurals>
-    <string name="archive_storage_label">Pamięć</string>
     <string name="post_deleted_badge">usunięto</string>
     <plurals name="post_edited_chip_count">
         <item quantity="one">edytowano</item>
@@ -972,4 +950,66 @@
     <string name="reactions_who_reacted">Zobacz, kto zareagował</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s, reakcja %2$s</string>
+    <string name="archive_master_toggle">Prowadź archiwum wpisów</string>
+    <string name="archive_master_description">Zachowuje wcześniejsze wersje edytowanych wpisów i wpisy usunięte przez kanały. Wszystko zostaje tylko na tym urządzeniu i nigdzie nie jest wysyłane. Usuwane po wylogowaniu.</string>
+    <string name="archive_capture_edits">Edycje</string>
+    <string name="archive_capture_edits_subtitle">Wcześniejsze wersje wpisów zmienionych przez kanał</string>
+    <string name="archive_capture_deletes">Usunięcia</string>
+    <string name="archive_capture_deletes_subtitle">Wpisy w takiej postaci, w jakiej były przed usunięciem</string>
+    <string name="archive_section_events">Co zachowywać</string>
+    <string name="archive_section_retention">Przechowywanie</string>
+    <string name="archive_section_archive">Dane archiwum</string>
+    <string name="archive_section_channels">Kanały</string>
+    <string name="archive_retention_label">Jak długo przechowywać</string>
+    <string name="archive_max_records_label">Limit wpisów w archiwum</string>
+    <string name="archive_max_records_subtitle">Po przekroczeniu limitu najstarsze wpisy znikają jako pierwsze</string>
+    <string name="archive_storage_label">Zajęte miejsce</string>
+    <string name="archive_clear_confirm">Wszystko z archiwum zostanie trwale usunięte. Kanały tego nie zauważą.</string>
+    <string name="archive_disable_body">Nowe zmiany nie będą już zapisywane. Co zrobić z tym, co jest już w archiwum?</string>
+    <string name="archive_purged">Usunięto z archiwum</string>
+    <string name="archive_scope_all">Wpisy i komentarze</string>
+    <string name="archive_open_browser">Otwórz archiwum</string>
+    <string name="archive_open_empty">Na razie nic nie zapisano</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="one">%d usunięty</item>
+        <item quantity="few">%d usunięte</item>
+        <item quantity="many">%d usuniętych</item>
+        <item quantity="other">%d usuniętego</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="one">%d edytowany</item>
+        <item quantity="few">%d edytowane</item>
+        <item quantity="many">%d edytowanych</item>
+        <item quantity="other">%d edytowanego</item>
+    </plurals>
+    <string name="archive_excluded_title">Kanały bez archiwum</string>
+    <string name="archive_excluded_none">Brak, archiwum obejmuje wszystkie kanały</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="one">%d kanał</item>
+        <item quantity="few">%d kanały</item>
+        <item quantity="many">%d kanałów</item>
+        <item quantity="other">%d kanału</item>
+    </plurals>
+    <string name="archive_excluded_hint">Edycje i usunięcia w tych kanałach nie są zapisywane. To, co już jest w archiwum, zostaje.</string>
+    <string name="archive_excluded_empty">Kanały pojawią się tutaj, gdy archiwum zobaczy w nich jakiś wpis.</string>
+    <string name="archive_unknown_channel">Nieznany kanał</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="one">Edytowano · %d wersja</item>
+        <item quantity="few">Edytowano · %d wersje</item>
+        <item quantity="many">Edytowano · %d wersji</item>
+        <item quantity="other">Edytowano · %d wersji</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · komentarz</string>
+    <string name="archive_row_comment">Komentarz</string>
+    <string name="archive_row_no_text">Bez tekstu</string>
+    <string name="archive_day_today">Dzisiaj</string>
+    <string name="archive_day_yesterday">Wczoraj</string>
+    <string name="archive_empty_title">Na razie pusto</string>
+    <string name="archive_empty_off_title">Archiwum jest wyłączone</string>
+    <string name="archive_empty_off_body">Włącz je, aby zachowywać wpisy, które kanały edytują lub usuwają.</string>
+    <string name="archive_open_settings">Otwórz ustawienia</string>
+    <string name="archive_off_banner">Archiwum jest wyłączone, więc nowe zmiany nie są zapisywane</string>
+    <string name="archive_no_matches_title">Nic nie znaleziono</string>
+    <string name="archive_no_matches_body">Spróbuj innego filtra lub zapytania</string>
+    <string name="archive_remove_action">Usuń z archiwum</string>
 </resources>

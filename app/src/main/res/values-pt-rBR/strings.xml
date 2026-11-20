@@ -719,12 +719,8 @@
     <string name="hidden_channels_unhide_for">Mostrar %1$s no feed</string>
 
     <!-- Post archive -->
-    <string name="archive_capture_deletes">Registrar exclusões</string>
-    <string name="archive_capture_edits">Registrar edições</string>
     <string name="archive_clear_all">Limpar arquivo</string>
-    <string name="archive_clear_confirm">Remove permanentemente todos os instantâneos. Os canais não serão notificados.</string>
     <string name="archive_clear_yes">Limpar</string>
-    <string name="archive_disable_body">Parar de salvar novos instantâneos. O que fazer com os existentes?</string>
     <string name="archive_disable_keep">Manter, parar de salvar</string>
     <string name="archive_disable_purge">Excluir e desativar</string>
     <string name="archive_disable_title">Desativar arquivo</string>
@@ -736,41 +732,24 @@
     <string name="archive_filter_deleted">Excluídas</string>
     <string name="archive_filter_edited">Editadas</string>
     <string name="archive_master_subtitle">Somente neste dispositivo. Limpo ao sair da conta.</string>
-    <string name="archive_master_toggle">Salvar instantâneos</string>
-    <string name="archive_max_records_label">Máximo de registros</string>
     <string name="archive_onboarding_cancel">Cancelar</string>
     <string name="archive_onboarding_enable">Ativar</string>
     <string name="archive_onboarding_logout">Limpo automaticamente ao sair da conta</string>
     <string name="archive_onboarding_title">Salvar edições e exclusões?</string>
-    <string name="archive_onboarding_what">O Hortay salva o texto e os metadados de mídia quando um canal edita ou exclui uma publicação. Fotos e vídeos não são baixados — apenas miniaturas pequenas.</string>
+    <string name="archive_onboarding_what">Quando um canal edita ou apaga uma publicação, o Hortay guarda o texto e as fotos e vídeos que já estão neste aparelho. Nada a mais é baixado.</string>
     <string name="archive_onboarding_where">Armazenado somente neste dispositivo. Nunca enviado.</string>
-    <string name="archive_open_browser">Abrir arquivo</string>
-    <string name="archive_purged">Instantâneo removido</string>
     <string name="archive_records_unlimited">Sem limite</string>
     <plurals name="archive_retention_days">
         <item quantity="one">%d dia</item>
         <item quantity="many">%d dias</item>
         <item quantity="other">%d dias</item>
     </plurals>
-    <string name="archive_retention_label">Retenção</string>
     <string name="archive_retention_unlimited">Sem limite</string>
     <string name="archive_row_kind_deleted">Excluída</string>
-    <string name="archive_row_kind_edited">Editada</string>
-    <string name="archive_scope_all">Todos os escopos</string>
     <string name="archive_scope_comments">Comentários</string>
     <string name="archive_scope_posts">Publicações</string>
     <string name="archive_screen_title">Arquivo</string>
     <string name="archive_search_placeholder">Pesquisar no arquivo</string>
-    <string name="archive_section_archive">Arquivo</string>
-    <string name="archive_section_capture">Registro</string>
-    <string name="archive_section_events">Tipos de evento</string>
-    <string name="archive_section_retention">Retenção</string>
-    <plurals name="archive_snapshot_count">
-        <item quantity="one">%d instantâneo</item>
-        <item quantity="many">%d instantâneos</item>
-        <item quantity="other">%d instantâneos</item>
-    </plurals>
-    <string name="archive_storage_label">Armazenamento</string>
     <string name="post_deleted_badge">excluída</string>
     <plurals name="post_edited_chip_count">
         <item quantity="one">editada ×%d</item>
@@ -956,4 +935,62 @@
     <string name="reactions_who_reacted">Ver quem reagiu</string>
     <!-- %1$s is the person's name, %2$s the reaction emoji. -->
     <string name="reactions_row_description">%1$s reagiu com %2$s</string>
+    <string name="archive_master_toggle">Manter um arquivo de publicações</string>
+    <string name="archive_master_description">Guarda versões anteriores de publicações editadas e publicações que os canais apagam. Tudo fica só neste aparelho e não é enviado para lugar nenhum. É apagado quando você sai da conta.</string>
+    <string name="archive_capture_edits">Edições</string>
+    <string name="archive_capture_edits_subtitle">Versões anteriores das publicações que um canal altera</string>
+    <string name="archive_capture_deletes">Exclusões</string>
+    <string name="archive_capture_deletes_subtitle">Publicações como eram antes de o canal apagá-las</string>
+    <string name="archive_section_events">O que guardar</string>
+    <string name="archive_section_retention">Armazenamento</string>
+    <string name="archive_section_archive">Dados do arquivo</string>
+    <string name="archive_section_channels">Canais</string>
+    <string name="archive_retention_label">Guardar por</string>
+    <string name="archive_max_records_label">Limite de registros</string>
+    <string name="archive_max_records_subtitle">Passando do limite, os registros mais antigos saem primeiro</string>
+    <string name="archive_storage_label">Espaço usado</string>
+    <string name="archive_clear_confirm">Tudo no arquivo será apagado para sempre. Os canais não vão perceber.</string>
+    <string name="archive_disable_body">Novas mudanças não serão mais salvas. O que fazer com o que já está no arquivo?</string>
+    <string name="archive_purged">Removido do arquivo</string>
+    <string name="archive_scope_all">Publicações e comentários</string>
+    <string name="archive_open_browser">Abrir arquivo</string>
+    <string name="archive_open_empty">Nada salvo ainda</string>
+    <plurals name="archive_count_deleted">
+        <item quantity="one">%d apagada</item>
+        <item quantity="many">%d apagadas</item>
+        <item quantity="other">%d apagadas</item>
+    </plurals>
+    <plurals name="archive_count_edited">
+        <item quantity="one">%d editada</item>
+        <item quantity="many">%d editadas</item>
+        <item quantity="other">%d editadas</item>
+    </plurals>
+    <string name="archive_excluded_title">Canais ignorados</string>
+    <string name="archive_excluded_none">Nenhum, todos os canais são arquivados</string>
+    <plurals name="archive_excluded_count">
+        <item quantity="one">%d canal</item>
+        <item quantity="many">%d canais</item>
+        <item quantity="other">%d canais</item>
+    </plurals>
+    <string name="archive_excluded_hint">Edições e exclusões nesses canais não são salvas. O que já está no arquivo continua lá.</string>
+    <string name="archive_excluded_empty">Os canais aparecem aqui assim que o arquivo vir uma publicação deles.</string>
+    <string name="archive_unknown_channel">Canal desconhecido</string>
+    <plurals name="archive_row_edited_versions">
+        <item quantity="one">Editada · %d versão</item>
+        <item quantity="many">Editada · %d versões</item>
+        <item quantity="other">Editada · %d versões</item>
+    </plurals>
+    <string name="archive_row_status_comment">%1$s · comentário</string>
+    <string name="archive_row_comment">Comentário</string>
+    <string name="archive_row_no_text">Sem texto</string>
+    <string name="archive_day_today">Hoje</string>
+    <string name="archive_day_yesterday">Ontem</string>
+    <string name="archive_empty_title">Nada aqui ainda</string>
+    <string name="archive_empty_off_title">O arquivo está desligado</string>
+    <string name="archive_empty_off_body">Ative para guardar as publicações que os canais editam ou apagam.</string>
+    <string name="archive_open_settings">Abrir configurações</string>
+    <string name="archive_off_banner">O arquivo está desligado, então novas mudanças não são salvas</string>
+    <string name="archive_no_matches_title">Nada encontrado</string>
+    <string name="archive_no_matches_body">Tente outro filtro ou outra busca</string>
+    <string name="archive_remove_action">Remover do arquivo</string>
 </resources>
