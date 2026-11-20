@@ -502,6 +502,7 @@
     <string name="web_media_placeholder_document">[مستند]</string>
     <string name="web_media_placeholder_sticker">[ملصق]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">لا يمكن عرض هذا المنشور إلا في تيليجرام</string>
 
     <!-- وضع قناة المؤلف الشخصي: "في <القناة>" كعنوان فرعي تحت اسم المسؤول -->
     <string name="post_in_channel">في %1$s</string>

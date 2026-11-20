@@ -134,7 +134,15 @@ object WebPostAdapter {
         webPreview: TdWebPreview?,
         strings: StringResolver,
     ): PostContent {
-        if (media.isEmpty()) return PostContent.Text(formatted = text, webPreview = webPreview)
+        if (media.isEmpty()) {
+            // Nothing t.me/s/ could show: the page carries only its "open Telegram to view
+            // this post" stub for content the web preview doesn't render (richly formatted
+            // posts, polls, …). Say so instead of drawing a card with an empty body.
+            if (text.text.isBlank() && webPreview == null) {
+                return PostContent.Unsupported(strings.getString(R.string.web_post_unsupported))
+            }
+            return PostContent.Text(formatted = text, webPreview = webPreview)
+        }
         val photoVideoItems = media.mapNotNull { it.toAlbumItem() }
         if (photoVideoItems.isNotEmpty()) {
             return PostContent.PhotoAlbum(items = photoVideoItems, caption = text)

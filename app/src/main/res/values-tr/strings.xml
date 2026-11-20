@@ -456,6 +456,7 @@
     <string name="web_media_placeholder_document">[belge]</string>
     <string name="web_media_placeholder_sticker">[çıkartma]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">Bu gönderi yalnızca Telegram’da görüntülenebilir</string>
 
     <!-- Kişisel yazar kanal modu: yöneticinin adının altında "kanal adında" alt başlığı -->
     <string name="post_in_channel">%1$s kanalında</string>

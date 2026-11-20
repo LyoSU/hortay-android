@@ -475,6 +475,7 @@
     <string name="web_media_placeholder_document">[документ]</string>
     <string name="web_media_placeholder_sticker">[стікер]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">Цей пост можна переглянути лише в Telegram</string>
 
     <!-- Personal-author channel mode -->
     <string name="post_in_channel">у %1$s</string>

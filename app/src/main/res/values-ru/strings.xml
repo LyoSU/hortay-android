@@ -480,6 +480,7 @@
     <string name="web_media_placeholder_document">[документ]</string>
     <string name="web_media_placeholder_sticker">[стикер]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">Этот пост можно посмотреть только в Telegram</string>
 
     <!-- Personal-author channel mode: "in <Channel>" subtitle under admin's name -->
     <string name="post_in_channel">в %1$s</string>

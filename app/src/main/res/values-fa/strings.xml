@@ -454,6 +454,7 @@
     <string name="web_media_placeholder_document">[سند]</string>
     <string name="web_media_placeholder_sticker">[استیکر]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">این پست فقط در تلگرام قابل مشاهده است</string>
 
     <!-- حالت کانال نویسنده شخصی: زیرنویس «در <کانال>» زیر نام ادمین -->
     <string name="post_in_channel">در %1$s</string>

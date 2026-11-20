@@ -442,6 +442,7 @@
     <string name="web_media_placeholder_document">[dokumen]</string>
     <string name="web_media_placeholder_sticker">[stiker]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">Postingan ini hanya bisa dilihat di Telegram</string>
 
     <!-- Mode kanal personal-author: subjudul "di <Kanal>" di bawah nama admin -->
     <string name="post_in_channel">di %1$s</string>

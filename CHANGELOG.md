@@ -44,7 +44,9 @@
 - Reaction chips are easier to tap without hitting a neighbouring one.
 - On tablets and wide windows, the bottom navigation bar, Channels and Settings keep a comfortable width instead of stretching across the screen.
 - Error messages say what happened in plain words first, Telegram's rate limit is described the same way everywhere, and sign-in uses Telegram's own "two-step verification" wording.
-- Tapping a photo grows it out of its place in the feed into the fullscreen viewer over a blurred backdrop of the photo, and closing shrinks it back.
+- Tapping a photo, video or GIF grows it out of its place in the feed into the fullscreen viewer over a blurred backdrop, and closing shrinks it back — in an album, into the item you swiped to.
+- The reaction panel shows the main reactions in one row and expands into a grid of all available ones.
+- In guest mode the add-channel button stays on the Channels tab once you follow channels, so it no longer sits on top of the feed's unread button.
 - Photos load over a placeholder in the picture's own colour instead of a grey block.
 - The Channels tab has a compact header, and its "Find channels" button shrinks to an icon once you scroll.
 - Post text breaks into lines more evenly.
@@ -59,6 +61,9 @@
 - Photos and videos keep downloading, and the cancel button keeps working, while Telegram temporarily rate-limits the app.
 - Comments that simply reply to the post no longer show a quote card, and a hand-picked quote in a comment shows up to four lines with a quote mark.
 - The ❤ reaction shows as the red emoji instead of a black heart.
+- The ❤️‍🔥 reaction shows as one emoji instead of a heart and a flame.
+- The reaction panel no longer offers reactions that need Telegram Premium you don't have.
+- In guest mode, posts that Telegram's web preview can't show say so instead of appearing as empty cards.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.

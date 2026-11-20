@@ -464,6 +464,7 @@
     <string name="web_media_placeholder_document">[documento]</string>
     <string name="web_media_placeholder_sticker">[sticker]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">Esta publicación solo se puede ver en Telegram</string>
 
     <!-- Personal-author channel mode: "in <Channel>" subtitle under admin's name -->
     <string name="post_in_channel">en %1$s</string>

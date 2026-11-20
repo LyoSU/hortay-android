@@ -488,22 +488,21 @@ fun WebModeScaffold(graph: AppGraph) {
                                     }
                                 },
                                 floatingActionButton = {
-                                    // Primary "add channel" action. Surfaced on tabs where adding a
-                                    // channel is contextually meaningful — Feed (where the user reads)
-                                    // and Channels (where the list of subscriptions lives). Settings
-                                    // and Saved hide it: clicking it there would feel context-mismatched.
-                                    // ExtendedFab (with text label) on the empty-channels case so the
-                                    // first-time user can't miss it; collapses to icon-only once posts
-                                    // exist and the affordance becomes secondary.
-                                    if (selectedTab == NavTab.Feed || selectedTab == NavTab.Channels) {
-                                        // Subscribed via Lifecycle so the FAB collapses the moment the user
-                                        // adds their first channel. Earlier `channels.value.any { … }` was a
-                                        // raw StateFlow read inside composition — Compose never re-subscribed,
-                                        // so the extended FAB stayed expanded with the "Add channel" label even
-                                        // after subscriptions existed. derivedStateOf scopes recomposition to
-                                        // the boolean: only an actual any/none flip propagates further.
-                                        val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
-                                        val hasChannels = channels.any { it.isSubscribed }
+                                    // Primary "add channel" action. It lives on Channels (where the
+                                    // list of subscriptions is) and shows on Feed only while there is
+                                    // nothing to read yet — as an extended, labelled button a first-time
+                                    // user can't miss. Once the feed has channels the corner belongs to
+                                    // its own "↓ N unread" / new-posts button; the two used to stack
+                                    // there. Settings and Saved never show it.
+                                    //
+                                    // Subscribed via Lifecycle so the button reacts the moment the user
+                                    // adds their first channel (a raw StateFlow read in composition
+                                    // never re-subscribed).
+                                    val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
+                                    val hasChannels = channels.any { it.isSubscribed }
+                                    val showAdd = selectedTab == NavTab.Channels ||
+                                        (selectedTab == NavTab.Feed && !hasChannels)
+                                    if (showAdd) {
                                         ExtendedFloatingActionButton(
                                             onClick = {
                                                 // Discrete "open add-channel sheet" action — ContextClick

@@ -468,6 +468,7 @@
     <string name="web_media_placeholder_document">[document]</string>
     <string name="web_media_placeholder_sticker">[sticker]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
+    <string name="web_post_unsupported">Cette publication n’est visible que dans Telegram</string>
 
     <!-- Mode chaîne avec auteur personnel : sous-titre "dans <Chaîne>" sous le nom de l\'admin -->
     <string name="post_in_channel">dans %1$s</string>
