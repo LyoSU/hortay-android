@@ -16,8 +16,15 @@ import org.drinkless.tdlib.TdApi
 object MediaFileFromContent {
 
     fun extract(content: TdApi.MessageContent): TdApi.File? = when (content) {
-        is TdApi.MessagePhoto -> content.photo.sizes
-            .maxByOrNull { it.width.toLong() * it.height }?.photo
+        // The largest size already on disk wins over the largest size overall: the feed
+        // downloads a screen-sized variant, rarely the biggest one, so insisting on the
+        // biggest left nearly every photo revision with only the blurred inline preview
+        // even though a sharp copy was sitting in TDLib's cache. The ref's remote ids still
+        // name the largest size (see TdlibContentMetaExtractor) — only the copied bytes differ.
+        is TdApi.MessagePhoto -> {
+            val bySize = content.photo.sizes.sortedByDescending { it.width.toLong() * it.height }
+            (bySize.firstOrNull { it.photo?.local?.isDownloadingCompleted == true } ?: bySize.firstOrNull())?.photo
+        }
         is TdApi.MessageVideo -> content.video.video
         is TdApi.MessageAnimation -> content.animation.animation
         is TdApi.MessageDocument -> content.document.document

@@ -797,9 +797,25 @@
     <string name="revision_go_to_current">К текущей</string>
     <string name="revision_media_audio_caption">Аудио · %1$d с</string>
     <string name="revision_media_document">Документ</string>
-    <string name="revision_media_low_res_overlay">Только превью — полный файл не был в кеше</string>
+    <string name="revision_media_low_res_overlay">Только превью</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d версия</item>
+        <item quantity="few">%d версии</item>
+        <item quantity="many">%d версий</item>
+        <item quantity="other">%d версии</item>
+    </plurals>
+    <string name="revision_chip_published">Опубликовано %1$s</string>
+    <string name="revision_chip_deleted">Удалено %1$s</string>
+    <string name="revision_chip_edited_cd">Изменено в %1$s</string>
+    <string name="revision_change_published">Как опубликовано</string>
+    <string name="revision_change_text">Изменён текст</string>
+    <string name="revision_change_formatting">Изменено форматирование</string>
+    <string name="revision_change_media">Изменены медиа</string>
+    <string name="revision_change_text_media">Изменены текст и медиа</string>
+    <string name="revision_change_deleted">Пост удалён</string>
+    <string name="revision_unreadable">Не удаётся показать эту версию</string>
+    <string name="revision_show_changes">Показать изменения</string>
     <string name="revision_media_unavailable">Медиа не сохранено</string>
-    <string name="revision_media_video_caption">Видео · %1$d с</string>
     <string name="revision_open_in_telegram">Открыть в Telegram</string>
     <string name="revision_sheet_title">История изменений</string>
     <string name="revision_sheet_title_deleted">Удалённый пост</string>

@@ -146,6 +146,11 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     val codeBg = MaterialTheme.colorScheme.surfaceContainerHigh
     val mute = MaterialTheme.colorScheme.onSurfaceVariant
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val diffColors = DiffColors(
+        insertedBackground = MaterialTheme.colorScheme.tertiaryContainer,
+        removedText = MaterialTheme.colorScheme.onSurfaceVariant,
+        removedBackground = MaterialTheme.colorScheme.errorContainer.copy(alpha = REMOVED_BACKGROUND_ALPHA),
+    )
     val uriHandler = LocalUriHandler.current
     val confirmMaskedLink = LocalLinkConfirm.current
     val hashtagTap = LocalHashtagTap.current
@@ -190,7 +195,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     val userOpener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
     val userMentionTap = remember(userOpener) { { uid: Long -> userOpener.open(uid) } }
     val built = remember(
-        formatted, spoilerSrc, accent, codeBg, mute, onSurface,
+        formatted, spoilerSrc, accent, codeBg, mute, onSurface, diffColors,
         spoiler.revealedGroups, confirmMaskedLink, hashtagTap, userMentionTap,
     ) {
         buildFromFormatted(
@@ -200,6 +205,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             codeBg = codeBg,
             mute = mute,
             onSurface = onSurface,
+            diffColors = diffColors,
             uriHandler = uriHandler,
             confirmMaskedLink = confirmMaskedLink,
             hashtagTap = hashtagTap,
@@ -404,6 +410,7 @@ private fun buildFromFormatted(
     codeBg: Color,
     mute: Color,
     onSurface: Color,
+    diffColors: DiffColors,
     uriHandler: UriHandler,
     confirmMaskedLink: (String) -> Unit,
     hashtagTap: (String) -> Unit,
@@ -631,7 +638,7 @@ private fun buildFromFormatted(
                 // + per-glyph background, no second box, no ParagraphStyle.
                 addStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg), start, end)
             }
-            else -> span.style.toSpanStyle(accent, codeBg)
+            else -> span.style.toSpanStyle(accent, codeBg, diffColors)
                 ?.let { style -> addStyle(style, start, end) }
         }
     }
@@ -655,9 +662,21 @@ private fun buildFromFormatted(
     )
 }
 
+/** Colours of the edit-history diff marks ([FormattedText.Style.DiffInserted] / [FormattedText.Style.DiffRemoved]). */
+@Immutable
+private data class DiffColors(
+    val insertedBackground: Color,
+    val removedText: Color,
+    val removedBackground: Color,
+)
+
+/** Removed text keeps a faint error tint: the strike-through carries the meaning, the tint only groups it. */
+private const val REMOVED_BACKGROUND_ALPHA = 0.45f
+
 private fun FormattedText.Style.toSpanStyle(
     accent: Color,
     codeBg: Color,
+    diff: DiffColors,
 ): SpanStyle? = when (this) {
     FormattedText.Style.Bold -> SpanStyle(fontWeight = FontWeight.Bold)
     FormattedText.Style.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
@@ -679,6 +698,12 @@ private fun FormattedText.Style.toSpanStyle(
     FormattedText.Style.Mention,
     FormattedText.Style.Hashtag,
     FormattedText.Style.Spoiler -> null
+    FormattedText.Style.DiffInserted -> SpanStyle(background = diff.insertedBackground)
+    FormattedText.Style.DiffRemoved -> SpanStyle(
+        color = diff.removedText,
+        background = diff.removedBackground,
+        textDecoration = TextDecoration.LineThrough,
+    )
 }
 
 private fun normalizeUrl(raw: String): String {

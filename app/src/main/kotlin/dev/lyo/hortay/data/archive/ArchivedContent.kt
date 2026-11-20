@@ -26,6 +26,12 @@ sealed interface ArchivedContent {
     @Immutable
     data class Tdlib(
         val meta: TdlibContentMeta,
+        /**
+         * True when the stored blob couldn't be decoded (corrupt row, or a newer
+         * format read by an older build) and [meta] is an empty stand-in — the
+         * revision sheet then says so instead of showing a blank version.
+         */
+        val isUnreadable: Boolean = false,
     ) : ArchivedContent {
         override val textPreview: String get() = meta.textPreview
     }

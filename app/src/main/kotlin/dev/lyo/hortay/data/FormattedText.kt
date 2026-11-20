@@ -44,5 +44,13 @@ data class FormattedText(val text: String, val spans: List<Span>) {
          * `TextEntityTypeBlockQuote` is `expandable = false` and always shown in full.
          */
         data class BlockQuote(val expandable: Boolean = false) : Style
+
+        /**
+         * Edit-history diff marks. Never produced by the TDLib / web mappers — only the
+         * revision sheet composes them on top of a version's own entities, so a diff keeps
+         * its bold, links and custom emoji instead of collapsing to plain text.
+         */
+        data object DiffInserted : Style
+        data object DiffRemoved : Style
     }
 }

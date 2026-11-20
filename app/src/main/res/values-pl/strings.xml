@@ -794,9 +794,25 @@
     <string name="revision_go_to_current">Przejdź do aktualnej</string>
     <string name="revision_media_audio_caption">Audio · %1$d s</string>
     <string name="revision_media_document">Dokument</string>
-    <string name="revision_media_low_res_overlay">Tylko podgląd — pełne media nie były w cache</string>
+    <string name="revision_media_low_res_overlay">Tylko podgląd</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d wersja</item>
+        <item quantity="few">%d wersje</item>
+        <item quantity="many">%d wersji</item>
+        <item quantity="other">%d wersji</item>
+    </plurals>
+    <string name="revision_chip_published">Opublikowano %1$s</string>
+    <string name="revision_chip_deleted">Usunięto %1$s</string>
+    <string name="revision_chip_edited_cd">Edytowano o %1$s</string>
+    <string name="revision_change_published">Tak jak opublikowano</string>
+    <string name="revision_change_text">Zmieniono tekst</string>
+    <string name="revision_change_formatting">Zmieniono formatowanie</string>
+    <string name="revision_change_media">Zmieniono multimedia</string>
+    <string name="revision_change_text_media">Zmieniono tekst i multimedia</string>
+    <string name="revision_change_deleted">Post został usunięty</string>
+    <string name="revision_unreadable">Nie można pokazać tej wersji</string>
+    <string name="revision_show_changes">Pokaż zmiany</string>
     <string name="revision_media_unavailable">Media nie zostały zapisane</string>
-    <string name="revision_media_video_caption">Wideo · %1$d s</string>
     <string name="revision_open_in_telegram">Otwórz w Telegramie</string>
     <string name="revision_sheet_title">Historia edycji</string>
     <string name="revision_sheet_title_deleted">Usunięty wpis</string>

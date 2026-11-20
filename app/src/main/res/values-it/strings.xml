@@ -776,9 +776,23 @@
     <string name="revision_go_to_current">Vai alla versione attuale</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
     <string name="revision_media_document">Documento</string>
-    <string name="revision_media_low_res_overlay">Solo anteprima — il media completo non era in cache</string>
+    <string name="revision_media_low_res_overlay">Solo anteprima</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d versione</item>
+        <item quantity="other">%d versioni</item>
+    </plurals>
+    <string name="revision_chip_published">Pubblicato %1$s</string>
+    <string name="revision_chip_deleted">Eliminato %1$s</string>
+    <string name="revision_chip_edited_cd">Modificato alle %1$s</string>
+    <string name="revision_change_published">Come pubblicato</string>
+    <string name="revision_change_text">Testo modificato</string>
+    <string name="revision_change_formatting">Formattazione modificata</string>
+    <string name="revision_change_media">Media modificati</string>
+    <string name="revision_change_text_media">Testo e media modificati</string>
+    <string name="revision_change_deleted">Il post è stato eliminato</string>
+    <string name="revision_unreadable">Impossibile mostrare questa versione</string>
+    <string name="revision_show_changes">Mostra modifiche</string>
     <string name="revision_media_unavailable">Il media non è stato acquisito</string>
-    <string name="revision_media_video_caption">Video · %1$ds</string>
     <string name="revision_open_in_telegram">Apri in Telegram</string>
     <string name="revision_sheet_title">Cronologia modifiche</string>
     <string name="revision_sheet_title_deleted">Post eliminato</string>

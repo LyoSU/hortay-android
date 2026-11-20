@@ -778,9 +778,24 @@
     <string name="revision_go_to_current">Aller à la version actuelle</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
     <string name="revision_media_document">Document</string>
-    <string name="revision_media_low_res_overlay">Aperçu uniquement — le média complet n\'a pas été mis en cache</string>
+    <string name="revision_media_low_res_overlay">Aperçu uniquement</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d version</item>
+        <item quantity="many">%d de versions</item>
+        <item quantity="other">%d versions</item>
+    </plurals>
+    <string name="revision_chip_published">Publié %1$s</string>
+    <string name="revision_chip_deleted">Supprimé %1$s</string>
+    <string name="revision_chip_edited_cd">Modifié à %1$s</string>
+    <string name="revision_change_published">Tel que publié</string>
+    <string name="revision_change_text">Texte modifié</string>
+    <string name="revision_change_formatting">Mise en forme modifiée</string>
+    <string name="revision_change_media">Média modifié</string>
+    <string name="revision_change_text_media">Texte et média modifiés</string>
+    <string name="revision_change_deleted">La publication a été supprimée</string>
+    <string name="revision_unreadable">Impossible d’afficher cette version</string>
+    <string name="revision_show_changes">Afficher les modifications</string>
     <string name="revision_media_unavailable">Le média n\'a pas été capturé</string>
-    <string name="revision_media_video_caption">Vidéo · %1$ds</string>
     <string name="revision_open_in_telegram">Ouvrir dans Telegram</string>
     <string name="revision_sheet_title">Historique des modifications</string>
     <string name="revision_sheet_title_deleted">Publication supprimée</string>

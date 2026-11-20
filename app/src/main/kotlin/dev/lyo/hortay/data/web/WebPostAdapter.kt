@@ -318,6 +318,9 @@ object WebPostAdapter {
     @androidx.annotation.VisibleForTesting
     internal fun htmlToFormattedForTest(html: String): FormattedText = htmlToFormatted(html)
 
+    /** A guest-mode post body as formatted text — the revision sheet renders archived web versions through it. */
+    internal fun formattedFromHtml(html: String): FormattedText = htmlToFormatted(html)
+
     @androidx.annotation.VisibleForTesting
     internal fun parseShortNumberForTest(s: String): Int = parseShortNumber(s)
 

@@ -752,11 +752,27 @@
     <string name="revision_baseline_caveat">Оригінал не зафіксовано — показано вміст після найранішого редагування, яке побачив Hortay</string>
     <string name="revision_go_to_current">До поточної</string>
     <string name="revision_open_in_telegram">Відкрити в Telegram</string>
-    <string name="revision_media_video_caption">Відео · %1$dс</string>
     <string name="revision_media_audio_caption">Аудіо · %1$dс</string>
     <string name="revision_media_document">Документ</string>
     <string name="revision_media_unavailable">Медіа не вдалося зберегти</string>
-    <string name="revision_media_low_res_overlay">Лише прев\'ю — повне медіа не було в кеші</string>
+    <string name="revision_media_low_res_overlay">Лише прев\'ю</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d версія</item>
+        <item quantity="few">%d версії</item>
+        <item quantity="many">%d версій</item>
+        <item quantity="other">%d версії</item>
+    </plurals>
+    <string name="revision_chip_published">Опубліковано %1$s</string>
+    <string name="revision_chip_deleted">Видалено %1$s</string>
+    <string name="revision_chip_edited_cd">Змінено о %1$s</string>
+    <string name="revision_change_published">Як опубліковано</string>
+    <string name="revision_change_text">Змінено текст</string>
+    <string name="revision_change_formatting">Змінено форматування</string>
+    <string name="revision_change_media">Змінено медіа</string>
+    <string name="revision_change_text_media">Змінено текст і медіа</string>
+    <string name="revision_change_deleted">Пост видалено</string>
+    <string name="revision_unreadable">Цю версію не вдається показати</string>
+    <string name="revision_show_changes">Показати зміни</string>
 
     <!-- Archive: settings screen -->
     <string name="settings_archive_title">Архів постів</string>

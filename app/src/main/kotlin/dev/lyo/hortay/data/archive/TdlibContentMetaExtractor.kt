@@ -134,12 +134,31 @@ object TdlibContentMetaExtractor {
         else -> "" to emptyArray()
     }
 
+    /**
+     * `offset` / `length` / `type` (the TDLib class name) for every entity, plus the payload
+     * the revision sheet needs to render it like the feed does: a masked link's `url`, a
+     * custom emoji's `customEmojiId`, an inline mention's `userId` and a code block's
+     * `language`. Rows captured before the payload keys existed carry only the first three;
+     * the sheet degrades those entities instead of failing (see `ArchivedEntities`).
+     *
+     * The payload keys are NOT part of the content hash — [ContentNormalizer] projects
+     * entities back to offset / length / type, so adding them didn't turn the next
+     * unchanged re-emit of every old post into a phantom edit.
+     */
     private fun encodeEntities(entities: Array<TdApi.TextEntity>): String {
         val arr = entities.map { e ->
             buildJsonObject {
-                put("offset", JsonPrimitive(e.offset))
-                put("length", JsonPrimitive(e.length))
-                put("type", JsonPrimitive(e.type::class.simpleName ?: "Unknown"))
+                put(ArchivedEntityKeys.OFFSET, JsonPrimitive(e.offset))
+                put(ArchivedEntityKeys.LENGTH, JsonPrimitive(e.length))
+                put(ArchivedEntityKeys.TYPE, JsonPrimitive(e.type::class.simpleName ?: "Unknown"))
+                when (val t = e.type) {
+                    is TdApi.TextEntityTypeTextUrl -> put(ArchivedEntityKeys.URL, JsonPrimitive(t.url))
+                    is TdApi.TextEntityTypeCustomEmoji ->
+                        put(ArchivedEntityKeys.CUSTOM_EMOJI_ID, JsonPrimitive(t.customEmojiId))
+                    is TdApi.TextEntityTypeMentionName -> put(ArchivedEntityKeys.USER_ID, JsonPrimitive(t.userId))
+                    is TdApi.TextEntityTypePreCode -> put(ArchivedEntityKeys.LANGUAGE, JsonPrimitive(t.language))
+                    else -> Unit
+                }
             }
         }
         return Json.encodeToString(ListSerializer(JsonObject.serializer()), arr)

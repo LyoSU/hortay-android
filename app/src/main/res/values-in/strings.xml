@@ -736,9 +736,22 @@
     <string name="revision_go_to_current">Ke versi saat ini</string>
     <string name="revision_media_audio_caption">Audio · %1$d dtk</string>
     <string name="revision_media_document">Dokumen</string>
-    <string name="revision_media_low_res_overlay">Hanya pratinjau — media penuh tidak di-cache</string>
+    <string name="revision_media_low_res_overlay">Hanya pratinjau</string>
+    <plurals name="revision_versions_count">
+        <item quantity="other">%d versi</item>
+    </plurals>
+    <string name="revision_chip_published">Dipublikasikan %1$s</string>
+    <string name="revision_chip_deleted">Dihapus %1$s</string>
+    <string name="revision_chip_edited_cd">Diedit pukul %1$s</string>
+    <string name="revision_change_published">Seperti saat dipublikasikan</string>
+    <string name="revision_change_text">Teks diubah</string>
+    <string name="revision_change_formatting">Format diubah</string>
+    <string name="revision_change_media">Media diubah</string>
+    <string name="revision_change_text_media">Teks dan media diubah</string>
+    <string name="revision_change_deleted">Postingan telah dihapus</string>
+    <string name="revision_unreadable">Versi ini tidak dapat ditampilkan</string>
+    <string name="revision_show_changes">Tampilkan perubahan</string>
     <string name="revision_media_unavailable">Media tidak direkam</string>
-    <string name="revision_media_video_caption">Video · %1$d dtk</string>
     <string name="revision_open_in_telegram">Buka di Telegram</string>
     <string name="revision_sheet_title">Riwayat pengeditan</string>
     <string name="revision_sheet_title_deleted">Kiriman yang dihapus</string>

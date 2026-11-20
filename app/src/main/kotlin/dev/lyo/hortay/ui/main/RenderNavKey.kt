@@ -145,7 +145,7 @@ internal fun RenderNavKey(
             ArchiveScreen(
                 viewModel = vm,
                 onBack = onPopNav,
-                mediaStore = graph.archivedMediaStore,
+                mediaResolver = graph.archivedMediaResolver,
             )
         }
 

@@ -58,6 +58,52 @@ class ArchiveRepositoryTest {
         assertEquals(2, rows.size)
     }
 
+    /**
+     * Two edit captures racing through their own launches can reach the repository in the
+     * wrong order. The stale one (older edit date) must not land on top of the newer
+     * version — otherwise the next content-less re-emit writes the newer text a second time
+     * and the history alternates B → C → B → C.
+     */
+    @Test
+    fun captureEdit_dropsCaptureOlderThanLatestVersion() = runTest {
+        var t = 1_000L
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        ArchiveDatabase.Schema.create(driver)
+        val db = ArchiveDatabase(driver)
+        val repo = ArchiveRepository(db, MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t })
+        val chat = ChatRef.tdlib(42)
+
+        repo.captureTdlibBaseline(chat, "100", null, meta("v1"), originalDateMs = 500L)
+        t = 5_000L
+        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = meta("v3"))
+        t = 5_100L
+        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 2_000L, meta = meta("v2"))
+        t = 6_000L
+        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = meta("v3"))
+
+        val texts = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
+            .map { toContent(it).meta.text }
+        assertEquals(listOf("v1", "v3"), texts)
+    }
+
+    @Test
+    fun captureEdit_newerEditStillLandsAfterOlderOne() = runTest {
+        var t = 1_000L
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        ArchiveDatabase.Schema.create(driver)
+        val db = ArchiveDatabase(driver)
+        val repo = ArchiveRepository(db, MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t })
+        val chat = ChatRef.tdlib(42)
+
+        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 2_000L, meta = meta("v2"))
+        t = 2_000L
+        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = meta("v3"))
+
+        val texts = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
+            .map { toContent(it).meta.text }
+        assertEquals(listOf("v2", "v3"), texts)
+    }
+
     @Test
     fun masterToggleOff_skipsCapture() = runTest {
         val (repo, db) = newRepo(settings = ArchiveSettings(enabled = false))
@@ -327,6 +373,7 @@ class ArchiveRepositoryTest {
         val revisions = repo.observeRevisions(ChatRef.tdlib(42), "100").first()
         assertEquals(1, revisions.size)
         assertEquals("", (revisions[0].content as ArchivedContent.Tdlib).meta.text)
+        assertEquals(true, (revisions[0].content as ArchivedContent.Tdlib).isUnreadable)
     }
 
     /**

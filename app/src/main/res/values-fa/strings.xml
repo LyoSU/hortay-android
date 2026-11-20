@@ -753,9 +753,23 @@
     <string name="revision_go_to_current">رفتن به نسخه‌ی فعلی</string>
     <string name="revision_media_audio_caption">صدا · %1$d ث</string>
     <string name="revision_media_document">سند</string>
-    <string name="revision_media_low_res_overlay">فقط پیش‌نمایش — رسانه‌ی اصلی کش نشده</string>
+    <string name="revision_media_low_res_overlay">فقط پیش‌نمایش</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d نسخه</item>
+        <item quantity="other">%d نسخه</item>
+    </plurals>
+    <string name="revision_chip_published">منتشر شد %1$s</string>
+    <string name="revision_chip_deleted">حذف شد %1$s</string>
+    <string name="revision_chip_edited_cd">ویرایش در %1$s</string>
+    <string name="revision_change_published">همان‌طور که منتشر شد</string>
+    <string name="revision_change_text">متن تغییر کرد</string>
+    <string name="revision_change_formatting">قالب‌بندی تغییر کرد</string>
+    <string name="revision_change_media">رسانه تغییر کرد</string>
+    <string name="revision_change_text_media">متن و رسانه تغییر کرد</string>
+    <string name="revision_change_deleted">پست حذف شد</string>
+    <string name="revision_unreadable">نمایش این نسخه ممکن نیست</string>
+    <string name="revision_show_changes">نمایش تغییرات</string>
     <string name="revision_media_unavailable">رسانه ثبت نشده</string>
-    <string name="revision_media_video_caption">ویدیو · %1$d ث</string>
     <string name="revision_open_in_telegram">باز کردن در Telegram</string>
     <string name="revision_sheet_title">تاریخچه‌ی ویرایش</string>
     <string name="revision_sheet_title_deleted">پست حذف‌شده</string>

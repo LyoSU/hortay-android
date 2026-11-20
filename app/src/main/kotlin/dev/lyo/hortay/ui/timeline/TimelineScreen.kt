@@ -61,7 +61,6 @@ import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.data.archive.ArchiveRepository
 import dev.lyo.hortay.data.archive.ChatRef
 import dev.lyo.hortay.ui.archive.PostRevisionSheet
-import kotlinx.collections.immutable.persistentListOf
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
@@ -272,11 +271,11 @@ fun TimelineScreen(
      */
     archiveRepository: ArchiveRepository? = null,
     /**
-     * Companion to [archiveRepository] for rendering archived media in the
-     * revision sheet. When null, the sheet falls back to the minithumb-only
-     * path; archived bytes are unreachable.
+     * Companion to [archiveRepository] for rendering archived media sharp in the
+     * revision sheet (archive copy, else the same TDLib photo). When null, the
+     * sheet falls back to the blurred minithumb.
      */
-    archiveMediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore? = null,
+    archiveMediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver? = null,
     /**
      * True when this feed is rendered inside guest (anonymous) mode. Only affects
      * the no-subscriptions empty state: the "Open Telegram to subscribe" CTA is
@@ -2326,7 +2325,9 @@ fun TimelineScreen(
                 currentRevisionPost.id.toString(),
             )
         }
-        val revisions by revisionsFlow.collectAsStateWithLifecycle(initialValue = persistentListOf())
+        val revisions by revisionsFlow.collectAsStateWithLifecycle(
+            initialValue = null as kotlinx.collections.immutable.ImmutableList<dev.lyo.hortay.data.archive.PostSnapshot>?,
+        )
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { revisionsForPost = null },
@@ -2335,7 +2336,7 @@ fun TimelineScreen(
                     PostActions.openInTelegram(context, channels, currentRevisionPost)
                 }
             },
-            mediaStore = archiveMediaStore,
+            mediaResolver = archiveMediaResolver,
         )
     }
 

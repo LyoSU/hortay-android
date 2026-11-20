@@ -37,6 +37,7 @@
 - Picking a reaction plays Telegram's animation for it, and the reactions in the long-press menu animate in as it opens.
 
 ### Changed
+- A post's edit history shows its versions as a row of time chips with a one-line note on what changed, keeps the post's formatting and links, and marks the changed words in place.
 - Long-pressing a post or a comment opens a compact menu right next to it — reactions in a floating capsule, actions in a small card — instead of a sheet covering half the screen.
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
 - Posts in the feed and channels now use the full screen width — the channel photo and name sit in a header row above the post, so photos and text are noticeably larger.
@@ -138,6 +139,9 @@
 - Guest-mode refresh and channel search no longer stutter the interface while pages load.
 - The phone number and login code you typed survive rotating the screen or switching the theme.
 - The edit-history sheet of a post no longer flickers empty while it's open.
+- The edit history shows a sharp photo whenever the picture is already on the device, instead of a blurred preview.
+- The post archive no longer records one edit twice when two edits arrive close together.
+- A reaction emoji without Telegram artwork is drawn at the same size as the others, and artwork that failed to load is tried again.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
 - Rotating the phone no longer closes the fullscreen video, jumps back to the Feed tab or closes open sheets.
 - Opening a t.me or tg:// link while Hortay is running reuses the open app instead of stacking a second copy, and the link is no longer replayed after rotating or returning from Recents.

@@ -42,7 +42,7 @@ INSERT INTO PostSnapshot(source_kind, source_key, message_key, album_key, kind, 
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 latestForMessage:
-SELECT seen_at_ms, content_hash
+SELECT seen_at_ms, content_hash, edited_at_ms, kind
 FROM PostSnapshot
 WHERE source_kind = ? AND source_key = ? AND message_key = ?
 ORDER BY seen_at_ms DESC, id DESC

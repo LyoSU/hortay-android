@@ -11,6 +11,7 @@ class FloodGateBypassTest {
     fun `file transfer control skips the flood gate`() {
         assertTrue(TdClient.isOfflineRequest(TdApi.DownloadFile(1, 1, 0, 0, false)))
         assertTrue(TdClient.isOfflineRequest(TdApi.CancelDownloadFile(1, true)))
+        assertTrue(TdClient.isOfflineRequest(TdApi.GetRemoteFile("remote", TdApi.FileTypePhoto())))
     }
 
     @Test

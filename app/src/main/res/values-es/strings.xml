@@ -779,9 +779,23 @@
     <string name="revision_go_to_current">Ir a la versión actual</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
     <string name="revision_media_document">Documento</string>
-    <string name="revision_media_low_res_overlay">Solo vista previa — el contenido completo no fue guardado en caché</string>
+    <string name="revision_media_low_res_overlay">Solo vista previa</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d versión</item>
+        <item quantity="other">%d versiones</item>
+    </plurals>
+    <string name="revision_chip_published">Publicado %1$s</string>
+    <string name="revision_chip_deleted">Eliminado %1$s</string>
+    <string name="revision_chip_edited_cd">Editado a las %1$s</string>
+    <string name="revision_change_published">Tal como se publicó</string>
+    <string name="revision_change_text">Texto modificado</string>
+    <string name="revision_change_formatting">Formato modificado</string>
+    <string name="revision_change_media">Multimedia modificado</string>
+    <string name="revision_change_text_media">Texto y multimedia modificados</string>
+    <string name="revision_change_deleted">La publicación se eliminó</string>
+    <string name="revision_unreadable">No se puede mostrar esta versión</string>
+    <string name="revision_show_changes">Mostrar cambios</string>
     <string name="revision_media_unavailable">El contenido multimedia no fue capturado</string>
-    <string name="revision_media_video_caption">Video · %1$ds</string>
     <string name="revision_open_in_telegram">Abrir en Telegram</string>
     <string name="revision_sheet_title">Historial de ediciones</string>
     <string name="revision_sheet_title_deleted">Publicación eliminada</string>

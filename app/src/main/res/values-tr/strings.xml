@@ -754,9 +754,23 @@
     <string name="revision_go_to_current">Güncel sürüme git</string>
     <string name="revision_media_audio_caption">Ses · %1$d sn</string>
     <string name="revision_media_document">Belge</string>
-    <string name="revision_media_low_res_overlay">Yalnızca önizleme — tam medya önbelleğe alınmadı</string>
+    <string name="revision_media_low_res_overlay">Yalnızca önizleme</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d sürüm</item>
+        <item quantity="other">%d sürüm</item>
+    </plurals>
+    <string name="revision_chip_published">Yayımlandı %1$s</string>
+    <string name="revision_chip_deleted">Silindi %1$s</string>
+    <string name="revision_chip_edited_cd">%1$s düzenlendi</string>
+    <string name="revision_change_published">Yayımlandığı hâli</string>
+    <string name="revision_change_text">Metin değişti</string>
+    <string name="revision_change_formatting">Biçim değişti</string>
+    <string name="revision_change_media">Medya değişti</string>
+    <string name="revision_change_text_media">Metin ve medya değişti</string>
+    <string name="revision_change_deleted">Gönderi silindi</string>
+    <string name="revision_unreadable">Bu sürüm gösterilemiyor</string>
+    <string name="revision_show_changes">Değişiklikleri göster</string>
     <string name="revision_media_unavailable">Medya kaydedilmedi</string>
-    <string name="revision_media_video_caption">Video · %1$d sn</string>
     <string name="revision_open_in_telegram">Telegram\'da aç</string>
     <string name="revision_sheet_title">Düzenleme geçmişi</string>
     <string name="revision_sheet_title_deleted">Silinen gönderi</string>

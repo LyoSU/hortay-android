@@ -41,7 +41,7 @@ object ContentNormalizer {
     fun canonicalBytes(meta: TdlibContentMeta): ByteArray {
         val obj = buildJsonObject {
             put("text", JsonPrimitive(meta.text))
-            put("entities", parseOrEmpty(meta.entitiesJson))
+            put("entities", projectEntities(parseOrEmpty(meta.entitiesJson)))
             put("media", normalizeMedia(meta.mediaSummaryJson))
             put("poll", normalizePoll(meta.pollJson))
             put("forward", parseOrNull(meta.forwardJson))
@@ -56,6 +56,25 @@ object ContentNormalizer {
             Json.parseToJsonElement(json) as? JsonArray ?: JsonArray(emptyList())
         }.getOrDefault(JsonArray(emptyList()))
     }
+
+    /**
+     * Keeps only `offset` / `length` / `type` of each entity — exactly the fields every
+     * stored row has carried since the archive shipped. The extractor later started
+     * storing render payloads too (link url, custom emoji id, mention user id, code
+     * language); hashing those would give an unchanged post a different hash from its
+     * own older row, and the next content-less `updateMessageEdited` (a reply-markup
+     * edit, a catch-up re-emit) would record a phantom version.
+     */
+    private fun projectEntities(entities: JsonArray): JsonArray = JsonArray(
+        entities.map { el ->
+            val obj = el as? JsonObject ?: return@map el
+            JsonObject(
+                obj.filterKeys {
+                    it == ArchivedEntityKeys.OFFSET || it == ArchivedEntityKeys.LENGTH || it == ArchivedEntityKeys.TYPE
+                },
+            )
+        },
+    )
 
     private fun parseOrNull(json: String?): JsonPrimitive {
         // Forwards and replies are opaque to the normalizer — we treat the

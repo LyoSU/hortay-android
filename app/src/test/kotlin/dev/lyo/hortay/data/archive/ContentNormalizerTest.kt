@@ -68,8 +68,36 @@ class ContentNormalizerTest {
         )
     }
 
-    private fun textMeta(text: String): TdlibContentMeta = TdlibContentMeta(
-        text = text, entitiesJson = "[]",
+    @Test
+    fun `entity render payload does not change hash`() {
+        val legacy = textMeta(
+            "‼ read",
+            """[{"offset":0,"length":1,"type":"TextEntityTypeCustomEmoji"},{"offset":2,"length":4,"type":"TextEntityTypeTextUrl"}]""",
+        )
+        val current = textMeta(
+            "‼ read",
+            """[{"offset":0,"length":1,"type":"TextEntityTypeCustomEmoji","customEmojiId":5368324170671202286},""" +
+                """{"offset":2,"length":4,"type":"TextEntityTypeTextUrl","url":"https://example.com"}]""",
+        )
+        assertEquals(
+            ContentNormalizer.canonicalBytes(legacy).toList(),
+            ContentNormalizer.canonicalBytes(current).toList(),
+            "rows written before the payload keys existed must keep deduping against new captures",
+        )
+    }
+
+    @Test
+    fun `entity added changes hash`() {
+        val plain = textMeta("hello")
+        val bold = textMeta("hello", """[{"offset":0,"length":5,"type":"TextEntityTypeBold"}]""")
+        assertNotEquals(
+            ContentNormalizer.canonicalBytes(plain).toList(),
+            ContentNormalizer.canonicalBytes(bold).toList(),
+        )
+    }
+
+    private fun textMeta(text: String, entitiesJson: String = "[]"): TdlibContentMeta = TdlibContentMeta(
+        text = text, entitiesJson = entitiesJson,
         mediaSummaryJson = null, pollJson = null,
         forwardJson = null, replyJson = null,
     )

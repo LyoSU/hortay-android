@@ -3,11 +3,12 @@ package dev.lyo.hortay.ui.archive.components
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,147 +17,158 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.BlurEffect
-import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.archive.ArchivedMediaRef
-import dev.lyo.hortay.data.archive.ArchivedMediaStore
+import dev.lyo.hortay.data.archive.ArchivedMediaResolver
+import dev.lyo.hortay.data.archive.ArchivedMediaSource
+import dev.lyo.hortay.ui.media.TdMediaImage
+import dev.lyo.hortay.ui.theme.mediaFrame
+import dev.lyo.hortay.ui.timeline.DurationChip
+import dev.lyo.hortay.ui.timeline.formatDuration
+import dev.lyo.hortay.ui.timeline.mediaAspectRatio
 import java.io.File
 
 /**
- * Tri-state media preview for an archived revision:
+ * Media of one archived version, compact so the text — the thing whose history this is —
+ * stays above the fold: true aspect ratio, height capped at [REVISION_MEDIA_MAX_HEIGHT],
+ * start-aligned on the text inset, same shape and hairline frame as feed media.
  *
- *   1. **Best**: file is in archive storage (the snapshot captured it before
- *      TDLib evicted) — render full-resolution from disk via Coil.
- *   2. **Fallback**: only the inline minithumb survived (file wasn't downloaded
- *      at capture time) — render the 40-px JPEG, blurred slightly so the
- *      coarseness doesn't read as a defect.
- *   3. **Nothing**: neither — render a "media unavailable" placeholder card
- *      that tells the user the bytes weren't captured (NOT a generic error).
+ * Sharp sources come from [ArchivedMediaResolver] (archive copy, then the same TDLib file
+ * rendered through the feed's [TdMediaImage]). Only when neither exists does it show the
+ * inline minithumb, blurred, with a "Preview only" pill in the bottom-start corner — the
+ * same dark translucent badge language as the feed's GIF / duration chips. The old sheet
+ * laid grey caption text across the blurred picture, where it was barely readable, and
+ * showed the blur even for live posts whose photo was sitting in TDLib's cache.
  *
- * Aspect ratio comes from [ArchivedMediaRef.width] / [ArchivedMediaRef.height]
- * when present, falling back to 16:9. Non-image types (audio, voice, document,
- * video-note) skip the image surface and render a small descriptor row only.
+ * Documents, audio and voice versions have no picture; they render a one-line descriptor.
  */
 @Composable
 fun RevisionMediaPreview(
     media: ArchivedMediaRef,
-    mediaStore: ArchivedMediaStore?,
+    resolver: ArchivedMediaResolver?,
+    postDeleted: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        when (media.type) {
-            "photo", "video", "animation", "videoNote" -> {
-                ImageOrThumb(media = media, mediaStore = mediaStore)
-                if (media.type == "video" || media.type == "animation" || media.type == "videoNote") {
-                    Text(
-                        text = stringResource(
-                            R.string.revision_media_video_caption,
-                            media.durationMs / 1000L,
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-            }
-            "document" -> Text(
-                text = media.fileName ?: stringResource(R.string.revision_media_document),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(vertical = 4.dp),
+    when (media.type) {
+        "photo", "video", "animation", "videoNote" -> VisualMedia(media, resolver, postDeleted, modifier)
+        "document" -> Text(
+            text = media.fileName ?: stringResource(R.string.revision_media_document),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = modifier,
+        )
+        "audio", "voice" -> Text(
+            text = stringResource(R.string.revision_media_audio_caption, media.durationMs / 1000L),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = modifier,
+        )
+        else -> Unit
+    }
+}
+
+@Composable
+private fun VisualMedia(
+    media: ArchivedMediaRef,
+    resolver: ArchivedMediaResolver?,
+    postDeleted: Boolean,
+    modifier: Modifier,
+) {
+    val ratio = remember(media) { mediaAspectRatio(media.width, media.height).coerceIn(MIN_RATIO, MAX_RATIO) }
+    // null while resolving: the minithumb shows without the "preview only" badge, so a
+    // sharp source arriving a moment later doesn't flash a badge first.
+    val source by produceState<ArchivedMediaSource?>(initialValue = null, media, resolver, postDeleted) {
+        value = resolver?.resolve(media, postDeleted) ?: ArchivedMediaSource.PreviewOnly
+    }
+    val shape = MaterialTheme.shapes.medium
+    val context = LocalContext.current
+    Box(
+        modifier = modifier
+            .heightIn(max = REVISION_MEDIA_MAX_HEIGHT)
+            .widthIn(max = REVISION_MEDIA_MAX_HEIGHT * ratio)
+            .fillMaxWidth()
+            .aspectRatio(ratio)
+            .clip(shape)
+            .mediaFrame(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        when (val s = source) {
+            is ArchivedMediaSource.ArchivedFile -> AsyncImage(
+                model = remember(s.path, context) { ImageRequest.Builder(context).data(File(s.path)).build() },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
             )
-            "audio", "voice" -> Text(
-                text = stringResource(
-                    R.string.revision_media_audio_caption,
-                    media.durationMs / 1000L,
+            is ArchivedMediaSource.TdlibFile -> TdMediaImage(
+                media = TdMedia(
+                    fileId = s.fileId,
+                    width = media.width,
+                    height = media.height,
+                    minithumbBytes = media.minithumbBytes,
                 ),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(vertical = 4.dp),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
             )
-            else -> Unit
+            ArchivedMediaSource.PreviewOnly, null -> PreviewOnly(media, showBadge = s != null)
+        }
+        if (media.type != "photo" && media.durationMs > 0) {
+            DurationChip(
+                text = formatDuration((media.durationMs / 1000L).toInt()),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(BADGE_INSET),
+            )
         }
     }
 }
 
 @Composable
-private fun ImageOrThumb(media: ArchivedMediaRef, mediaStore: ArchivedMediaStore?) {
-    val ratio = remember(media) {
-        if (media.width > 0 && media.height > 0) {
-            media.width.toFloat() / media.height.toFloat()
-        } else 16f / 9f
+private fun androidx.compose.foundation.layout.BoxScope.PreviewOnly(media: ArchivedMediaRef, showBadge: Boolean) {
+    val bytes = media.minithumbBytes
+    val bitmap = remember(bytes) {
+        bytes?.let { runCatching { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }.getOrNull() }
     }
-    val archivedPath by produceState<String?>(initialValue = null, media.localArchiveSha, mediaStore) {
-        val sha = media.localArchiveSha
-        value = if (sha != null && mediaStore != null) {
-            mediaStore.pathFor(sha)?.takeIf { File(it).exists() }
-        } else null
-    }
-    val context = LocalContext.current
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .aspectRatio(ratio.coerceIn(0.4f, 3f))
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        val thumbBytes = media.minithumbBytes
-        if (archivedPath != null) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(File(archivedPath!!))
-                    .build(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth(),
-                contentScale = ContentScale.Crop,
-            )
-        } else if (thumbBytes != null) {
-            // Decoded each composition — acceptable: minithumbs are tiny (≤2 KB).
-            val bitmap = remember(thumbBytes) {
-                runCatching {
-                    android.graphics.BitmapFactory.decodeByteArray(
-                        thumbBytes, 0, thumbBytes.size,
-                    )?.asImageBitmap()
-                }.getOrNull()
-            }
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { renderEffect = BlurEffect(8f, 8f, TileMode.Decal) },
-                    contentScale = ContentScale.Crop,
-                )
-                Text(
-                    text = stringResource(R.string.revision_media_low_res_overlay),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .padding(8.dp),
-                )
-            } else {
-                Text(
-                    text = stringResource(R.string.revision_media_unavailable),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                )
-            }
-        } else {
+    if (bitmap == null) {
+        if (showBadge) {
             Text(
                 text = stringResource(R.string.revision_media_unavailable),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center).padding(16.dp),
             )
         }
+        return
+    }
+    Image(
+        bitmap = bitmap,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize().blur(PREVIEW_BLUR),
+    )
+    if (showBadge) {
+        DurationChip(
+            text = stringResource(R.string.revision_media_low_res_overlay),
+            modifier = Modifier.align(Alignment.BottomStart).padding(BADGE_INSET),
+        )
     }
 }
+
+/**
+ * Height cap for a version's media. About a third of a typical phone's height (an
+ * 1080×2340 phone is ~900 dp tall), so a portrait photo leaves the version's text visible
+ * without scrolling the sheet.
+ */
+private val REVISION_MEDIA_MAX_HEIGHT: Dp = 280.dp
+private val BADGE_INSET = 8.dp
+private val PREVIEW_BLUR = 12.dp
+private const val MIN_RATIO = 0.4f
+private const val MAX_RATIO = 3f

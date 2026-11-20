@@ -257,6 +257,10 @@ class AppGraph(context: Context) {
         ArchiveRepository(archiveDb, archiveSettingsState, archivedMediaStore, appScope)
     val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState, archivedMediaStore)
 
+    /** Sharp-media lookup for the edit-history sheet (archive copy, else the same TDLib photo). */
+    val archivedMediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver =
+        dev.lyo.hortay.data.archive.ArchivedMediaResolver(tdClient, archivedMediaStore)
+
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
     val postsRepository: PostsRepository = PostsRepository(

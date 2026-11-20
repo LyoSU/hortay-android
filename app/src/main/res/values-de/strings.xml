@@ -759,9 +759,23 @@
     <string name="revision_go_to_current">Zur aktuellen Version</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
     <string name="revision_media_document">Dokument</string>
-    <string name="revision_media_low_res_overlay">Nur Vorschau — vollständige Medien wurden nicht gecacht</string>
+    <string name="revision_media_low_res_overlay">Nur Vorschau</string>
+    <plurals name="revision_versions_count">
+        <item quantity="one">%d Version</item>
+        <item quantity="other">%d Versionen</item>
+    </plurals>
+    <string name="revision_chip_published">Veröffentlicht %1$s</string>
+    <string name="revision_chip_deleted">Gelöscht %1$s</string>
+    <string name="revision_chip_edited_cd">Bearbeitet um %1$s</string>
+    <string name="revision_change_published">Wie veröffentlicht</string>
+    <string name="revision_change_text">Text geändert</string>
+    <string name="revision_change_formatting">Formatierung geändert</string>
+    <string name="revision_change_media">Medien geändert</string>
+    <string name="revision_change_text_media">Text und Medien geändert</string>
+    <string name="revision_change_deleted">Der Beitrag wurde gelöscht</string>
+    <string name="revision_unreadable">Diese Version kann nicht angezeigt werden</string>
+    <string name="revision_show_changes">Änderungen zeigen</string>
     <string name="revision_media_unavailable">Medien wurden nicht erfasst</string>
-    <string name="revision_media_video_caption">Video · %1$ds</string>
     <string name="revision_open_in_telegram">In Telegram öffnen</string>
     <string name="revision_sheet_title">Bearbeitungsverlauf</string>
     <string name="revision_sheet_title_deleted">Gelöschter Beitrag</string>

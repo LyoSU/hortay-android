@@ -822,6 +822,7 @@ class TdClient private constructor(
             is TdApi.GetBasicGroup,
             is TdApi.GetMessageLocally,
             is TdApi.GetFile,
+            is TdApi.GetRemoteFile,
             is TdApi.GetOption,
             is TdApi.DownloadFile,
             is TdApi.CancelDownloadFile,

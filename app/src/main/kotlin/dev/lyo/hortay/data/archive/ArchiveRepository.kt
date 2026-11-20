@@ -215,7 +215,20 @@ class ArchiveRepository(
             val existing = db.postSnapshotQueries.latestForMessage(
                 chat.kind.name, chat.key, messageKey,
             ).executeAsOneOrNull()
-            if (existing?.content_hash == hash) {
+            // Out-of-order guard. Every edit capture is its own `scope.launch` with
+            // suspension points before this mutex (media copy on IO, the GetMessage
+            // fallback), so two edits landing close together — or a catch-up burst
+            // after reconnect — can reach here in the wrong order. Comparing only the
+            // hash against the latest row then wrote the older content AFTER the newer
+            // one, and the next content-less UME (reply-markup edit, re-emit) wrote the
+            // newer content again: three versions for two edits, alternating text.
+            // A capture whose edit date is strictly older than the latest recorded
+            // version's is stale by construction and is dropped.
+            val stale = existing != null &&
+                existing.kind == SnapshotKind.VERSION.name &&
+                existing.edited_at_ms != null &&
+                editedAtMs < existing.edited_at_ms
+            if (existing?.content_hash == hash || stale) {
                 meta.mediaRef?.localArchiveSha?.let { sha ->
                     runCatching { mediaStore?.releaseRef(sha) }
                 }
@@ -663,6 +676,7 @@ class ArchiveRepository(
             mediaSummaryJson = null, pollJson = null,
             forwardJson = null, replyJson = null,
         ),
+        isUnreadable = true,
     )
 
     /**
@@ -679,7 +693,7 @@ class ArchiveRepository(
      * blob-reading path already wraps decode in `runCatching`
      * ([buildTombstoneFromJoinedRow], [purge], [maybeEvictByCap], ArchiveSweep);
      * this was the last one. The empty placeholder matches the unknown-`content_kind`
-     * fallback so the row renders as a blank revision, not an exception.
+     * fallback so the row renders as an unreadable revision, not an exception.
      */
     private fun decodeContent(row: dev.lyo.hortay.data.archive.db.PostSnapshot): ArchivedContent =
         runCatching {

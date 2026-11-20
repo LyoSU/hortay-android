@@ -43,7 +43,6 @@ import dev.lyo.hortay.data.archive.PostSnapshot
 import dev.lyo.hortay.data.archive.SnapshotKind
 import dev.lyo.hortay.ui.archive.components.ArchiveRow
 import dev.lyo.hortay.ui.icons.Symbol
-import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -53,7 +52,7 @@ fun ArchiveScreen(
     viewModel: ArchiveViewModel,
     onBack: () -> Unit,
     onOpenInTelegram: (PostSnapshot) -> Unit = {},
-    mediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore? = null,
+    mediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver? = null,
 ) {
     val snapshots by viewModel.snapshots.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
@@ -174,12 +173,14 @@ fun ArchiveScreen(
     val current = openSnapshot
     if (current != null) {
         val revisionsFlow = remember(current) { viewModel.observeRevisionsFor(current) }
-        val revisions by revisionsFlow.collectAsStateWithLifecycle(initialValue = persistentListOf())
+        val revisions by revisionsFlow.collectAsStateWithLifecycle(
+            initialValue = null as kotlinx.collections.immutable.ImmutableList<PostSnapshot>?,
+        )
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { openSnapshot = null },
             onOpenInTelegram = { onOpenInTelegram(current) },
-            mediaStore = mediaStore,
+            mediaResolver = mediaResolver,
         )
     }
 }
