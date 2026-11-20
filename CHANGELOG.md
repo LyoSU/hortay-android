@@ -67,6 +67,8 @@
 - The reaction panel no longer offers reactions that need Telegram Premium you don't have.
 - In guest mode, posts that Telegram's web preview can't show say so instead of appearing as empty cards.
 - Tapping a reaction in guest mode explains that reactions need signing in, instead of doing nothing.
+- In guest mode, busy channels no longer lose the posts published between two refreshes.
+- In guest mode, posts with a document or an audio file show its name, mixed albums keep their photos and videos in order, and “pinned a message” notices no longer appear as empty posts.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.

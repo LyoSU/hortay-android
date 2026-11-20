@@ -185,6 +185,72 @@ class TmePageParserTest {
     }
 
     @Test
+    fun `document posts keep the file with its title`() {
+        val page = TmePageParser.parse(loadFixture("meduzalive-real.html"), "meduzalive")!!
+        val documents = page.posts.flatMap { it.media }.filter { it.kind == WebMedia.Kind.Document }
+        assertTrue(documents.isNotEmpty(), "expected a document in the meduzalive sample")
+        documents.forEach { doc ->
+            assertTrue(doc.url.startsWith("https://t.me/"), "document link not a t.me URL: ${doc.url}")
+            assertFalse(doc.title.isNullOrBlank(), "document without a title")
+        }
+    }
+
+    @Test
+    fun `service messages are not posts`() {
+        val html = loadFixture("disgustingmen-real.html")
+        assertTrue("service_message" in html, "fixture no longer carries a service message")
+        val page = TmePageParser.parse(html, "disgustingmen")!!
+        assertFalse(page.posts.any { it.seq == 15142L }, "the pin service message parsed as a post")
+    }
+
+    @Test
+    fun `mixed albums keep photos and videos in page order`() {
+        fun photo(n: Int) =
+            """<a class="tgme_widget_message_photo_wrap" style="width:100px;background-image:url('https://cdn.example/p$n.jpg');padding-top:50%"></a>"""
+        fun video(n: Int) = """
+            <a class="tgme_widget_message_video_player" href="">
+              <i class="tgme_widget_message_video_thumb" style="background-image:url('https://cdn.example/t$n.jpg')"></i>
+              <div class="tgme_widget_message_video_wrap" style="width:100px;padding-top:50%"><video src="https://cdn.example/v$n.mp4"></video></div>
+              <time class="message_video_duration">0:0$n</time>
+            </a>"""
+        val html = """
+            <html><body>
+              <div class="tgme_channel_info">
+                <div class="tgme_channel_info_header">
+                  <div class="tgme_channel_info_header_title"><span>Test</span></div>
+                  <div class="tgme_channel_info_header_username"><a href="">@test</a></div>
+                </div>
+              </div>
+              <section class="tgme_channel_history">
+                <div class="tgme_widget_message_wrap">
+                  <div class="tgme_widget_message" data-post="test/7">
+                    <div class="tgme_widget_message_bubble">
+                      <div class="tgme_widget_message_grouped_layer">
+                        ${photo(1)}${video(2)}${photo(3)}${video(4)}
+                      </div>
+                      <a class="tgme_widget_message_date" href=""><time datetime="2025-01-01T00:00:00+00:00"></time></a>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </body></html>
+        """.trimIndent()
+        val media = TmePageParser.parse(html, "test")!!.posts.single().media
+        assertEquals(
+            listOf("p1.jpg", "v2.mp4", "p3.jpg", "v4.mp4"),
+            media.map { it.url.substringAfterLast('/') },
+        )
+        assertEquals(listOf(null, 2, null, 4), media.map { it.durationSec })
+    }
+
+    @Test
+    fun `forward source handle is the channel, not the message id`() {
+        assertEquals("meduza_news", WebPostAdapter.forwardSourceHandle("https://t.me/meduza_news/89905"))
+        assertEquals("meduza_news", WebPostAdapter.forwardSourceHandle("https://t.me/s/meduza_news/89905"))
+        assertEquals("meduza_news", WebPostAdapter.forwardSourceHandle("https://t.me/meduza_news"))
+    }
+
+    @Test
     fun `videos extract source url and a thumbnail when t_dot_me embeds them`() {
         val page = TmePageParser.parse(loadFixture("durov-real.html"), "durov")!!
         val videos = page.posts.flatMap { it.media }.filter { it.kind == WebMedia.Kind.Video }

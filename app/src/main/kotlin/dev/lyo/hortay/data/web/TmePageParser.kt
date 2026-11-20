@@ -128,6 +128,9 @@ object TmePageParser {
 
     private fun parseSinglePost(wrapper: Element): WebPost? {
         val msg = wrapper.selectFirst(".tgme_widget_message[data-post]") ?: return null
+        // "X pinned «…»" and the like: channel bookkeeping, not a post. The feed has no
+        // service-row rendering in guest mode, so it would show as a bare, textless card.
+        if (msg.hasClass("service_message")) return null
         val dataPost = msg.attr("data-post").ifBlank { return null }
         val seq = dataPost.substringAfterLast('/').toLongOrNull() ?: return null
         // `data-post` carries the channel's display casing ("Durov/123"); the id's
@@ -194,80 +197,39 @@ object TmePageParser {
     private fun parseMedia(msg: Element): List<WebMedia> {
         val out = mutableListOf<WebMedia>()
 
-        // Photos: rendered as `<a class="tgme_widget_message_photo_wrap …" style="width:Wpx;
-        // background-image:url('…');padding-top:H%">`. Album posts contain multiple
-        // .tgme_widget_message_photo_wrap inside .tgme_widget_message_grouped_layer. We
-        // accept either case — flat list of photos preserves source order.
-        msg.select("a.tgme_widget_message_photo_wrap").forEach { photo ->
-            val url = extractCssBackgroundUrl(photo.attr("style")) ?: return@forEach
-            out += WebMedia(
-                kind = WebMedia.Kind.Photo,
-                url = url,
-                aspectRatio = parsePaddingAspect(photo) ?: parseDataRatio(photo),
-                durationSec = null,
-                thumbnailUrl = null,
-            )
-        }
-
-        // Videos: the `<video>` source lives inside `.tgme_widget_message_video_wrap`,
-        // while the user-visible thumbnail (and click target) is the sibling/preceding
-        // `<a class="tgme_widget_message_video_player">` whose inner `<i class="
-        // tgme_widget_message_video_thumb">` carries the poster as a CSS background.
-        // Duration is rendered by `<time class="message_video_duration">` (NOT the
-        // `tgme_widget_` namespace — confirmed across all four real samples that have
-        // videos). Round videos and GIFs share the same wrapper but with a marker class
-        // on the player element.
-        val videoWraps = msg.select(".tgme_widget_message_video_wrap")
-        val videoPlayers = msg.select("a.tgme_widget_message_video_player")
-        val videoCount = maxOf(videoWraps.size, videoPlayers.size)
-        for (i in 0 until videoCount) {
-            val wrap = videoWraps.getOrNull(i)
-            val player = videoPlayers.getOrNull(i)
-            val rawSrc = wrap?.selectFirst("video")?.attr("src")?.ifBlank { null }
-            val thumb = player?.selectFirst(".tgme_widget_message_video_thumb")
-                ?.attr("style")
-                ?.let(::extractCssBackgroundUrl)
-            // "Media is too big" posts: t.me/s/ omits the `<video src>` element
-            // entirely, leaving only the poster + a "VIEW IN TELEGRAM" link
-            // inside `.message_media_not_supported_wrap`. The class
-            // `not_supported` on the player anchor is the marker. We still want
-            // these posts visible in the feed (otherwise they look empty —
-            // "пост лише з реакціями"), but emitting them as Photo would lie
-            // about the post's nature: the user gets a play badge / open-in-
-            // Telegram cue only if we keep the Video kind. We use an empty
-            // `url` as the sentinel for "unplayable" — the adapter / UI layer
-            // routes a tap on this directly to the Telegram client instead of
-            // opening the in-app gallery (which would spin on the empty URL).
-            val isUnsupported = player?.hasClass("not_supported") == true
-            if (rawSrc == null) {
-                if (isUnsupported && thumb != null) {
-                    out += WebMedia(
-                        kind = WebMedia.Kind.Video,
-                        url = "", // sentinel for unplayable
-                        aspectRatio = parsePaddingAspect(wrap) ?: player?.let(::parseDataRatio),
-                        durationSec = null,
-                        thumbnailUrl = thumb,
-                    )
-                }
-                continue
+        // Photos and videos in ONE pass, in DOM order — an album can interleave them
+        // (photo, video, photo, …) and collecting each kind separately reordered it.
+        //
+        // Photo: `<a class="tgme_widget_message_photo_wrap …" style="width:Wpx;
+        // background-image:url('…');padding-top:H%">`; album posts hold several inside
+        // `.tgme_widget_message_grouped_layer`.
+        //
+        // Video: `<a class="tgme_widget_message_video_player …">` holding the poster
+        // (`<i class="tgme_widget_message_video_thumb">`, a CSS background), the
+        // `.tgme_widget_message_video_wrap` with the `<video src>`, and the duration
+        // (`<time class="message_video_duration">` — NOT in the `tgme_widget_`
+        // namespace). Each is read from inside its own player, so nothing is paired by
+        // index. Round videos and GIFs share the wrapper with a marker class on the player.
+        val handledWraps = HashSet<Element>()
+        msg.select("a.tgme_widget_message_photo_wrap, a.tgme_widget_message_video_player").forEach { el ->
+            if (el.hasClass("tgme_widget_message_photo_wrap")) {
+                val url = extractCssBackgroundUrl(el.attr("style")) ?: return@forEach
+                out += WebMedia(
+                    kind = WebMedia.Kind.Photo,
+                    url = url,
+                    aspectRatio = parsePaddingAspect(el) ?: parseDataRatio(el),
+                    durationSec = null,
+                    thumbnailUrl = null,
+                )
+            } else {
+                val wrap = el.selectFirst(".tgme_widget_message_video_wrap")
+                if (wrap != null) handledWraps.add(wrap)
+                parseVideo(player = el, wrap = wrap)?.let { out += it }
             }
-            val src = rawSrc
-            val isRound = (player?.classNames()?.any { it.contains("round", ignoreCase = true) } == true)
-            val isGif = (player?.classNames()?.any { it.equals("gif", ignoreCase = true) } == true)
-            val duration = msg.select(".message_video_duration").getOrNull(i)
-                ?.text()
-                ?.let(::parseDurationToSeconds)
-            out += WebMedia(
-                kind = when {
-                    isRound -> WebMedia.Kind.RoundVideo
-                    isGif -> WebMedia.Kind.Gif
-                    else -> WebMedia.Kind.Video
-                },
-                url = src,
-                aspectRatio = parsePaddingAspect(wrap) ?: player?.let(::parseDataRatio),
-                durationSec = duration,
-                thumbnailUrl = thumb,
-            )
+        }
+        // A video wrap outside any player anchor (older single-video layout).
+        msg.select(".tgme_widget_message_video_wrap").forEach { wrap ->
+            if (wrap !in handledWraps) parseVideo(player = null, wrap = wrap)?.let { out += it }
         }
 
         // Voice notes — `.tgme_widget_message_voice` with an `<audio>` source.
@@ -286,17 +248,24 @@ object TmePageParser {
             )
         }
 
-        // Documents: link-only entries that we surface as opaque references — the
-        // anonymous client cannot actually download these without an auth session.
-        msg.select(".tgme_widget_message_document").forEach { doc ->
-            val href = doc.attr("href").ifBlank { doc.selectFirst("a")?.attr("href").orEmpty() }
+        // Documents and audio files: `<a class="tgme_widget_message_document_wrap"
+        // href="https://t.me/<channel>/<id>">` around an icon and a
+        // `.tgme_widget_message_document` block with `_document_title` / `_document_extra`
+        // (file name + size, or track title + performer). The link is the post itself —
+        // the anonymous client can't download the file — so what is worth keeping is the
+        // name, which the feed shows next to the document badge.
+        msg.select("a.tgme_widget_message_document_wrap").forEach { doc ->
+            val href = doc.attr("href")
             if (href.isBlank()) return@forEach
+            val title = doc.selectFirst(".tgme_widget_message_document_title")?.text()?.trim().orEmpty()
+            val extra = doc.selectFirst(".tgme_widget_message_document_extra")?.text()?.trim().orEmpty()
             out += WebMedia(
                 kind = WebMedia.Kind.Document,
                 url = href,
                 aspectRatio = null,
                 durationSec = null,
                 thumbnailUrl = null,
+                title = listOf(title, extra).filter { it.isNotEmpty() }.joinToString(" — ").ifEmpty { null },
             )
         }
 
@@ -316,6 +285,50 @@ object TmePageParser {
         }
 
         return out
+    }
+
+    private fun parseVideo(player: Element?, wrap: Element?): WebMedia? {
+        val rawSrc = wrap?.selectFirst("video")?.attr("src")?.ifBlank { null }
+        val thumb = player?.selectFirst(".tgme_widget_message_video_thumb")
+            ?.attr("style")
+            ?.let(::extractCssBackgroundUrl)
+        val aspect = parsePaddingAspect(wrap) ?: player?.let(::parseDataRatio)
+        if (rawSrc == null) {
+            // "Media is too big" posts: t.me/s/ omits the `<video src>` element
+            // entirely, leaving only the poster + a "VIEW IN TELEGRAM" link
+            // inside `.message_media_not_supported_wrap`. The class
+            // `not_supported` on the player anchor is the marker. We still want
+            // these posts visible in the feed (otherwise they look empty —
+            // "пост лише з реакціями"), but emitting them as Photo would lie
+            // about the post's nature: the user gets a play badge / open-in-
+            // Telegram cue only if we keep the Video kind. We use an empty
+            // `url` as the sentinel for "unplayable" — the adapter / UI layer
+            // routes a tap on this directly to the Telegram client instead of
+            // opening the in-app gallery (which would spin on the empty URL).
+            if (player?.hasClass("not_supported") != true || thumb == null) return null
+            return WebMedia(
+                kind = WebMedia.Kind.Video,
+                url = "", // sentinel for unplayable
+                aspectRatio = aspect,
+                durationSec = null,
+                thumbnailUrl = thumb,
+            )
+        }
+        val isRound = player?.classNames()?.any { it.contains("round", ignoreCase = true) } == true
+        val isGif = player?.classNames()?.any { it.equals("gif", ignoreCase = true) } == true
+        return WebMedia(
+            kind = when {
+                isRound -> WebMedia.Kind.RoundVideo
+                isGif -> WebMedia.Kind.Gif
+                else -> WebMedia.Kind.Video
+            },
+            url = rawSrc,
+            aspectRatio = aspect,
+            durationSec = player?.selectFirst(".message_video_duration")
+                ?.text()
+                ?.let(::parseDurationToSeconds),
+            thumbnailUrl = thumb,
+        )
     }
 
     private fun parseWebPreview(msg: Element): WebPreview? {

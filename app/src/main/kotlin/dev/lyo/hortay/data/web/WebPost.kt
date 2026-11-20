@@ -110,6 +110,8 @@ data class WebMedia(
     val durationSec: Int?,
     /** Poster/thumbnail URL for video kinds. null for photos. */
     val thumbnailUrl: String?,
+    /** Human-readable name of a [Kind.Document] (file name / track, plus size / performer). */
+    val title: String? = null,
 ) {
     enum class Kind {
         Photo,

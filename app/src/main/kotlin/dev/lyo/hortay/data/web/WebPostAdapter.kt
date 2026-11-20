@@ -91,14 +91,14 @@ object WebPostAdapter {
             date = publishedMs,
             editDate = 0L,
             forwardOrigin = forwarded?.let {
-                // Guest-mode web feed has no per-message permalink for forwards —
-                // t.me/s/ surfaces the source channel link but not the source
-                // message id. Leave sourceMessageId null; the forward chip will
-                // still drill into the channel, just at its newest entry.
+                // The header links to the source POST (`https://t.me/<channel>/<id>`),
+                // so the channel is the first path segment — taking the last one hashed
+                // the message id into the chat id. The message id itself is left unset:
+                // the guest channel screen opens at its newest entry.
                 ForwardOrigin.Channel(
                     channelName = it.channelName,
                     authorSignature = null,
-                    sourceChatId = stableChatId(it.channelLink.substringAfterLast('/')),
+                    sourceChatId = stableChatId(forwardSourceHandle(it.channelLink)),
                     sourceHandle = null,
                     sourceMessageId = null,
                 )
@@ -149,7 +149,10 @@ object WebPostAdapter {
         }
         // Pure non-photo/video media (sticker / voice / document only). Fall back to
         // the text body with a media-kind badge — better than dropping the post.
-        val badge = media.joinToString(" ") { mediaPlaceholder(it.kind, strings) }
+        val badge = media.joinToString("\n") { item ->
+            val label = mediaPlaceholder(item.kind, strings)
+            if (item.title.isNullOrBlank()) label else "$label ${item.title}"
+        }
         val combined = if (text.text.isBlank()) badge else "${text.text}\n\n$badge"
         return PostContent.Text(formatted = FormattedText(combined, text.spans), webPreview = webPreview)
     }
@@ -201,6 +204,19 @@ object WebPostAdapter {
     }
 
     private const val DEFAULT_MEDIA_WIDTH = 1024
+
+    /**
+     * Channel handle from a forwarded-from link: `https://t.me/<channel>/<id>`, also with
+     * the `/s/` preview prefix or without the message id. Falls back to the raw link's
+     * last segment for a shape it doesn't know.
+     */
+    internal fun forwardSourceHandle(link: String): String {
+        val segments = link.substringAfter("://").substringBefore('?').split('/')
+            .drop(1)
+            .filter { it.isNotEmpty() }
+        val handle = if (segments.firstOrNull() == "s") segments.getOrNull(1) else segments.firstOrNull()
+        return handle ?: link.substringAfterLast('/')
+    }
 
     /**
      * Username → Long chat id. Hash-based, deterministic across runs of the same
