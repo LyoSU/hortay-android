@@ -285,6 +285,7 @@
         <item quantity="other">%d komentar</item>
     </plurals>
     <string name="comments_empty_title">Belum ada komentar</string>
+    <string name="comments_open_original">Postingan asli di %1$s</string>
     <string name="comments_empty_body">Komentar baru akan muncul di sini saat tiba</string>
     <string name="comments_disabled_title">Komentar dinonaktifkan</string>
     <string name="comments_disabled_body">Kanal ini tidak memiliki grup diskusi yang terhubung</string>

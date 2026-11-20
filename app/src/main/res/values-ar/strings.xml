@@ -330,6 +330,7 @@
         <item quantity="other">%d تعليق</item>
     </plurals>
     <string name="comments_empty_title">لا تعليقات بعد</string>
+    <string name="comments_open_original">المنشور الأصلي في %1$s</string>
     <string name="comments_empty_body">ستظهر التعليقات الجديدة هنا فور وصولها</string>
     <string name="comments_disabled_title">التعليقات مغلقة</string>
     <string name="comments_disabled_body">هذه القناة لا تمتلك مجموعة نقاش مرتبطة</string>

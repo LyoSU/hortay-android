@@ -296,6 +296,7 @@
         <item quantity="other">%d yorum</item>
     </plurals>
     <string name="comments_empty_title">Henüz yorum yok</string>
+    <string name="comments_open_original">Özgün gönderi: %1$s</string>
     <string name="comments_empty_body">Yeni yorumlar geldikçe burada görünecek</string>
     <string name="comments_disabled_title">Yorumlar kapalı</string>
     <string name="comments_disabled_body">Bu kanalın bağlı bir tartışma grubu yok</string>

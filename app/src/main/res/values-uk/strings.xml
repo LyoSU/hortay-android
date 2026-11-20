@@ -309,6 +309,7 @@
         <item quantity="other">%d коментаря</item>
     </plurals>
     <string name="comments_empty_title">Поки немає коментарів</string>
+    <string name="comments_open_original">Оригінальний пост у %1$s</string>
     <string name="comments_empty_body">Нові коментарі зʼявляться тут одразу після публікації</string>
     <string name="comments_disabled_title">Коментарі вимкнено</string>
     <string name="comments_disabled_body">Автор каналу не підключив групу для обговорень</string>

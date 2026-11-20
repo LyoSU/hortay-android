@@ -312,6 +312,7 @@
         <item quantity="other">%d komentarza</item>
     </plurals>
     <string name="comments_empty_title">Brak komentarzy</string>
+    <string name="comments_open_original">Oryginalny wpis w %1$s</string>
     <string name="comments_empty_body">Nowe komentarze będą pojawiać się tutaj na bieżąco</string>
     <string name="comments_disabled_title">Komentarze są wyłączone</string>
     <string name="comments_disabled_body">Ten kanał nie ma podłączonej grupy dyskusyjnej</string>

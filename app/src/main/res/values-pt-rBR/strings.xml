@@ -305,6 +305,7 @@
         <item quantity="other">%d comentários</item>
     </plurals>
     <string name="comments_empty_title">Nenhum comentário ainda</string>
+    <string name="comments_open_original">Publicação original em %1$s</string>
     <string name="comments_empty_body">Novos comentários aparecerão aqui assim que chegarem</string>
     <string name="comments_disabled_title">Comentários desativados</string>
     <string name="comments_disabled_body">Este canal não tem um grupo de discussão vinculado</string>

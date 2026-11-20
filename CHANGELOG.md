@@ -19,6 +19,7 @@
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
 - A bookmark button under every post saves it to the Saved tab in one tap, next to a Share button.
 - The comment count under a post shows the faces of the latest commenters.
+- A forwarded post's comments screen has an “Original post in …” row that opens the original with its own discussion, and tapping the forward's header there now works too.
 - Settings → Appearance lets you pick a System, Light or Dark theme, with a Pure black option for dark mode.
 - Settings → Reading lets you choose the text size of posts, comments and articles in four steps, with a live preview.
 - Voice messages and audio tracks have a speed button that switches between 1×, 1.5× and 2×.

@@ -4,6 +4,7 @@ package dev.lyo.hortay.ui.comments
 
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
+import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
 import dev.lyo.hortay.ui.text.quoteRange
@@ -203,6 +204,12 @@ fun CommentsScreen(
      */
     onQuotedSourceClick: (TimelinePost) -> Unit = {},
     /**
+     * Opens the source of a forwarded anchor post (its header, and the "original post"
+     * row under it). Null where the source can't be opened in-app (guest mode) — the row
+     * is then not offered at all.
+     */
+    onForwardSourceClick: ((TimelinePost) -> Unit)? = null,
+    /**
      * Fired when the user taps a reaction chip — either on the pinned anchor post
      * (chatId = channel chat id, messageId = album anchor id) or on a comment
      * (chatId = linked discussion supergroup, messageId = comment id). The caller
@@ -349,6 +356,7 @@ fun CommentsScreen(
         onChannelClick,
         onAuthorChatClick,
         onQuotedSourceClick,
+        onForwardSourceClick,
         onReactionToggle,
         fetchAvailableReactions,
         onPollVote,
@@ -361,6 +369,7 @@ fun CommentsScreen(
             // post-detail screen) — the reply quote card now drills into the original
             // instead of being a dead surface.
             onQuotedSourceClick = onQuotedSourceClick,
+            onForwardSourceClick = onForwardSourceClick ?: {},
             // Album anchor: Telegram pins reaction state to the FIRST message of an
             // album (the carrier the rest of the members link back to). Mirrors the
             // wiring in [TimelineScreen] — keep the two surfaces consistent so a
@@ -697,6 +706,17 @@ fun CommentsScreen(
                     actionsEnabled = true,
                     expanded = true,
                 )
+            }
+
+            // A forward's thread is the FORWARDING channel's discussion — the count on the
+            // card is its count, and the original's thread lives in another channel that
+            // would need its own fetch. So the comments here stay the forward's, and this
+            // row is the visible way to the original post and its own discussion.
+            val forwardedFrom = anchor.forwardOrigin as? ForwardOrigin.Channel
+            if (onForwardSourceClick != null && forwardedFrom?.sourceMessageId != null) {
+                item(key = "forward-original") {
+                    OriginalPostRow(origin = forwardedFrom, onClick = { onForwardSourceClick(anchor) })
+                }
             }
 
             // Partial rich message: inline loading skeleton / retry directly under the post. The
@@ -1481,3 +1501,47 @@ private const val COMMENT_READ_DWELL_MS = 500L
 
 /** Lines of a hand-picked quote shown in a comment's quote card. */
 private const val QUOTE_MAX_LINES = 4
+
+/**
+ * "Original post in <Channel>" under a forwarded anchor: one quiet list row — the source's
+ * face, the label, a chevron — closed by the same hairline that closes the post above it.
+ * It was a tonal pill first; a filled, centred button between the post and its thread read
+ * as a call to action bigger than the thread itself, and wrapped on long channel names.
+ */
+@Composable
+private fun OriginalPostRow(origin: ForwardOrigin.Channel, onClick: () -> Unit) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button, onClick = onClick)
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TdAvatar(
+                name = origin.channelName,
+                thumb = origin.avatar?.thumb,
+                fileId = origin.avatar?.fileId,
+                size = 24.dp,
+                textStyle = MaterialTheme.typography.labelSmall,
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = stringResource(R.string.comments_open_original, origin.channelName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Symbol(
+                name = "chevron_right",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 20.dp,
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+    }
+}

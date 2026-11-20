@@ -297,6 +297,7 @@
         <item quantity="other">%d comments</item>
     </plurals>
     <string name="comments_empty_title">No comments yet</string>
+    <string name="comments_open_original">Original post in %1$s</string>
     <string name="comments_empty_body">New comments will appear here as they arrive</string>
     <string name="comments_disabled_title">Comments are off</string>
     <string name="comments_disabled_body">This channel doesn\'t have a linked discussion group</string>

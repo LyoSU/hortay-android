@@ -314,6 +314,7 @@
         <item quantity="other">%d комментариев</item>
     </plurals>
     <string name="comments_empty_title">Комментариев пока нет</string>
+    <string name="comments_open_original">Оригинальный пост в %1$s</string>
     <string name="comments_empty_body">Новые комментарии появятся здесь по мере поступления</string>
     <string name="comments_disabled_title">Комментарии отключены</string>
     <string name="comments_disabled_body">У этого канала нет привязанной группы для обсуждений</string>

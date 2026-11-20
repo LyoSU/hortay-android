@@ -4,6 +4,7 @@ package dev.lyo.hortay.ui.main
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.data.FeedOrder
@@ -23,6 +24,7 @@ import dev.lyo.hortay.ui.archive.ArchiveSettingsViewModel
 import dev.lyo.hortay.ui.archive.ArchiveViewModel
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.timeline.ChannelScreen
+import dev.lyo.hortay.ui.timeline.openForwardSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -55,6 +57,7 @@ internal fun RenderNavKey(
     canReportPost: (TimelinePost) -> Boolean,
     onLinkNotFound: () -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
     when (key) {
         is ChannelKey -> ChannelScreen(
             chatId = key.chatId,
@@ -89,6 +92,9 @@ internal fun RenderNavKey(
             onDismiss = onPopNav,
             onChannelClick = { p -> onSafelyOpenChannel(p.chatId, null) },
             onAuthorChatClick = { id -> onSafelyOpenChannel(id, null) },
+            onForwardSourceClick = { post ->
+                openForwardSource(post, openChannel = onSafelyOpenChannel, openUri = uriHandler::openUri)
+            },
             onQuotedSourceClick = { post ->
                 post.reply?.let { r ->
                     onSafelyOpenChannel(r.replyToChatId, r.replyToMessageId)

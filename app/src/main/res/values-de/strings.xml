@@ -296,6 +296,7 @@
         <item quantity="other">%d Kommentare</item>
     </plurals>
     <string name="comments_empty_title">Noch keine Kommentare</string>
+    <string name="comments_open_original">Originalbeitrag in %1$s</string>
     <string name="comments_empty_body">Neue Kommentare erscheinen hier, sobald sie eingehen</string>
     <string name="comments_disabled_title">Kommentare deaktiviert</string>
     <string name="comments_disabled_body">Dieser Kanal hat keine verknüpfte Diskussionsgruppe</string>

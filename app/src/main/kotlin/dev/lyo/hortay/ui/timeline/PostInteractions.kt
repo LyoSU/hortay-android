@@ -10,6 +10,7 @@ import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
+import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.TimelinePost
 
 /**
@@ -128,6 +129,43 @@ internal fun rememberGuestReactionNudge(): () -> Unit {
                 severity = UserMessageBus.Severity.Info,
                 action = UserMessageBus.Action.SignIn(signIn),
             )
+        }
+    }
+}
+
+/**
+ * Opens the source of a forwarded [post] — the one routing for every surface that offers
+ * it (feed, channel, comments anchor).
+ *
+ * With a known chat id the channel opens through [openChannel]; the channel screen owns
+ * the preview/skeleton while TDLib loads history for a channel the user doesn't follow.
+ * Only channel origins carry a permalink message id (group/chat forwards have no
+ * per-message anchor on the TDLib side); with it the destination lands AT the original
+ * post instead of the channel's newest entry. A username-only origin goes through
+ * [openUri] so the app's URI handler resolves the handle. Anything else is a no-op.
+ */
+internal fun openForwardSource(
+    post: TimelinePost,
+    openChannel: (chatId: Long, scrollToMessageId: Long?) -> Unit,
+    openUri: (String) -> Unit,
+) {
+    val origin = post.forwardOrigin
+    val sourceId = when (origin) {
+        is ForwardOrigin.Channel -> origin.sourceChatId
+        is ForwardOrigin.Chat -> origin.sourceChatId
+        else -> null
+    }
+    val sourceHandle = when (origin) {
+        is ForwardOrigin.Channel -> origin.sourceHandle
+        is ForwardOrigin.Chat -> origin.sourceHandle
+        else -> null
+    }
+    val sourceMessageId = (origin as? ForwardOrigin.Channel)?.sourceMessageId
+    when {
+        sourceId != null -> openChannel(sourceId, sourceMessageId)
+        !sourceHandle.isNullOrBlank() -> {
+            val handle = sourceHandle.removePrefix("@")
+            openUri(if (sourceMessageId != null) "https://t.me/$handle/$sourceMessageId" else "https://t.me/$handle")
         }
     }
 }

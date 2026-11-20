@@ -304,6 +304,7 @@
         <item quantity="many">%d commenti</item>
     </plurals>
     <string name="comments_empty_title">Nessun commento ancora</string>
+    <string name="comments_open_original">Post originale in %1$s</string>
     <string name="comments_empty_body">I nuovi commenti appariranno qui man mano che arrivano</string>
     <string name="comments_disabled_title">Commenti disattivati</string>
     <string name="comments_disabled_body">Questo canale non ha un gruppo di discussione collegato</string>

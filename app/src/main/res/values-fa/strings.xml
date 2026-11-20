@@ -294,6 +294,7 @@
         <item quantity="other">%d نظر</item>
     </plurals>
     <string name="comments_empty_title">هنوز نظری وجود ندارد</string>
+    <string name="comments_open_original">پست اصلی در %1$s</string>
     <string name="comments_empty_body">نظرهای جدید به محض رسیدن اینجا نمایش داده می‌شوند</string>
     <string name="comments_disabled_title">نظرات غیرفعال است</string>
     <string name="comments_disabled_body">این کانال گروه بحث متصل ندارد</string>
