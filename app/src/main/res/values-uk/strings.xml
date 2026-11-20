@@ -950,4 +950,17 @@
         <item quantity="many">%d слів</item>
         <item quantity="other">%d слова</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">Реакції</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="one">%1$d реакція</item>
+        <item quantity="few">%1$d реакції</item>
+        <item quantity="many">%1$d реакцій</item>
+        <item quantity="other">%1$d реакції</item>
+    </plurals>
+    <string name="reactions_load_failed">Не вдалося завантажити реакції</string>
+    <string name="reactions_empty">Реакцій поки немає</string>
+    <string name="reactions_who_reacted">Подивитися, хто відреагував</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s, реакція %2$s</string>
 </resources>

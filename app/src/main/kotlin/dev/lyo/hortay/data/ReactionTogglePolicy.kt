@@ -42,7 +42,7 @@ internal object ReactionTogglePolicy {
             } else {
                 items.add(ReactionItem(kind, count = 1, isChosen = true))
             }
-            Reactions(totalCount = current.totalCount + 1, items = items.toList())
+            current.copy(totalCount = current.totalCount + 1, items = items.toList())
         } else {
             if (idx < 0) return current
             val item = current.items[idx]
@@ -50,7 +50,7 @@ internal object ReactionTogglePolicy {
             val items = current.items.toMutableList()
             if (newCount == 0) items.removeAt(idx)
             else items[idx] = item.copy(count = newCount, isChosen = false)
-            Reactions(
+            current.copy(
                 totalCount = (current.totalCount - 1).coerceAtLeast(0),
                 items = items.toList(),
             )

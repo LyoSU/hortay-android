@@ -898,4 +898,15 @@
         <item quantity="one">%d کلمه</item>
         <item quantity="other">%d کلمه</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">واکنش‌ها</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="one">%1$d واکنش</item>
+        <item quantity="other">%1$d واکنش</item>
+    </plurals>
+    <string name="reactions_load_failed">بارگیری واکنش‌ها ممکن نشد</string>
+    <string name="reactions_empty">هنوز واکنشی نیست</string>
+    <string name="reactions_who_reacted">ببین چه کسی واکنش نشان داد</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s با %2$s واکنش نشان داد</string>
 </resources>

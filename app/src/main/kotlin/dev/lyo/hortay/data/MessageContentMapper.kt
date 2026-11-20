@@ -3,6 +3,8 @@ package dev.lyo.hortay.data
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.rich.RichPlainText
 import dev.lyo.hortay.data.rich.toRichDocument
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toPersistentList
 import org.drinkless.tdlib.TdApi
@@ -321,22 +323,49 @@ internal object MessageContentMapper {
         // reactions render as a star pill. Buckets with unknown reaction types
         // (forward-compat) are dropped so the total stays consistent with what's drawn.
         val items = list.mapNotNull { r ->
-            val kind = when (val t = r.type) {
-                is TdApi.ReactionTypeEmoji -> {
-                    val text = t.emoji.orEmpty()
-                    if (text.isEmpty()) return@mapNotNull null
-                    ReactionKind.Emoji(text)
-                }
-                is TdApi.ReactionTypeCustomEmoji -> {
-                    if (t.customEmojiId == 0L) return@mapNotNull null
-                    ReactionKind.CustomEmoji(t.customEmojiId)
-                }
-                is TdApi.ReactionTypePaid -> ReactionKind.Paid
-                else -> return@mapNotNull null
-            }
-            ReactionItem(kind, r.totalCount, r.isChosen)
+            val kind = reactionKindOf(r.type) ?: return@mapNotNull null
+            ReactionItem(kind, r.totalCount, r.isChosen, mapSenderRefs(r.recentSenderIds))
         }
-        return Reactions(items.sumOf { it.count }, items)
+        return Reactions(items.sumOf { it.count }, items, canGetAddedReactions = reactions?.canGetAddedReactions == true)
+    }
+
+    /**
+     * `messageReaction.recent_sender_ids` → [ReactionSender]s without faces. Empty for anonymous
+     * (channel) reactions. Unknown sender kinds are skipped, so a list that lost one no longer
+     * matches its bucket's count and the chip falls back to the number (see [showsSenderFaces]).
+     */
+    fun mapSenderRefs(ids: Array<TdApi.MessageSender>?): ImmutableList<ReactionSender> {
+        if (ids.isNullOrEmpty()) return persistentListOf()
+        return ids.mapNotNull { it.toSenderRef()?.let(::ReactionSender) }.toImmutableList()
+    }
+
+    /** TDLib reaction type → [ReactionKind]; null for empty or unknown (forward-compat) types. */
+    fun reactionKindOf(type: TdApi.ReactionType?): ReactionKind? = when (type) {
+        is TdApi.ReactionTypeEmoji -> type.emoji.orEmpty().takeIf { it.isNotEmpty() }?.let(ReactionKind::Emoji)
+        is TdApi.ReactionTypeCustomEmoji -> type.customEmojiId.takeIf { it != 0L }?.let(ReactionKind::CustomEmoji)
+        is TdApi.ReactionTypePaid -> ReactionKind.Paid
+        else -> null
+    }
+
+    /**
+     * `getMessageAddedReactions` result → [ReactorsPage] without faces (the repository resolves
+     * them). Rows whose sender or reaction kind can't be mapped are skipped; [ReactorsPage.totalCount]
+     * stays TDLib's own total.
+     */
+    fun mapAddedReactions(added: TdApi.AddedReactions): ReactorsPage = ReactorsPage(
+        totalCount = added.totalCount,
+        reactors = added.reactions.orEmpty().mapNotNull { r ->
+            val sender = r.senderId?.toSenderRef() ?: return@mapNotNull null
+            val kind = reactionKindOf(r.type) ?: return@mapNotNull null
+            Reactor(sender, kind)
+        }.toImmutableList(),
+        nextOffset = added.nextOffset.orEmpty(),
+    )
+
+    fun TdApi.MessageSender.toSenderRef(): SenderRef? = when (this) {
+        is TdApi.MessageSenderUser -> SenderRef.User(userId)
+        is TdApi.MessageSenderChat -> SenderRef.Chat(chatId)
+        else -> null
     }
 
     private fun mapEntityStyle(type: TdApi.TextEntityType?): FormattedText.Style? = when (type) {
@@ -799,3 +828,9 @@ internal fun qualityLabel(height: Int): String = when {
     else -> "${height}p"
 }
 
+/** [ReactionKind] → TDLib reaction type; null for paid reactions, which Hortay never sends or filters by. */
+internal fun ReactionKind.toTdReactionType(): TdApi.ReactionType? = when (this) {
+    is ReactionKind.Emoji -> TdApi.ReactionTypeEmoji(text)
+    is ReactionKind.CustomEmoji -> TdApi.ReactionTypeCustomEmoji(customEmojiId)
+    is ReactionKind.Paid -> null
+}

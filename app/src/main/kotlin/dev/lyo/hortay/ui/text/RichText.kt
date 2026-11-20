@@ -305,7 +305,7 @@ private fun ClampedPost(
  * card's container colour, NOT white) over the last ~2 lines of the clipped content whenever it
  * actually overflows, so a rich feed preview dissolves into its "read full post" affordance
  * instead of hard-cutting. [affordance], when set, REPLACES the default "Показати більше" text
- * with a caller-supplied composable (e.g. the rich "Read full post" button); it receives the
+ * with a caller-supplied composable (e.g. the rich "Read full post" link); it receives the
  * same expand action the default toggle uses. [forceAffordance] shows that affordance even when
  * the content fits the pixel budget — used when the document was projected or is partial, so
  * there is more to read past the fold than the clamp alone can detect.
@@ -389,11 +389,14 @@ internal fun ClampedContent(
  * size: reserving a 48 dp target would add blank space under every collapsed post, the main
  * reading surface. The tap relies on Compose's automatic touch-bounds expansion for pointer
  * targets under the minimum touch size (same reasoning as `EditedChip`).
+ *
+ * [text] defaults to "Показати більше"; the rich feed preview passes its own "Read full post"
+ * label so both kinds of collapsed post end with the same quiet link.
  */
 @Composable
-internal fun ShowMoreToggle(onClick: () -> Unit) {
+internal fun ShowMoreToggle(onClick: () -> Unit, text: String = stringResource(R.string.post_show_more)) {
     Text(
-        text = stringResource(R.string.post_show_more),
+        text = text,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier

@@ -169,7 +169,7 @@ class MessageMapper(
             forwardOrigin = message.forwardInfo?.origin?.let { mapForwardOrigin(it) },
             authorSignature = null,
             reply = mapReply(message.replyTo, message.chatId),
-            reactions = MessageContentMapper.mapReactions(message.interactionInfo?.reactions),
+            reactions = withReactionFaces(MessageContentMapper.mapReactions(message.interactionInfo?.reactions)),
             commentCount = null,
             albumMessageIds = emptyList(),
             parentId = parent,
@@ -183,6 +183,40 @@ class MessageMapper(
             isSenderPremium = sender.isPremium,
             senderEmojiStatusId = sender.emojiStatusId,
         )
+    }
+
+    /**
+     * Resolves the faces of a comment's reaction senders, only for buckets that can show them
+     * ([showsSenderFaces]: at most [MAX_REACTION_FACES] senders, all listed). Same local lookups
+     * as the comment authors and [mapRecentRepliers] — `GetUser` / `GetChat` are answered from
+     * TDLib's local cache, which keeps recent senders available — so no network per chip.
+     */
+    private suspend fun withReactionFaces(reactions: Reactions): Reactions {
+        fun eligible(item: ReactionItem) =
+            item.count in 1..MAX_REACTION_FACES && item.recentSenders.size == item.count
+        if (reactions.items.none(::eligible)) return reactions
+        return reactions.copy(
+            items = reactions.items.map { item ->
+                if (!eligible(item)) {
+                    item
+                } else {
+                    item.copy(
+                        recentSenders = item.recentSenders
+                            .map { it.copy(face = faceOf(it.ref)) }
+                            .toImmutableList(),
+                    )
+                }
+            },
+        )
+    }
+
+    /** Name + photo of a reaction sender (or a reactor-list row), from the local cache. */
+    suspend fun faceOf(ref: SenderRef): ReplierAvatar {
+        val resolved = when (ref) {
+            is SenderRef.User -> fetchUser(ref.userId)
+            is SenderRef.Chat -> fetchChat(ref.chatId)
+        }
+        return ReplierAvatar(name = resolved.name, thumb = resolved.avatarThumb, fileId = resolved.avatarFileId)
     }
 
     suspend fun resolveSender(senderId: TdApi.MessageSender): ResolvedSender = when (senderId) {

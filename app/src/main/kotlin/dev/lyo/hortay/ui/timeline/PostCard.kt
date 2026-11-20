@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -63,12 +64,15 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.MeasurePolicy
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
@@ -89,6 +93,7 @@ import dev.lyo.hortay.data.ChannelContext
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
+import dev.lyo.hortay.data.showsSenderFaces
 import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
@@ -557,6 +562,8 @@ fun PostCard(
                             translation = translation,
                             onOpenInSource = { interactions.onOpenClick(post) },
                             pollVoting = pollVoting,
+                            // Album strips scroll edge to edge across the card's own padding.
+                            albumBleed = CARD_H_PADDING,
                         )
                     }
                     if (expanded) {
@@ -1404,31 +1411,49 @@ private val REPLY_THUMB_SIZE = 36.dp
 // share one source of truth — keeps icons and wording in lockstep across surfaces.
 
 /**
- * Reactions, then the action line. Reactions wrap onto as many lines as they need
- * instead of scrolling sideways — a single scrolling line clipped the last chip at the
- * screen edge, which read as broken.
+ * The post's action line: the action items at the start, the reaction chips and the view count
+ * at the END of the same line ([ActionLineMeasurePolicy]). The end group sits in a horizontally
+ * scrolling strip that rests against the end edge when it fits and scrolls sideways when it
+ * doesn't; only when the actions leave less than [REACTION_STRIP_MIN_WIDTH] does the strip drop
+ * to a line of its own. History: reactions used to be a separate [FlowRow] above the action line, wrapping onto
+ * as many lines as they needed (a single scrolling line before that had clipped the last chip
+ * at the screen edge with no cue, which read as broken). Sharing one line keeps the card one
+ * compact line shorter, and a post with twenty reactions is exactly as tall as one with two;
+ * the strip marks its start edge with a hairline while chips are scrolled under it, so a
+ * half-hidden chip reads as "more this way".
  *
- * The action line is ONE evenly spaced run from the leading edge, Threads-style: comments
+ * The action items are ONE evenly spaced run from the leading edge, Threads-style: comments
  * (tappable, opens the thread) · forward (the share control, carrying the forward count) ·
- * Save · views (read-only metadata, last). Every item is the same [ActionItem] — the same [ACTION_ICON_SIZE] line
- * glyph, the same count style, the same padding — so the eye reads one rhythm, not "stats on
- * the left, buttons on the right". Save used to live only inside the "⋯" sheet even though
- * the app has a whole Saved tab; one tap on the bookmark now keeps a post, and the sheet
- * keeps Save / Share as well.
+ * Save. Every item is the same [ActionItem] — the same [ACTION_ICON_SIZE] line glyph, the same
+ * count style, the same padding — so the eye reads one rhythm, not "stats on the left, buttons
+ * on the right". The run is a [FlowRow], so at large font scales it wraps instead of clipping
+ * or overlapping.
  *
- * Why Save / Share follow the stats instead of being pushed to the trailing edge (where they
- * sat before, behind a flexible spacer): on a post with no stats the pair floated alone at
- * the far right with an empty line to its left, and on a post with stats the spacer opened a
- * hole in the middle of the line, so the row read as two unrelated clusters. Following the
- * stats, a stat-less post shows Share · Save where every other post's line starts, and a
- * post with large counts ("13,5 тис.") simply pushes them right. The line is a [FlowRow], so
- * at large font scales the run wraps (views first) instead of clipping or overlapping.
+ * Save shows only once the post IS saved, as its status and the way to undo it. It used to be
+ * a permanent glyph on every card (before that it lived only in the "⋯" sheet), but saving is
+ * rare next to reading and reacting, and that glyph took the width the reactions now use;
+ * saving stays one tap away in the "⋯" and long-press menus.
+ *
+ * Views close the END group, after the reactions: the one item that is never a control, so it
+ * is the lowest-priority piece of the line — right-aligned beside a few chips, the tail you
+ * scroll to behind many, alone at the end when there are none. History: views used to trail the
+ * action run; on 2026-11-20 they briefly moved next to the time in the post header, which read
+ * poorly there and crashed release builds ("LayoutNode not found in RectList": their
+ * AnimatedContent count sat in a header slot that was measured but not always placed).
+ *
+ * Why Share / Save follow the stats instead of being pushed to the trailing edge (where they
+ * sat before, behind a flexible spacer): on a post with no stats the pair floated alone at the
+ * far right with an empty line to its left, and on a post with stats the spacer opened a hole
+ * in the middle of the line, so the row read as two unrelated clusters. The trailing edge now
+ * belongs to the reactions and views.
  *
  * Comments with no count stay hidden, including `commentCount == 0` posts that do have a
  * discussion group: Hortay only reads threads, so a bare comment glyph would invite an action
- * that lands on an empty "no comments yet" thread — and the card tap already opens it.
+ * that lands on an empty "no comments yet" thread — and the card tap already opens it. The
+ * face pile of recent commenters after the count shows only on a post without reactions: it is
+ * decoration, and on a phone-width line it costs a whole reaction chip.
  *
- * Height budget: Save, Share and the comments item each reserve a 48 dp touch target
+ * Height budget: Share, Save and the comments item each reserve a 48 dp touch target
  * ([minimumInteractiveComponentSize]), which is taller than the old ~28 dp stats line. The
  * slack above the glyphs replaces the spacer that used to sit over this row, and the row
  * reports [ACTION_ROW_BOTTOM_OVERHANG] less height than it lays out so the slack under
@@ -1477,85 +1502,6 @@ private fun ActionRow(
     // when the card composes (scroll, cold start) are just drawn.
     val settled = remember { booleanArrayOf(false) }
     LaunchedEffect(Unit) { settled[0] = true }
-    // The wrapper stays in the tree with no reactions so the first one can grow the card
-    // from zero height instead of making it jump; see [smoothHeight].
-    Box(modifier = Modifier.fillMaxWidth().smoothHeight()) {
-        if (reactions.items.isNotEmpty()) {
-            // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
-            // star-amount confirmation flow we don't host. Tap surfaces a snackbar
-            // explaining the situation, with an action button that opens *this
-            // specific* post in Telegram (via the per-post callback, routed
-            // through [PostActions.openInTelegram]). The chip is rendered at the
-            // [HortayAlpha.FAINT] alpha to read as informational rather than interactive (see
-            // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
-            // bouncing the user out of Hortay before they can change their mind.
-            val res = LocalContext.current.resources
-            val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
-            val openTelegramLabel = res.getString(R.string.action_open_telegram)
-            val paidExplainer = res.getString(R.string.reactions_paid_explainer)
-            // Rows of chips stack with NO extra gap: every chip reserves a
-            // [REACTION_TOUCH_MIN_HEIGHT] touch box around its drawn pill (see [ReactionChip]),
-            // and that slack is the visible gap between chip rows.
-            // TDLib re-ranks the buckets on every update, so chips trade places while the
-            // reader watches. Inside this lookahead scope each chip glides to its new slot
-            // instead of teleporting. The scope is local to the chip rows: scrolling the feed
-            // moves the scope with the chips and starts nothing, unlike the retired
-            // `animateItem` on whole feed rows (see TimelineFeedColumn).
-            LookaheadScope {
-                val chipBounds = this
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(HortaySpacing.sm),
-                ) {
-                    // Key each chip by its reaction-bucket identity, NOT by position. TDLib ranks
-                    // reaction buckets by frequency and re-orders them on every
-                    // UpdateMessageInteractionInfo; a positional (unkeyed) loop would then reuse a
-                    // chip slot that was rendering custom emoji A to render custom emoji B, and the
-                    // underlying Coil AsyncImage keeps painting A's already-decoded bitmap until B
-                    // decodes — so two different reactions momentarily render the SAME custom emoji.
-                    // A stable key moves composition state with the bucket instead of reusing by slot.
-                    reactions.items.forEach { item ->
-                        key(item.kind.stableKey) {
-                            val isPaid = item.kind is ReactionKind.Paid
-                            val tapHandler: () -> Unit = if (isPaid) {
-                                {
-                                    bus?.post(
-                                        text = paidExplainer,
-                                        severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
-                                        action = dev.lyo.hortay.data.UserMessageBus.Action.Run(
-                                            label = openTelegramLabel,
-                                            onClick = onPaidReactionOpenPost,
-                                        ),
-                                    )
-                                }
-                            } else {
-                                {
-                                    // Toggle haptic on a real reaction add/remove — ToggleOff when
-                                    // un-reacting (the chip was already the user's choice), ToggleOn
-                                    // otherwise. Paid reactions skip this: their tap raises an
-                                    // explainer snackbar, not a state change.
-                                    haptics.performHapticFeedback(
-                                        if (item.isChosen) HapticFeedbackType.ToggleOff
-                                        else HapticFeedbackType.ToggleOn,
-                                    )
-                                    onReactionTap(item)
-                                }
-                            }
-                            ReactionChip(
-                                item,
-                                modifier = Modifier
-                                    .animateBounds(chipBounds)
-                                    .popIn(animate = settled[0]),
-                                onClick = tapHandler,
-                                disabled = isPaid,
-                                effectRequest = effectRequest,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
     // `commentCount == null` = channel has no linked discussion group (comments
     // fundamentally disabled). `commentCount == 0` = group exists but no replies
     // yet. Both read as "nothing to see" to the user, so we collapse them into
@@ -1563,73 +1509,234 @@ private fun ActionRow(
     // mirrors the empty-state contract on CommentsScreen (no "0 replies" subtitle).
     val safeCommentCount = commentCount ?: 0
     val hasComments = safeCommentCount > 0
-    if (!hasComments && views <= 0 && forwardCount <= 0 && !showPostActions) return
-    FlowRow(
+    if (!hasComments && views <= 0 && forwardCount <= 0 && !showPostActions && reactions.items.isEmpty()) return
+    // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
+    // star-amount confirmation flow we don't host. Tap surfaces a snackbar
+    // explaining the situation, with an action button that opens *this
+    // specific* post in Telegram (via the per-post callback, routed
+    // through [PostActions.openInTelegram]). The chip is rendered at the
+    // [HortayAlpha.FAINT] alpha to read as informational rather than interactive (see
+    // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
+    // bouncing the user out of Hortay before they can change their mind.
+    val res = LocalContext.current.resources
+    val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
+    val openTelegramLabel = res.getString(R.string.action_open_telegram)
+    val paidExplainer = res.getString(R.string.reactions_paid_explainer)
+    val stripState = rememberScrollState()
+    val stripEdgeColor = MaterialTheme.colorScheme.outlineVariant
+    // One line, two groups: the action items at the start, the reactions and then the view
+    // count at the end. The end group never wraps — past the free width it scrolls sideways
+    // inside its own strip, so a post with twenty reactions is exactly as tall as a post with
+    // two. See [ActionLineMeasurePolicy] for how the two groups share the width.
+    Layout(
         modifier = Modifier
             .bleedHorizontal(ACTION_ITEM_H_PADDING)
             .fillMaxWidth()
+            .smoothHeight()
             .trimBottom(ACTION_ROW_BOTTOM_OVERHANG),
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (hasComments) {
-            ActionItem(
-                symbol = "line_comment",
-                count = safeCommentCount,
-                onClick = onCommentsClick,
-                // On the comments anchor the thread is right below — no need to preview it.
-                trailing = if (onCommentsClick != null && recentRepliers.isNotEmpty()) {
-                    { ReplierFacePile(recentRepliers) }
-                } else null,
-            )
+        measurePolicy = ActionLineMeasurePolicy,
+        content = {
+        FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
+            if (hasComments) {
+                ActionItem(
+                    symbol = "line_comment",
+                    count = safeCommentCount,
+                    onClick = onCommentsClick,
+                    // On the comments anchor the thread is right below — no need to preview it.
+                    // With reactions on the post the faces give way: they are decoration, and the
+                    // ~50 dp they take is a whole reaction chip on a phone-width line.
+                    trailing = if (onCommentsClick != null && recentRepliers.isNotEmpty() && reactions.items.isEmpty()) {
+                        { ReplierFacePile(recentRepliers) }
+                    } else null,
+                )
+            }
+            // Forwarding is ONE item: the forward arrow carries the forward count and, where the
+            // card offers actions, is the Share button. They used to be two neighbours — a
+            // read-only "↗ 3" that looked tappable and was not, and a separate Share glyph —
+            // which asked the reader to tell a stat from a button by trial. A count of how many
+            // times a post was shared belongs on the control that shares it (Threads, X).
+            if (showPostActions || forwardCount > 0) {
+                ActionItem(
+                    symbol = "line_forward",
+                    count = forwardCount.takeIf { it > 0 },
+                    contentDescription = if (showPostActions) stringResource(R.string.post_share) else null,
+                    onClick = if (showPostActions) onShareClick else null,
+                )
+            }
+            // Save shows here only once the post IS saved, as its status and the way to undo
+            // it. Saving is a rare action next to reading and reacting, and it stays one tap
+            // away in the "⋯" and long-press menus; a permanent glyph on every card took the
+            // width the reactions now share with this line.
+            if (showPostActions && isSaved) {
+                val saveTint by animateColorAsState(
+                    targetValue = if (isSaved) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                    label = "post-save-tint",
+                )
+                ActionItem(
+                    symbol = "line_bookmark",
+                    filled = isSaved,
+                    tint = saveTint,
+                    contentDescription = stringResource(if (isSaved) R.string.post_unsave else R.string.post_save),
+                    onClick = {
+                        // Same toggle haptic as the sheet's Save and the reaction chips.
+                        haptics.performHapticFeedback(
+                            if (isSaved) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                        )
+                        onSaveClick()
+                    },
+                )
+            }
         }
-        // Forwarding is ONE item: the forward arrow carries the forward count and, where the
-        // card offers actions, is the Share button. They used to be two neighbours — a
-        // read-only "↗ 3" that looked tappable and was not, and a separate Share glyph —
-        // which asked the reader to tell a stat from a button by trial. A count of how many
-        // times a post was shared belongs on the control that shares it (Threads, X).
-        if (showPostActions || forwardCount > 0) {
-            ActionItem(
-                symbol = "line_forward",
-                count = forwardCount.takeIf { it > 0 },
-                contentDescription = if (showPostActions) stringResource(R.string.post_share) else null,
-                onClick = if (showPostActions) onShareClick else null,
-            )
-        }
-        if (showPostActions) {
-            val saveTint by animateColorAsState(
-                targetValue = if (isSaved) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-                label = "post-save-tint",
-            )
-            ActionItem(
-                symbol = "line_bookmark",
-                filled = isSaved,
-                tint = saveTint,
-                contentDescription = stringResource(if (isSaved) R.string.post_unsave else R.string.post_save),
-                onClick = {
-                    // Same toggle haptic as the sheet's Save and the reaction chips.
-                    haptics.performHapticFeedback(
-                        if (isSaved) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+        if (reactions.items.isNotEmpty() || views > 0) {
+            Row(
+                modifier = Modifier
+                    // A hairline at the strip's start edge while chips are scrolled under it,
+                    // so a half-hidden chip reads as "more this way", not as a clipped glyph
+                    // glued to the last action item.
+                    .drawWithContent {
+                        drawContent()
+                        if (stripState.canScrollBackward) {
+                            val x = if (layoutDirection == LayoutDirection.Rtl) size.width else 0f
+                            val inset = (size.height - STRIP_EDGE_HEIGHT.toPx()).coerceAtLeast(0f) / 2f
+                            drawLine(
+                                color = stripEdgeColor,
+                                start = Offset(x, inset),
+                                end = Offset(x, size.height - inset),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        }
+                    }
+                    .horizontalScroll(stripState)
+                    // The views item carries its own end padding (the bleed); without it the
+                    // last chip needs this padding to end on the content edge.
+                    .padding(end = if (views > 0) 0.dp else ACTION_ITEM_H_PADDING),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+            // TDLib re-ranks the buckets on every update, so chips trade places while the
+            // reader watches. Inside this lookahead scope each chip glides to its new slot
+            // instead of teleporting. The scope is local to the chips: scrolling the feed
+            // moves the scope with them and starts nothing, unlike the retired `animateItem`
+            // on whole feed rows (see TimelineFeedColumn). The views item stays outside it.
+            if (reactions.items.isNotEmpty()) LookaheadScope {
+            val chipBounds = this
+            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Every chip reserves a [REACTION_TOUCH_MIN_HEIGHT] touch box around its drawn
+            // pill (see [ReactionChip]).
+            //
+            // Key each chip by its reaction-bucket identity, NOT by position. TDLib ranks
+            // reaction buckets by frequency and re-orders them on every
+            // UpdateMessageInteractionInfo; a positional (unkeyed) loop would then reuse a
+            // chip slot that was rendering custom emoji A to render custom emoji B, and the
+            // underlying Coil AsyncImage keeps painting A's already-decoded bitmap until B
+            // decodes — so two different reactions momentarily render the SAME custom emoji.
+            // A stable key moves composition state with the bucket instead of reusing by slot.
+            reactions.items.forEach { item ->
+                key(item.kind.stableKey) {
+                    val isPaid = item.kind is ReactionKind.Paid
+                    val tapHandler: () -> Unit = if (isPaid) {
+                        {
+                            bus?.post(
+                                text = paidExplainer,
+                                severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                                action = dev.lyo.hortay.data.UserMessageBus.Action.Run(
+                                    label = openTelegramLabel,
+                                    onClick = onPaidReactionOpenPost,
+                                ),
+                            )
+                        }
+                    } else {
+                        {
+                            // Toggle haptic on a real reaction add/remove — ToggleOff when
+                            // un-reacting (the chip was already the user's choice), ToggleOn
+                            // otherwise. Paid reactions skip this: their tap raises an
+                            // explainer snackbar, not a state change.
+                            haptics.performHapticFeedback(
+                                if (item.isChosen) HapticFeedbackType.ToggleOff
+                                else HapticFeedbackType.ToggleOn,
+                            )
+                            onReactionTap(item)
+                        }
+                    }
+                    ReactionChip(
+                        item,
+                        modifier = Modifier
+                            .padding(start = HortaySpacing.sm)
+                            .animateBounds(chipBounds)
+                            .popIn(animate = settled[0]),
+                        onClick = tapHandler,
+                        disabled = isPaid,
+                        effectRequest = effectRequest,
                     )
-                    onSaveClick()
-                },
-            )
+                }
+            }
+            }
+            }
+            // Views close the end group: read-only metadata, the lowest-priority item on the
+            // line, so with many reactions it is the tail you reach by scrolling. Its own
+            // [ACTION_ITEM_H_PADDING] is the gap after the last chip and, at the end, the bleed
+            // that puts the count on the content edge.
+            if (views > 0) {
+                ActionItem(symbol = "line_views", count = views)
+            }
+            }
         }
-        // Views trail the run: the only item that is never a control, so it reads as the
-        // line's closing metadata instead of sitting between two buttons.
-        if (views > 0) {
-            ActionItem(symbol = "line_views", count = views)
+        },
+    )
+}
+
+/** Height of the hairline that marks the end strip's start edge while it is scrolled. */
+private val STRIP_EDGE_HEIGHT = 16.dp
+
+/** Below this free width the end strip (reactions, views) moves to its own line instead of a sliver. */
+private val REACTION_STRIP_MIN_WIDTH = 96.dp
+
+/**
+ * Lays out the post's action line: the action items (first child) at the start and the
+ * optional end strip (second child: reactions, then the view count) at the end of the same line.
+ * Both children are always placed when present — keep it that way: the strip holds lookahead-
+ * animated chips and an AnimatedContent count, which crash when measured but left unplaced. The actions take the
+ * width they need; the strip gets the rest and scrolls inside it, and sits against the end
+ * edge when it is narrower than that, so the two groups are separated by free space instead
+ * of a divider. When the actions leave less than [REACTION_STRIP_MIN_WIDTH] (font scale 2.0,
+ * long counts) the strip takes a full line of its own under them. With no action items the
+ * strip starts at the content edge.
+ */
+private val ActionLineMeasurePolicy = MeasurePolicy { measurables, constraints ->
+    val loose = constraints.copy(minWidth = 0, minHeight = 0)
+    val actions = measurables[0].measure(loose)
+    val stripMeasurable = measurables.getOrNull(1)
+    val free = constraints.maxWidth - actions.width
+    val sameLine = stripMeasurable == null || actions.width == 0 ||
+        free >= REACTION_STRIP_MIN_WIDTH.roundToPx()
+    val strip = stripMeasurable?.measure(
+        loose.copy(maxWidth = if (sameLine) free.coerceAtLeast(0) else constraints.maxWidth),
+    )
+    val stripWidth = strip?.width ?: 0
+    val stripHeight = strip?.height ?: 0
+    val height = if (sameLine) maxOf(actions.height, stripHeight) else actions.height + stripHeight
+    layout(constraints.maxWidth, height) {
+        if (sameLine) {
+            actions.placeRelative(0, (height - actions.height) / 2)
+            val stripX = if (actions.width == 0) 0 else constraints.maxWidth - stripWidth
+            strip?.placeRelative(stripX, (height - stripHeight) / 2)
+        } else {
+            actions.placeRelative(0, 0)
+            strip?.placeRelative(0, actions.height)
         }
     }
 }
 
 /**
  * Widens the content by [bleed] on both sides and centres it back, so children whose padding
- * is invisible touch slack line their visible glyphs up with the surrounding content edge.
- * Reports the original width; `placeRelative` keeps the bleed symmetric in RTL.
+ * is invisible touch slack line their visible glyphs up with the surrounding content edge
+ * (the action line), or a scrolling strip clips at the host's edge instead of the content
+ * inset (the album row, see [AlbumRow]). Reports the original width; `placeRelative` keeps
+ * the bleed symmetric in RTL. Nothing is clipped here — the bled area must be the parent's own
+ * padding, not a neighbour.
  */
-private fun Modifier.bleedHorizontal(bleed: Dp): Modifier = layout { measurable, constraints ->
+internal fun Modifier.bleedHorizontal(bleed: Dp): Modifier = layout { measurable, constraints ->
     val bleedPx = bleed.roundToPx()
     val widened = if (constraints.hasBoundedWidth) {
         constraints.copy(
@@ -1660,7 +1767,8 @@ private fun Modifier.trimBottom(trim: Dp): Modifier = layout { measurable, const
 /**
  * One item of the post's action line: a [ACTION_ICON_SIZE] line glyph with an optional count
  * after it. Tappable items (comments, Save, Share) get a 48 dp touch target and a pill ripple;
- * read-only stats (views, and the forward count on a card without actions) are the same shape without a click, so the whole line
+ * read-only stats (views at the end of the line, the comment count on the comments anchor, the
+ * forward count on a card without actions) are the same shape without a click, so the whole line
  * shares one rhythm. Every item carries [ACTION_ITEM_H_PADDING] on both sides — that padding
  * IS the spacing between items (no extra arrangement gap), which keeps the visible gap between
  * neighbouring glyph groups even whether an item is tappable or not.
@@ -1725,22 +1833,29 @@ private fun ActionItem(
  * overlap stays legible on any avatar.
  */
 @Composable
-private fun ReplierFacePile(repliers: ImmutableList<ReplierAvatar>) {
-    Box {
+internal fun ReplierFacePile(
+    repliers: ImmutableList<ReplierAvatar>,
+    modifier: Modifier = Modifier,
+    faceSize: Dp = REPLIER_FACE_SIZE,
+    step: Dp = REPLIER_FACE_STEP,
+    /** Ring around each face; pass the colour of the surface the pile sits on. */
+    ringColor: Color = MaterialTheme.colorScheme.background,
+) {
+    Box(modifier) {
         repliers.forEachIndexed { i, replier ->
             Box(
                 modifier = Modifier
-                    .padding(start = REPLIER_FACE_STEP * i)
-                    .size(REPLIER_FACE_SIZE)
+                    .padding(start = step * i)
+                    .size(faceSize)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(ringColor)
                     .padding(1.5.dp),
             ) {
                 TdAvatar(
                     name = replier.name,
                     thumb = replier.thumb,
                     fileId = replier.fileId,
-                    size = REPLIER_FACE_SIZE - 3.dp,
+                    size = faceSize - 3.dp,
                     background = MaterialTheme.colorScheme.surfaceContainerHigh,
                     textStyle = MaterialTheme.typography.labelSmall,
                 )
@@ -1768,6 +1883,12 @@ private val ACTION_ITEM_H_PADDING = HortaySpacing.md
  * padding instead of growing the card (see [ActionRow] and [trimBottom]).
  */
 private val ACTION_ROW_BOTTOM_OVERHANG = 6.dp
+
+/** Reactor faces inside a group reaction chip, sized to the 18 dp glyph beside them. */
+private val REACTION_FACE_SIZE = 18.dp
+
+/** Leading-edge distance between neighbouring faces in a reaction chip — the rest overlaps. */
+private val REACTION_FACE_STEP = 12.dp
 
 /** Minimum touch height of a reaction chip; the drawn pill stays its own (smaller) size. */
 private val REACTION_TOUCH_MIN_HEIGHT = 40.dp
@@ -1817,6 +1938,16 @@ internal fun ReactionChip(
      * chosen, the chip plays the choose animation once (see [ReactionEffectRequest]).
      */
     effectRequest: ReactionEffectRequest? = null,
+    /**
+     * Group reactions (comments): draw the senders' faces instead of the count when
+     * [showsSenderFaces] says every sender is known. Off on channel posts, whose reactions are
+     * anonymous, so feed chips never change. The swap is a plain composition `if` inside the
+     * pill — both branches are always placed — and the pill eases its width between them.
+     */
+    showSenderFaces: Boolean = false,
+    /** Long-press on the chip ("who reacted"); null keeps the chip tap-only. */
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
 ) {
     // Choose animation (Telegram's centre + around one-shot, see [ReactionEmojiGlyph]).
     // Incremented ONLY by the user's own action — a tap that turns this reaction chosen,
@@ -1887,8 +2018,8 @@ internal fun ReactionChip(
     // why the pill no longer clips its content — the shape clip moved to the ripple layer,
     // so the burst can draw past the pill. Don't add other unclipped overlays here.
     //
-    // Touch box vs drawn pill: the pill draws ~30 dp tall, too small a target in a wrapped
-    // row of neighbours. The clickable sits on an outer box at least
+    // Touch box vs drawn pill: the pill draws ~30 dp tall, too small a target in a tight
+    // row of neighbours (the scrolling strip on the action line, the comment rows). The clickable sits on an outer box at least
     // [REACTION_TOUCH_MIN_HEIGHT] tall with the pill centred inside; the press ripple is
     // re-attached to the pill itself via [indication] on the SAME interactionSource, so the
     // ripple and the corner morph still trace the pill, not the invisible touch box.
@@ -1898,10 +2029,12 @@ internal fun ReactionChip(
             modifier
                 .heightIn(min = REACTION_TOUCH_MIN_HEIGHT)
                 .semantics { selected = item.isChosen }
-                .clickable(
+                .combinedClickable(
                     interactionSource = interactionSource,
                     indication = null,
                     role = Role.Button,
+                    onLongClickLabel = onLongClickLabel,
+                    onLongClick = onLongClick,
                     onClick = chipClick,
                 )
         } else modifier,
@@ -1920,7 +2053,12 @@ internal fun ReactionChip(
                     .then(
                         if (disabled) Modifier.alpha(HortayAlpha.FAINT) else Modifier,
                     )
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .then(
+                        if (showSenderFaces) {
+                            Modifier.animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec())
+                        } else Modifier,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 when (val k = item.kind) {
@@ -1943,13 +2081,31 @@ internal fun ReactionChip(
                     )
                 }
                 Spacer(Modifier.width(5.dp))
-                // The count rolls to its new value; see [RollingCount].
-                RollingCount(
-                    value = item.count,
-                    text = formatViews(item.count),
-                    style = MaterialTheme.typography.labelMedium.tabularFigures(),
-                    color = countColor,
-                )
+                val faces = if (showSenderFaces && item.showsSenderFaces()) {
+                    remember(item.recentSenders) {
+                        item.recentSenders.mapNotNull { it.face }.toImmutableList()
+                    }
+                } else null
+                if (faces != null) {
+                    // Telegram's group chip: a few reactors' faces stand in for "1"–"3". The count
+                    // stays the spoken value; the faces are decoration with no click of their own.
+                    val countText = formatViews(item.count)
+                    ReplierFacePile(
+                        repliers = faces,
+                        faceSize = REACTION_FACE_SIZE,
+                        step = REACTION_FACE_STEP,
+                        ringColor = if (item.isChosen) container else MaterialTheme.colorScheme.background,
+                        modifier = Modifier.clearAndSetSemantics { contentDescription = countText },
+                    )
+                } else {
+                    // The count rolls to its new value; see [RollingCount].
+                    RollingCount(
+                        value = item.count,
+                        text = formatViews(item.count),
+                        style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                        color = countColor,
+                    )
+                }
             }
             if (chipClick != null) {
                 Box(

@@ -19,8 +19,9 @@
 - Channels now show their pinned messages in a bar under the header — tap it to jump to the pinned post, tap again to step through older pins.
 - The Channels tab can hide every channel from the feed or show them all again in one step, so keeping only a few channels in a long list no longer takes a tap per channel.
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
-- A bookmark button under every post saves it to the Saved tab in one tap, next to a Share button.
-- The comment count under a post shows the faces of the latest commenters.
+- A Share button sits under every post, and a saved post shows a bookmark there that removes it from Saved in one tap.
+- On a post without reactions, the comment count shows the faces of the latest commenters.
+- Long-pressing a reaction on a comment shows who left it, and a reaction from up to three people shows their faces instead of a number.
 - Double-tapping a post leaves a quick reaction — Settings → Feed picks which one or turns the gesture off.
 - Settings → Feed has a word filter — posts containing the words or hashtags you list stay out of the feed.
 - A post's ⋯ menu can hide its channel from the feed for 8 hours, a day, a week or until you show it again.
@@ -39,19 +40,21 @@
 - Long-pressing a post or a comment opens a compact menu right next to it — reactions in a floating capsule, actions in a small card — instead of a sheet covering half the screen.
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
 - Posts in the feed and channels now use the full screen width — the channel photo and name sit in a header row above the post, so photos and text are noticeably larger.
-- Reactions under a post wrap onto a new line instead of being cut off at the screen edge, and comment, forward and view counts sit on a quieter line of their own.
+- Reactions share one line with the post's buttons and view count and scroll sideways when there are many, instead of being cut off at the screen edge.
 - The bottom navigation is now a frosted-glass bar with a label under every icon and a capsule that glides to the selected tab, and the Channels tab has a megaphone icon.
 - The Channels tab shows each channel's real number of unread posts, has a search field, and hides a channel from the feed with a sideways swipe instead of an eye button on every row.
 - "New posts" and "↓ N unread" now share one compact split button in the corner instead of two separate buttons over the text.
 - Feed order in Settings is a two-option switch that explains the selected option underneath.
 - The comments screen has a slim one-line header showing the number of comments.
 - Each post has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
-- Posts read cleaner: the channel name and time share one line, post text is a little larger, and comments, Share, Save and views sit in one evenly spaced row of thin outline icons under the post.
+- Posts read cleaner: the channel name and time share one line, post text is a little larger, and comments and Share are thin outline icons under the post.
 - A forwarded post is headed by its original channel or author, with “Forwarded by …” on a quiet line above, instead of the forwarding channel's name over someone else's post.
 - The Share button under a post now carries the forward count, instead of a separate forward counter that looked tappable but wasn't.
 - A post signed by its own author shows “Author in Channel” on one line with the channel's photo on the avatar corner, instead of a separate channel chip.
 - The reply preview above a post is a compact single line, and skips the author's name when it is a reply to the same author.
 - Swipeable photo albums in the feed show their position dots under the photos instead of in a dark pill that blended into them.
+- Photos in a swipeable album travel to the screen edge as you swipe instead of being cut off at the text margin.
+- A long formatted post ends with a plain “Read full post” link, like any other long post, instead of a wide button.
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 - Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.
 - Replies in a comments thread are linked to the comment they answer by a thin line, and new comments slide into place instead of jumping.

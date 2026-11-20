@@ -2,12 +2,14 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -38,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
@@ -59,7 +62,13 @@ import dev.lyo.hortay.ui.media.viewerSource
 import dev.lyo.hortay.ui.theme.mediaFrame
 
 @Composable
-internal fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int, translation: FormattedText?) {
+internal fun AlbumBlock(
+    content: PostContent.PhotoAlbum,
+    onMediaClick: (List<AlbumItem>, Int) -> Unit,
+    maxLines: Int,
+    translation: FormattedText?,
+    albumBleed: Dp = 0.dp,
+) {
     val items = content.items
     if (items.isEmpty()) return
     val caption = translation ?: content.caption
@@ -68,7 +77,7 @@ internal fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<Alb
     if (items.size == 1) {
         SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
     } else {
-        AlbumRow(items, onItemClick = { idx -> onMediaClick(items, idx) })
+        AlbumRow(items, onItemClick = { idx -> onMediaClick(items, idx) }, bleed = albumBleed)
     }
     MediaCaption(caption, maxLines, above = false, show = !content.captionAbove)
 }
@@ -361,17 +370,37 @@ private fun OpenInTelegramHint(modifier: Modifier = Modifier) {
  * autoplay videos (≤ INLINE_AUTOPLAY_MAX_SEC) start exactly one ExoPlayer per album. This
  * preserves the same "one-player invariant" the old HorizontalPager version had via
  * state.currentPage.
+ *
+ * Edge-to-edge strip: [bleed] is the horizontal inset of the surface around this row (the
+ * post card's content padding). The scrolling viewport is widened by [bleed] on both sides
+ * ([bleedHorizontal]) and given the same amount back as `contentPadding`, so at rest the first
+ * item still starts at the text edge and the last one ends at the content end edge, but while
+ * swiping the photos travel all the way to the card edge instead of being clipped at the
+ * content inset (a visible gutter before). Sizing (row height, min / max item width) still
+ * derives from the CONTENT width — the [BoxWithConstraints] sits outside the bleed — so a
+ * photo is exactly as large as before; only the clip window grew. Hosts whose surroundings
+ * must not be overflowed (comment rows indented past an avatar) keep the default 0.
+ *
+ * Snapping uses [SnapPosition.Center], which is what `rememberSnapFlingBehavior(state)` always
+ * defaulted to; it centres an item inside the area between the content paddings (Compose
+ * subtracts `beforeContentPadding` / `afterContentPadding`), so the bleed does not shift where
+ * items rest, and the first / last items still clamp to the start / end insets.
  */
 @Composable
-internal fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
+internal fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit, bleed: Dp = 0.dp) {
     val state = rememberLazyListState()
-    val flingBehavior = rememberSnapFlingBehavior(state)
+    val flingBehavior = rememberSnapFlingBehavior(state, snapPosition = SnapPosition.Center)
     val activeIndex by remember(state) {
         derivedStateOf {
             val info = state.layoutInfo
-            val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2
+            // Item offsets are measured from the end of the start content padding, so the
+            // centre of the content column (the same point Center snapping targets) is half of
+            // the viewport minus both paddings. With symmetric padding this is also the centre
+            // of the whole bled viewport.
+            val contentCenter =
+                (info.viewportSize.width - info.beforeContentPadding - info.afterContentPadding) / 2
             info.visibleItemsInfo
-                .minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - viewportCenter) }
+                .minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - contentCenter) }
                 ?.index ?: 0
         }
     }
@@ -387,7 +416,9 @@ internal fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
                 state = state,
                 flingBehavior = flingBehavior,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(horizontal = bleed),
                 modifier = Modifier
+                    .bleedHorizontal(bleed)
                     .fillMaxWidth()
                     .height(rowHeight),
             ) {
@@ -543,6 +574,7 @@ internal fun PaidMediaBlock(
     maxLines: Int,
     translation: FormattedText?,
     onOpenInSource: () -> Unit,
+    albumBleed: Dp = 0.dp,
 ) {
     val caption = translation ?: content.caption
     val starsLabel = stringResource(R.string.content_paid_stars, content.starCount)
@@ -561,7 +593,7 @@ internal fun PaidMediaBlock(
         if (content.items.size == 1) {
             SingleMedia(content.items.first(), onClick = { onMediaClick(content.items, 0) })
         } else {
-            AlbumRow(content.items, onItemClick = { idx -> onMediaClick(content.items, idx) })
+            AlbumRow(content.items, onItemClick = { idx -> onMediaClick(content.items, idx) }, bleed = albumBleed)
         }
         DurationChip(
             text = starsLabel,

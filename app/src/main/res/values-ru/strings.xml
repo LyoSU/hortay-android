@@ -946,4 +946,17 @@
         <item quantity="many">%d слов</item>
         <item quantity="other">%d слова</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">Реакции</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="one">%1$d реакция</item>
+        <item quantity="few">%1$d реакции</item>
+        <item quantity="many">%1$d реакций</item>
+        <item quantity="other">%1$d реакции</item>
+    </plurals>
+    <string name="reactions_load_failed">Не удалось загрузить реакции</string>
+    <string name="reactions_empty">Реакций пока нет</string>
+    <string name="reactions_who_reacted">Посмотреть, кто отреагировал</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s, реакция %2$s</string>
 </resources>

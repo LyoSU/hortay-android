@@ -164,17 +164,12 @@ class ChannelActionsRepository(
         return outcome.isSuccess
     }
 
-    private fun ReactionKind.toTd(): TdApi.ReactionType? = when (this) {
-        is ReactionKind.Emoji -> TdApi.ReactionTypeEmoji(text)
-        is ReactionKind.CustomEmoji -> TdApi.ReactionTypeCustomEmoji(customEmojiId)
-        // Paid reactions require AddPendingPaidMessageReaction (a flow with
-        // star-amount confirmation), not AddMessageReaction. We render incoming
-        // paid counts but never send our own — passing the same constructor
-        // would fail on the server. The UI gates paid chips as read-only; if one
-        // still reaches here, return null so the caller reports a no-op failure
-        // instead of crashing the app.
-        is ReactionKind.Paid -> null
-    }
+    // Paid reactions map to null: they require AddPendingPaidMessageReaction (a flow with
+    // star-amount confirmation), not AddMessageReaction. We render incoming paid counts but
+    // never send our own — passing the same constructor would fail on the server. The UI gates
+    // paid chips as read-only; if one still reaches here, the caller reports a no-op failure
+    // instead of crashing the app.
+    private fun ReactionKind.toTd(): TdApi.ReactionType? = toTdReactionType()
 
     // Inverse of [toTd] for the picker read path. Mirrors the forward mapping field-for-field:
     // ReactionTypeEmoji.emoji → Emoji(text), ReactionTypeCustomEmoji.customEmojiId → CustomEmoji.

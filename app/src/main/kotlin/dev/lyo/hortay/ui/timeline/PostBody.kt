@@ -83,6 +83,13 @@ fun PostBody(
      * results-only render.
      */
     pollVoting: PollVoting? = null,
+    /**
+     * Horizontal inset of the host around this body. A swipeable album strip bleeds out by
+     * this much so photos scroll to the host's edge instead of being clipped at the content
+     * inset (see [AlbumRow]). 0 (default) keeps the strip inside the body's own width — for
+     * hosts whose surroundings must not be overflowed, like an avatar-indented comment row.
+     */
+    albumBleed: Dp = 0.dp,
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
@@ -104,7 +111,7 @@ fun PostBody(
             Column {
                 when (content) {
                     is PostContent.Text -> TextBlock(content, textLimit, translation)
-                    is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation)
+                    is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation, albumBleed)
                     is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
                     is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
                     is PostContent.Document -> DocumentBlock(content, captionLimit, translation, onOpenInSource)
@@ -120,7 +127,7 @@ fun PostBody(
                     is PostContent.Checklist -> ChecklistBlock(content, captionLimit)
                     is PostContent.ExpiredMedia -> ExpiredMediaBlock(content)
                     is PostContent.Service -> ServiceBlock(content)
-                    is PostContent.PaidMedia -> PaidMediaBlock(content, onMediaClick, captionLimit, translation, onOpenInSource)
+                    is PostContent.PaidMedia -> PaidMediaBlock(content, onMediaClick, captionLimit, translation, onOpenInSource, albumBleed)
                     is PostContent.OpenInSource -> OpenInSourceBlock(content, onOpenInSource)
                     // Rich (instant-view-style) message: headings, lists, tables, media blocks.
                     // Detail surfaces render the whole document; feed / channel clamp it to the

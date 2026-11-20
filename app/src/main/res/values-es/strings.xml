@@ -925,4 +925,15 @@
         <item quantity="other">%d palabras</item>
         <item quantity="many">%d palabras</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">Reacciones</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="one">%1$d reacción</item>
+        <item quantity="other">%1$d reacciones</item>
+    </plurals>
+    <string name="reactions_load_failed">No se pudieron cargar las reacciones</string>
+    <string name="reactions_empty">Aún no hay reacciones</string>
+    <string name="reactions_who_reacted">Ver quién reaccionó</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s reaccionó con %2$s</string>
 </resources>

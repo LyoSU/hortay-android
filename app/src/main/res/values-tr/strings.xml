@@ -899,4 +899,15 @@
         <item quantity="one">%d kelime</item>
         <item quantity="other">%d kelime</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">Tepkiler</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="one">%1$d tepki</item>
+        <item quantity="other">%1$d tepki</item>
+    </plurals>
+    <string name="reactions_load_failed">Tepkiler yüklenemedi</string>
+    <string name="reactions_empty">Henüz tepki yok</string>
+    <string name="reactions_who_reacted">Kimin tepki verdiğini gör</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s, %2$s ile tepki verdi</string>
 </resources>

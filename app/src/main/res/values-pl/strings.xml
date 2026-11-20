@@ -943,4 +943,17 @@
         <item quantity="many">%d słów</item>
         <item quantity="other">%d słowa</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">Reakcje</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="one">%1$d reakcja</item>
+        <item quantity="few">%1$d reakcje</item>
+        <item quantity="many">%1$d reakcji</item>
+        <item quantity="other">%1$d reakcji</item>
+    </plurals>
+    <string name="reactions_load_failed">Nie udało się wczytać reakcji</string>
+    <string name="reactions_empty">Brak reakcji</string>
+    <string name="reactions_who_reacted">Zobacz, kto zareagował</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s, reakcja %2$s</string>
 </resources>

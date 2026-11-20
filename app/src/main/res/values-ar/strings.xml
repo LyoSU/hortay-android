@@ -988,4 +988,19 @@
         <item quantity="many">%d كلمة</item>
         <item quantity="other">%d كلمة</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">التفاعلات</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="zero">%1$d تفاعل</item>
+        <item quantity="one">%1$d تفاعل</item>
+        <item quantity="two">%1$d تفاعلان</item>
+        <item quantity="few">%1$d تفاعلات</item>
+        <item quantity="many">%1$d تفاعلًا</item>
+        <item quantity="other">%1$d تفاعل</item>
+    </plurals>
+    <string name="reactions_load_failed">تعذّر تحميل التفاعلات</string>
+    <string name="reactions_empty">لا توجد تفاعلات بعد</string>
+    <string name="reactions_who_reacted">اعرض من تفاعل</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s تفاعل بـ %2$s</string>
 </resources>

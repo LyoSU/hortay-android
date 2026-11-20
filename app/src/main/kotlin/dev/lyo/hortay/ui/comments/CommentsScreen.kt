@@ -343,6 +343,20 @@ fun CommentsScreen(
     val viewer = LocalMediaViewer.current
     val context = LocalContext.current
     val actionScope = rememberCoroutineScope()
+    // The "who reacted" sheet of one comment, or null. Opened from a chip's long-press (filtered
+    // to that reaction) or from the comment's menu (all reactions); see [ReactorsSheet].
+    var reactorsRequest by remember { mutableStateOf<ReactorsRequest?>(null) }
+    val reactorsRepo = repo
+    reactorsRequest?.let { request ->
+        if (reactorsRepo != null) {
+            ReactorsSheet(
+                repo = reactorsRepo,
+                request = request,
+                onOpenChat = onAuthorChatClick,
+                onDismiss = { reactorsRequest = null },
+            )
+        }
+    }
     val bookmarkedKeys by remember(bookmarks) {
         bookmarks?.bookmarks ?: kotlinx.coroutines.flow.flowOf(emptySet())
     }.collectAsStateWithLifecycle(initialValue = emptySet())
@@ -839,6 +853,9 @@ fun CommentsScreen(
                             // Long-press a comment to react with a reaction it doesn't
                             // already carry — same picker the feed/anchor uses.
                             onLongPress = { pickerOpen = true },
+                            onShowReactors = { kind ->
+                                reactorsRequest = ReactorsRequest(s.threadChatId, row.message.id, row.message.reactions, kind)
+                            },
                         )
                         if (pickerOpen) {
                             CommentContextMenu(
@@ -856,6 +873,16 @@ fun CommentsScreen(
                                         alreadyChosen,
                                     )
                                 },
+                                onShowReactors = if (row.message.reactions.canListReactors()) {
+                                    {
+                                        reactorsRequest = ReactorsRequest(
+                                            s.threadChatId,
+                                            row.message.id,
+                                            row.message.reactions,
+                                            kind = null,
+                                        )
+                                    }
+                                } else null,
                                 onDismiss = { pickerOpen = false },
                             )
                         }
@@ -1026,6 +1053,7 @@ private fun CommentNode(
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
     onLongPress: () -> Unit,
+    onShowReactors: (ReactionKind?) -> Unit,
     modifier: Modifier = Modifier,
     effectRequest: ReactionEffectRequest? = null,
 ) {
@@ -1063,6 +1091,7 @@ private fun CommentNode(
             avatarSize = avatarSize,
             onMediaClick = onMediaClick,
             onReactionTap = onReactionTap,
+            onShowReactors = onShowReactors,
             modifier = Modifier.weight(1f),
             effectRequest = effectRequest,
         )
@@ -1083,6 +1112,7 @@ private fun CommentBubble(
     avatarSize: androidx.compose.ui.unit.Dp,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
+    onShowReactors: (ReactionKind?) -> Unit,
     modifier: Modifier = Modifier,
     effectRequest: ReactionEffectRequest? = null,
 ) {
@@ -1196,6 +1226,10 @@ private fun CommentBubble(
                     // why instead of dispatching a toggle that TDLib can't accept.
                     val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
                     val paidExplainer = stringResource(R.string.reactions_paid_explainer)
+                    val whoReactedLabel = stringResource(R.string.reactions_who_reacted)
+                    // TDLib says whether the reactor list can be fetched; paid (⭐) buckets
+                    // never filter it. A plain tap still toggles the reaction.
+                    val canListReactors = message.reactions.canGetAddedReactions
                     // Key by reaction-bucket identity, not slot — see [ReactionChip] call
                     // site in PostCard for why a positional loop renders the wrong custom
                     // emoji when TDLib re-ranks the buckets mid-read.
@@ -1217,6 +1251,12 @@ private fun CommentBubble(
                                 },
                                 disabled = isPaid,
                                 effectRequest = effectRequest,
+                                // Group reactions aren't anonymous: a few reactors show as faces.
+                                showSenderFaces = true,
+                                onLongClick = if (canListReactors && !isPaid) {
+                                    { onShowReactors(item.kind) }
+                                } else null,
+                                onLongClickLabel = whoReactedLabel.takeIf { canListReactors && !isPaid },
                             )
                         }
                     }
@@ -1240,6 +1280,8 @@ private fun CommentContextMenu(
     commentText: String,
     fetchAvailableReactions: suspend () -> List<ReactionKind>,
     onPick: (kind: ReactionKind, alreadyChosen: Boolean) -> Unit,
+    /** Opens the "who reacted" sheet; null when the comment has no listable reactions. */
+    onShowReactors: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -1252,7 +1294,7 @@ private fun CommentContextMenu(
         loaded = true
     }
     LaunchedEffect(loaded, available) {
-        if (loaded && available.isEmpty() && !canCopy) onDismiss()
+        if (loaded && available.isEmpty() && !canCopy && onShowReactors == null) onDismiss()
     }
     val chosenKeys = remember(currentReactions) {
         currentReactions.items.filter { it.isChosen }.map { it.kind.stableKey }.toSet()
@@ -1278,18 +1320,27 @@ private fun CommentContextMenu(
             }
         },
         actions = {
-            if (canCopy) {
+            if (canCopy || onShowReactors != null) {
                 ContextMenuCard {
-                    ContextMenuItem(
-                        symbol = "content_copy",
-                        label = stringResource(R.string.post_copy_text),
-                        onClick = {
-                            close {
-                                val cm = context.getSystemService(ClipboardManager::class.java)
-                                cm?.setPrimaryClip(ClipData.newPlainText("comment", commentText))
-                            }
-                        },
-                    )
+                    if (onShowReactors != null) {
+                        ContextMenuItem(
+                            symbol = "favorite",
+                            label = stringResource(R.string.reactions_title),
+                            onClick = { close { onShowReactors() } },
+                        )
+                    }
+                    if (canCopy) {
+                        ContextMenuItem(
+                            symbol = "content_copy",
+                            label = stringResource(R.string.post_copy_text),
+                            onClick = {
+                                close {
+                                    val cm = context.getSystemService(ClipboardManager::class.java)
+                                    cm?.setPrimaryClip(ClipData.newPlainText("comment", commentText))
+                                }
+                            },
+                        )
+                    }
                 }
             }
         },
@@ -1545,3 +1596,11 @@ private fun OriginalPostRow(origin: ForwardOrigin.Channel, onClick: () -> Unit) 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
     }
 }
+
+/**
+ * Whether a comment's menu offers "Reactions": TDLib must allow fetching the list
+ * (`can_get_added_reactions`, false wherever reactions are anonymous) and there must be at least
+ * one non-paid reaction to list.
+ */
+private fun Reactions.canListReactors(): Boolean =
+    canGetAddedReactions && items.any { it.kind !is ReactionKind.Paid }

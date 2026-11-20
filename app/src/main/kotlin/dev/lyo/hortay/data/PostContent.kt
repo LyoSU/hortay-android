@@ -859,10 +859,71 @@ val ReactionKind.stableKey: String
         is ReactionKind.Paid -> "p"
     }
 
-/** Single reaction bucket: emoji or custom-emoji sticker plus a usage count. */
+/**
+ * Single reaction bucket: emoji or custom-emoji sticker plus a usage count.
+ *
+ * [recentSenders] are the latest people (or chats) who left this reaction, in TDLib's order
+ * (`messageReaction.recent_sender_ids`). TDLib fills them only where reactions are not anonymous
+ * — groups and discussion groups, so comments — and leaves them empty on channel posts. Faces
+ * are resolved by the mapper of the surface that draws them ([MessageMapper.toThreadComment]).
+ */
 @Immutable
-data class ReactionItem(val kind: ReactionKind, val count: Int, val isChosen: Boolean = false)
+data class ReactionItem(
+    val kind: ReactionKind,
+    val count: Int,
+    val isChosen: Boolean = false,
+    val recentSenders: ImmutableList<ReactionSender> = persistentListOf(),
+)
 
-/** Aggregated reaction summary — full per-emoji breakdown plus total. */
+/**
+ * Aggregated reaction summary — full per-emoji breakdown plus total. [canGetAddedReactions] is
+ * TDLib's `messageReactions.can_get_added_reactions`: whether the list of who reacted can be
+ * fetched with `getMessageAddedReactions` (false for channel posts, whose reactions are anonymous).
+ */
 @Immutable
-data class Reactions(val totalCount: Int, val items: List<ReactionItem>)
+data class Reactions(
+    val totalCount: Int,
+    val items: List<ReactionItem>,
+    val canGetAddedReactions: Boolean = false,
+)
+
+/** Who sent a message or a reaction: a user, or a chat acting as itself (a channel, a group). */
+@Immutable
+sealed interface SenderRef {
+    @Immutable data class User(val userId: Long) : SenderRef
+    @Immutable data class Chat(val chatId: Long) : SenderRef
+}
+
+/** One recent sender of a reaction; [face] is null until the drawing surface resolves it. */
+@Immutable
+data class ReactionSender(val ref: SenderRef, val face: ReplierAvatar? = null)
+
+/** One row of "who reacted": the sender, the reaction they left, and their face once resolved. */
+@Immutable
+data class Reactor(val sender: SenderRef, val kind: ReactionKind, val face: ReplierAvatar? = null)
+
+/**
+ * One page of `getMessageAddedReactions`. [totalCount] counts every reaction matching the
+ * request's filter (not just this page); [nextOffset] is empty when there are no more pages.
+ */
+@Immutable
+data class ReactorsPage(
+    val totalCount: Int,
+    val reactors: ImmutableList<Reactor>,
+    val nextOffset: String,
+)
+
+/** Largest bucket whose senders are drawn as faces instead of a count (Telegram's rule). */
+const val MAX_REACTION_FACES = 3
+
+/**
+ * Telegram's rule for a group reaction chip: when at most [MAX_REACTION_FACES] people left this
+ * reaction AND every one of them is among [ReactionItem.recentSenders] (with a resolved face),
+ * the chip shows their faces instead of the number. Sizes must match exactly: an optimistic toggle
+ * changes the count before TDLib refreshes the senders, and a stale list must fall back to the
+ * count rather than draw a face too many or too few.
+ */
+fun ReactionItem.showsSenderFaces(): Boolean =
+    count in 1..MAX_REACTION_FACES &&
+        recentSenders.size == count &&
+        recentSenders.all { it.face != null }

@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -874,6 +875,37 @@ class CommentsRepository(
         }
     }
 
+    /**
+     * One page of who reacted to a comment — `getMessageAddedReactions` for [messageId] in the
+     * discussion chat [threadChatId], filtered to [kind] (null = every reaction), starting at
+     * [offset] ("" for the first page). One RPC per call: the "who reacted" sheet asks for a page
+     * when it opens and when the reader scrolls near the end, never in the background.
+     *
+     * Goes through [TdSender] like every other call here, so FLOOD_WAIT is handled centrally by
+     * [TdClient]. Faces come from [MessageMapper.faceOf] (local `GetUser` / `GetChat`). Failures
+     * are logged and returned, not surfaced to the message bus: the sheet shows its own error
+     * state with Retry, like the thread's LoadFailed.
+     *
+     * Only meaningful when the comment's [Reactions.canGetAddedReactions] is true — channel posts
+     * (anonymous reactions) never offer it.
+     */
+    suspend fun reactors(
+        threadChatId: Long,
+        messageId: Long,
+        kind: ReactionKind?,
+        offset: String,
+    ): Result<ReactorsPage> {
+        val type = kind?.let { it.toTdReactionType() ?: return Result.success(ReactorsPage(0, persistentListOf(), "")) }
+        return suspendRunCatching {
+            td.send(TdApi.GetMessageAddedReactions(threadChatId, messageId, type, offset, REACTORS_PAGE_SIZE))
+        }
+            .warnUnlessCancelled(TAG, "reactors($threadChatId, $messageId)")
+            .map { added ->
+                val page = MessageContentMapper.mapAddedReactions(added)
+                page.copy(reactors = page.reactors.map { it.copy(face = mapper.faceOf(it.sender)) }.toImmutableList())
+            }
+    }
+
     private sealed interface ThreadEvent {
         data class Tdlib(val update: TdApi.Update) : ThreadEvent
         data object OptimisticInvalidate : ThreadEvent
@@ -1001,6 +1033,8 @@ class CommentsRepository(
         const val TAG = "CommentsRepository"
         const val MAX_DEPTH = 3
         const val BATCH_SIZE = 50
+        // Rows per "who reacted" page (TDLib caps getMessageAddedReactions at 100).
+        const val REACTORS_PAGE_SIZE = 50
         const val DEFAULT_LIMIT = 200
         const val STOP_TIMEOUT_MS = 30_000L
         // Hand-picked: typical reading session opens 10–20 unique threads. 64 leaves

@@ -879,4 +879,14 @@
     <plurals name="settings_muted_words_count">
         <item quantity="other">%d kata</item>
     </plurals>
+    <!-- "Who reacted" sheet and its entry points on comments. -->
+    <string name="reactions_title">Reaksi</string>
+    <plurals name="reactions_sheet_title">
+        <item quantity="other">%1$d reaksi</item>
+    </plurals>
+    <string name="reactions_load_failed">Gagal memuat reaksi</string>
+    <string name="reactions_empty">Belum ada reaksi</string>
+    <string name="reactions_who_reacted">Lihat siapa yang bereaksi</string>
+    <!-- %1$s is the person's name, %2$s the reaction emoji. -->
+    <string name="reactions_row_description">%1$s bereaksi dengan %2$s</string>
 </resources>
