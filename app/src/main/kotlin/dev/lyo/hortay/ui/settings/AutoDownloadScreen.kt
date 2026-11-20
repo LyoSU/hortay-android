@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.settings
 
+import dev.lyo.hortay.ui.components.HortaySnackbarHost
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -200,7 +201,7 @@ private fun AutoDownloadListScreen(
                 scrollBehavior = scrollBehavior,
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(snackbarData = it) } },
+        snackbarHost = { HortaySnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(

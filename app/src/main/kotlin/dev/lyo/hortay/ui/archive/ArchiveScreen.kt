@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.archive
 
+import dev.lyo.hortay.ui.components.HortaySnackbarHost
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,7 +83,7 @@ fun ArchiveScreen(
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { HortaySnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(Modifier.padding(padding)) {
             OutlinedTextField(

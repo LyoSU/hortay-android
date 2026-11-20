@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.main
 
+import dev.lyo.hortay.ui.components.HortaySnackbarHost
 import dev.lyo.hortay.ui.timeline.PostSummarizer
 import dev.lyo.hortay.ui.timeline.LocalPostSummarizer
 import androidx.compose.runtime.getValue
@@ -460,7 +461,7 @@ fun MainScaffold(graph: AppGraph) {
                 snackbarHost = {
                     // Scaffold's own insets are zeroed, so clear the system nav bar / IME here,
                     // and lift above the floating tab bar while Home (no detail pushed) shows it.
-                    SnackbarHost(
+                    HortaySnackbarHost(
                         snackbarHostState,
                         modifier = Modifier
                             .navigationBarsPadding()
@@ -469,9 +470,7 @@ fun MainScaffold(graph: AppGraph) {
                                 bottom = (if (hasOverlay) 0.dp else FLOATING_NAV_BAR_CLEARANCE) +
                                     (if (audioMiniWanted) AudioMiniPlayerClearance else 0.dp),
                             ),
-                    ) { data ->
-                        Snackbar(snackbarData = data)
-                    }
+                    )
                 },
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
             ) { scaffoldPadding ->

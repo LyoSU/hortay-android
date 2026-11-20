@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.settings
 
+import dev.lyo.hortay.ui.components.HortaySnackbarHost
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -151,7 +152,7 @@ fun HiddenChannelsScreen(
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { HortaySnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (hiddenList.isEmpty()) {
