@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.web
 
+import dev.lyo.hortay.ui.components.HortaySnackbarHost
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -392,7 +393,7 @@ fun WebModeScaffold(graph: AppGraph) {
                 // Scaffold's own insets are zeroed, so clear the system nav bar / IME here,
                 // and lift above the floating tab bar while Home (no detail pushed) shows it.
                 // Same contract as MainScaffold.
-                SnackbarHost(
+                HortaySnackbarHost(
                     snackbarHostState,
                     modifier = Modifier
                         .navigationBarsPadding()
@@ -401,7 +402,7 @@ fun WebModeScaffold(graph: AppGraph) {
                             bottom = (if (hasOverlay) 0.dp else FLOATING_NAV_BAR_CLEARANCE) +
                                 (if (audioMiniWanted) AudioMiniPlayerClearance else 0.dp),
                         ),
-                ) { data -> Snackbar(snackbarData = data) }
+                )
             },
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
         ) { scaffoldPadding ->
@@ -578,7 +579,6 @@ fun WebModeScaffold(graph: AppGraph) {
                                                         homeTapTrigger = homeTapTrigger,
                                                         onBrandTap = { homeTapTrigger = System.nanoTime() },
                                                         onSearchClick = { searchOpen = true },
-                                                        topBarBadge = { GuestModeBadge() },
                                                         onReportClick = { post ->
                                                             val outcome = graph.guestReportDelegator.report(
                                                                 channelUsername = post.senderHandle?.removePrefix("@"),
@@ -593,15 +593,10 @@ fun WebModeScaffold(graph: AppGraph) {
                                                         markAsRead = webMarkAsRead,
                                                         feedOrder = feedOrder,
                                                         snapScroll = snapScroll,
-                                                        // Reserve room for the "Add channel" FAB that this
-                                                        // scaffold parks at BottomEnd. Without this the
-                                                        // floating "↓ N" unread pill (also BottomEnd, owned
-                                                        // by TimelineScreen) lands directly under the FAB
-                                                        // and is un-tappable. ExtendedFAB ~56.dp + 16.dp
-                                                        // gap → 72.dp. Only the Feed tab needs this; the
-                                                        // Saved-tab call below leaves the default 0.dp
-                                                        // because the FAB is hidden there.
-                                                        unreadPillExtraBottomPadding = 72.dp,
+                                                        // No extra bottom inset for the "↓ N" unread button:
+                                                        // the add-channel button only shows on this tab
+                                                        // while there are no channels, i.e. no feed to
+                                                        // scroll and so no unread button to collide with.
                                                         guestMode = true,
                                                     )
                                                 }

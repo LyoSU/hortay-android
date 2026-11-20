@@ -472,6 +472,7 @@
     <string name="web_media_placeholder_sticker">[sticker]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">This post can only be viewed in Telegram</string>
+    <string name="web_reactions_signin">Sign in to Telegram to react to posts</string>
 
     <!-- Personal-author channel mode: "in <Channel>" subtitle under admin's name -->
     <string name="post_in_channel">in %1$s</string>
@@ -536,7 +537,6 @@
     <string name="avatar_for_channel">Avatar for %1$s</string>
 
     <!-- Persistent guest-mode badge in the top bar. -->
-    <string name="guest_mode_badge">Guest mode</string>
 
     <!-- Sign-in CTA shown when the looked-up channel is private. -->
     <string name="web_add_signin_for_private">Sign in to access private channels</string>

@@ -469,6 +469,7 @@
     <string name="web_media_placeholder_sticker">[sticker]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">Cette publication n’est visible que dans Telegram</string>
+    <string name="web_reactions_signin">Connecte-toi à Telegram pour réagir</string>
 
     <!-- Mode chaîne avec auteur personnel : sous-titre "dans <Chaîne>" sous le nom de l\'admin -->
     <string name="post_in_channel">dans %1$s</string>
@@ -534,7 +535,6 @@
     <string name="avatar_for_channel">Avatar de %1$s</string>
 
     <!-- Badge persistant du mode invité dans la barre supérieure. -->
-    <string name="guest_mode_badge">Mode invité</string>
 
     <!-- CTA de connexion affiché quand la chaîne recherchée est privée. -->
     <string name="web_add_signin_for_private">Connecte-toi pour accéder aux chaînes privées</string>

@@ -443,6 +443,7 @@
     <string name="web_media_placeholder_sticker">[stiker]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">Postingan ini hanya bisa dilihat di Telegram</string>
+    <string name="web_reactions_signin">Masuk ke Telegram untuk memberi reaksi</string>
 
     <!-- Mode kanal personal-author: subjudul "di <Kanal>" di bawah nama admin -->
     <string name="post_in_channel">di %1$s</string>
@@ -506,7 +507,6 @@
     <string name="avatar_for_channel">Avatar untuk %1$s</string>
 
     <!-- Lencana mode tamu permanen di bilah atas. -->
-    <string name="guest_mode_badge">Mode tamu</string>
 
     <!-- CTA masuk saat kanal yang ditemukan bersifat privat. -->
     <string name="web_add_signin_for_private">Masuk untuk mengakses kanal privat</string>

@@ -457,6 +457,7 @@
     <string name="web_media_placeholder_sticker">[çıkartma]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">Bu gönderi yalnızca Telegram’da görüntülenebilir</string>
+    <string name="web_reactions_signin">Tepki vermek için Telegram’da oturum aç</string>
 
     <!-- Kişisel yazar kanal modu: yöneticinin adının altında "kanal adında" alt başlığı -->
     <string name="post_in_channel">%1$s kanalında</string>
@@ -521,7 +522,6 @@
     <string name="avatar_for_channel">%1$s için avatar</string>
 
     <!-- Üst çubukta kalıcı misafir modu rozeti. -->
-    <string name="guest_mode_badge">Misafir modu</string>
 
     <!-- Aranan kanal özel olduğunda gösterilen giriş CTA\'sı. -->
     <string name="web_add_signin_for_private">Özel kanallara erişmek için giriş yap</string>

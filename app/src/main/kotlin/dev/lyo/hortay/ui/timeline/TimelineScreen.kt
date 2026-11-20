@@ -1424,7 +1424,9 @@ fun TimelineScreen(
     // ViewModel + repos — every callback would silently route to torn-down
     // state. The same root cause as the per-account-state-survived-logout fix
     // on the data layer, just on the UI side.
+    val guestReactionNudge = rememberGuestReactionNudge()
     val interactions = remember(
+        guestReactionNudge,
         vm,
         viewer,
         translations,
@@ -1547,7 +1549,11 @@ fun TimelineScreen(
             translationFor = ::lookup,
             translateEnabled = translations != null,
             onReactionToggle = { post, item ->
-                val ca = channelActions ?: return@PostInteractions
+                if (channelActions == null) {
+                    guestReactionNudge()
+                    return@PostInteractions
+                }
+                val ca = channelActions
                 val repo = tdlibRepo ?: return@PostInteractions
                 // Optimistic UI: flip the chip and adjust the count BEFORE the RPC so
                 // the tap feels instant — the canonical pattern (Telegram-Android,

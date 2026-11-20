@@ -503,6 +503,7 @@
     <string name="web_media_placeholder_sticker">[ملصق]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">لا يمكن عرض هذا المنشور إلا في تيليجرام</string>
+    <string name="web_reactions_signin">سجّل الدخول إلى تيليجرام للتفاعل</string>
 
     <!-- وضع قناة المؤلف الشخصي: "في <القناة>" كعنوان فرعي تحت اسم المسؤول -->
     <string name="post_in_channel">في %1$s</string>
@@ -571,7 +572,6 @@
     <string name="avatar_for_channel">صورة رمزية لـ %1$s</string>
 
     <!-- شارة وضع الضيف الدائمة في الشريط العلوي. -->
-    <string name="guest_mode_badge">وضع الضيف</string>
 
     <!-- دعوة لتسجيل الدخول حين تكون القناة المبحوث عنها خاصة. -->
     <string name="web_add_signin_for_private">سجّل الدخول للوصول إلى القنوات الخاصة</string>

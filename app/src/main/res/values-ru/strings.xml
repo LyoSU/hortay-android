@@ -481,6 +481,7 @@
     <string name="web_media_placeholder_sticker">[стикер]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">Этот пост можно посмотреть только в Telegram</string>
+    <string name="web_reactions_signin">Войди в Telegram, чтобы ставить реакции</string>
 
     <!-- Personal-author channel mode: "in <Channel>" subtitle under admin's name -->
     <string name="post_in_channel">в %1$s</string>
@@ -547,7 +548,6 @@
     <string name="avatar_for_channel">Аватар канала %1$s</string>
 
     <!-- Постоянный бейдж гостевого режима на верхней панели. -->
-    <string name="guest_mode_badge">Гостевой режим</string>
 
     <!-- CTA «Войти», когда найденный канал приватный. -->
     <string name="web_add_signin_for_private">Войдите, чтобы читать приватные каналы</string>

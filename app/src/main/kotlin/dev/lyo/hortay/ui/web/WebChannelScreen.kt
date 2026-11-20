@@ -31,6 +31,7 @@ import dev.lyo.hortay.AppGraph
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import dev.lyo.hortay.ui.timeline.rememberGuestReactionNudge
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.bookmarkKey
@@ -174,8 +175,10 @@ fun WebChannelScreen(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val onPostClickState = rememberUpdatedState(onPostClick)
 
-    val interactions = remember(viewer, bookmarks, chatId, uriHandler) {
+    val guestReactionNudge = rememberGuestReactionNudge()
+    val interactions = remember(viewer, bookmarks, chatId, uriHandler, guestReactionNudge) {
         PostInteractions(
+            onReactionToggle = { _, _ -> guestReactionNudge() },
             onMediaClick = { post, idx -> viewer.openFor(post.content, idx) },
             // Same-channel header tap inside a post is a no-op — we're already
             // here. Cross-channel jumps in guest mode go through the URI handler

@@ -455,6 +455,7 @@
     <string name="web_media_placeholder_sticker">[استیکر]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">این پست فقط در تلگرام قابل مشاهده است</string>
+    <string name="web_reactions_signin">برای واکنش دادن وارد تلگرام شوید</string>
 
     <!-- حالت کانال نویسنده شخصی: زیرنویس «در <کانال>» زیر نام ادمین -->
     <string name="post_in_channel">در %1$s</string>
@@ -519,7 +520,6 @@
     <string name="avatar_for_channel">آواتار %1$s</string>
 
     <!-- نشان دائمی حالت مهمان در نوار بالا -->
-    <string name="guest_mode_badge">حالت مهمان</string>
 
     <!-- دعوت به ورود وقتی کانال جستجوشده خصوصی است -->
     <string name="web_add_signin_for_private">برای دسترسی به کانال‌های خصوصی وارد شوید</string>

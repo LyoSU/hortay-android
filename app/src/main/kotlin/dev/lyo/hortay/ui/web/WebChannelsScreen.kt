@@ -104,7 +104,6 @@ fun WebChannelsScreen(
             HortayTopBar(
                 title = stringResource(R.string.web_channels_title),
                 size = HortayTopBarSize.Large,
-                actions = { GuestModeBadge() },
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -471,32 +470,3 @@ private fun ChannelAvatar(name: String, avatarUrl: String?) {
     }
 }
 
-/**
- * Persistent reminder that the user is reading without authentication. Sits as
- * a passive `AssistChip` in the top-bar `actions` slot — non-interactive (the
- * onClick is a no-op) so it never competes with real action targets, but
- * carries a `visibility` glyph and the localized "Guest mode" label so the
- * mode is glanceable from the feed and channels screens. Without it users who
- * leave the app and return forget which mode they're in.
- */
-@Composable
-internal fun GuestModeBadge() {
-    AssistChip(
-        onClick = {},
-        enabled = false,
-        leadingIcon = {
-            Symbol(name = "visibility", contentDescription = null, size = 16.dp)
-        },
-        label = {
-            Text(
-                text = stringResource(R.string.guest_mode_badge),
-                style = MaterialTheme.typography.labelSmall,
-            )
-        },
-        colors = AssistChipDefaults.assistChipColors(
-            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            disabledLeadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-        modifier = Modifier.padding(end = 12.dp),
-    )
-}

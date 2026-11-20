@@ -47,6 +47,8 @@
 - Tapping a photo, video or GIF grows it out of its place in the feed into the fullscreen viewer over a blurred backdrop, and closing shrinks it back — in an album, into the item you swiped to.
 - The reaction panel shows the main reactions in one row and expands into a grid of all available ones.
 - In guest mode the add-channel button stays on the Channels tab once you follow channels, so it no longer sits on top of the feed's unread button.
+- Messages at the bottom of the screen have a lighter look and can be swiped away.
+- Guest mode no longer keeps a “Guest mode” label in the header.
 - Photos load over a placeholder in the picture's own colour instead of a grey block.
 - The Channels tab has a compact header, and its "Find channels" button shrinks to an icon once you scroll.
 - Post text breaks into lines more evenly.
@@ -64,6 +66,7 @@
 - The ❤️‍🔥 reaction shows as one emoji instead of a heart and a flame.
 - The reaction panel no longer offers reactions that need Telegram Premium you don't have.
 - In guest mode, posts that Telegram's web preview can't show say so instead of appearing as empty cards.
+- Tapping a reaction in guest mode explains that reactions need signing in, instead of doing nothing.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.

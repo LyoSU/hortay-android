@@ -479,6 +479,7 @@
     <string name="web_media_placeholder_sticker">[naklejka]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">Ten post można wyświetlić tylko w Telegramie</string>
+    <string name="web_reactions_signin">Zaloguj się do Telegrama, aby reagować</string>
 
     <!-- Tryb kanału z autorem osobistym: podpis „w <Kanał>" pod nazwą admina -->
     <string name="post_in_channel">w %1$s</string>
@@ -545,7 +546,6 @@
     <string name="avatar_for_channel">Awatar kanału %1$s</string>
 
     <!-- Stała odznaka trybu gościa na górnym pasku. -->
-    <string name="guest_mode_badge">Tryb gościa</string>
 
     <!-- CTA logowania, gdy wyszukany kanał jest prywatny. -->
     <string name="web_add_signin_for_private">Zaloguj się, żeby uzyskać dostęp do prywatnych kanałów</string>

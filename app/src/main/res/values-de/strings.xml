@@ -457,6 +457,7 @@
     <string name="web_media_placeholder_sticker">[Sticker]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">Dieser Beitrag kann nur in Telegram angezeigt werden</string>
+    <string name="web_reactions_signin">Melde dich bei Telegram an, um zu reagieren</string>
 
     <!-- Persönlicher-Autor-Kanalmodus: „in <Kanal>"-Untertitel unter dem Admin-Namen -->
     <string name="post_in_channel">in %1$s</string>
@@ -521,7 +522,6 @@
     <string name="avatar_for_channel">Avatar für %1$s</string>
 
     <!-- Dauerhafter Gastmodus-Badge in der Titelleiste. -->
-    <string name="guest_mode_badge">Gastmodus</string>
 
     <!-- Anmelde-CTA, wenn der gesuchte Kanal privat ist. -->
     <string name="web_add_signin_for_private">Anmelden für private Kanäle</string>

@@ -1,5 +1,11 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
+import dev.lyo.hortay.R
+import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.ui.main.LocalUserMessageBus
 import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.ReactionItem
@@ -102,5 +108,26 @@ data class PostInteractions(
 ) {
     companion object {
         val Noop = PostInteractions()
+    }
+}
+
+/**
+ * What a reaction tap does where reactions can't be cast — guest mode, which reads the
+ * public web preview and has no account to react with. Says so, with a "Sign in" action,
+ * instead of leaving the tap silently dead.
+ */
+@Composable
+internal fun rememberGuestReactionNudge(): () -> Unit {
+    val bus = LocalUserMessageBus.current
+    val text = stringResource(R.string.web_reactions_signin)
+    val signIn = stringResource(R.string.action_sign_in)
+    return remember(bus, text, signIn) {
+        {
+            bus?.post(
+                text = text,
+                severity = UserMessageBus.Severity.Info,
+                action = UserMessageBus.Action.SignIn(signIn),
+            )
+        }
     }
 }

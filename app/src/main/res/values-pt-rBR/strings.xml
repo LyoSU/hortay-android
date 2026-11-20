@@ -469,6 +469,7 @@
     <string name="web_media_placeholder_sticker">[figurinha]</string>
     <string name="web_media_placeholder_gif">[GIF]</string>
     <string name="web_post_unsupported">Esta publicação só pode ser vista no Telegram</string>
+    <string name="web_reactions_signin">Entre no Telegram para reagir</string>
 
     <!-- Modo de canal com autor pessoal: subtítulo "em <Canal>" abaixo do nome do admin -->
     <string name="post_in_channel">em %1$s</string>
@@ -534,7 +535,6 @@
     <string name="avatar_for_channel">Avatar de %1$s</string>
 
     <!-- Selo persistente do modo visitante na barra superior. -->
-    <string name="guest_mode_badge">Modo visitante</string>
 
     <!-- CTA de login quando o canal pesquisado é privado. -->
     <string name="web_add_signin_for_private">Entre para acessar canais privados</string>
