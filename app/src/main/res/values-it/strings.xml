@@ -910,6 +910,7 @@
     <string name="action_undo">Annulla</string>
     <string name="channels_mark_all_read">Segna tutto come letto</string>
     <string name="channels_mark_all_read_confirm">Tutti i canali saranno segnati come letti, anche in Telegram. L\'azione non può essere annullata.</string>
+    <string name="channels_mark_all_read_action">Segna</string>
     <string name="settings_muted_words_title">Filtro parole</string>
     <string name="settings_muted_words_subtitle_empty">Tieni fuori dal feed i post con certe parole</string>
     <string name="muted_words_explainer">I post con una di queste parole o hashtag non compaiono nel feed. Li vedrai comunque aprendo il canale.</string>

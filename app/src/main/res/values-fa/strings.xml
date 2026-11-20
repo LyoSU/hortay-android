@@ -887,6 +887,7 @@
     <string name="action_undo">واگرد</string>
     <string name="channels_mark_all_read">علامت‌گذاری همه به‌عنوان خوانده‌شده</string>
     <string name="channels_mark_all_read_confirm">همهٔ کانال‌ها به‌عنوان خوانده‌شده علامت می‌خورند، در تلگرام هم. این کار قابل بازگشت نیست.</string>
+    <string name="channels_mark_all_read_action">علامت‌گذاری</string>
     <string name="settings_muted_words_title">فیلتر کلمات</string>
     <string name="settings_muted_words_subtitle_empty">پست‌های دارای کلمات مشخص در فید نمایش داده نشوند</string>
     <string name="muted_words_explainer">پست‌هایی که یکی از این کلمات یا هشتگ‌ها را دارند در فید نمایش داده نمی‌شوند. وقتی خود کانال را باز کنید آن‌ها را می‌بینید.</string>

@@ -917,6 +917,7 @@
     <string name="action_undo">Desfazer</string>
     <string name="channels_mark_all_read">Marcar tudo como lido</string>
     <string name="channels_mark_all_read_confirm">Todos os canais serão marcados como lidos, no Telegram também. Não é possível desfazer.</string>
+    <string name="channels_mark_all_read_action">Marcar</string>
     <string name="settings_muted_words_title">Filtro de palavras</string>
     <string name="settings_muted_words_subtitle_empty">Manter fora do feed as publicações com certas palavras</string>
     <string name="muted_words_explainer">Publicações com alguma destas palavras ou hashtags não aparecem no feed. Você ainda as verá ao abrir o canal.</string>

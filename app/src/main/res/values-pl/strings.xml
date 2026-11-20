@@ -930,6 +930,7 @@
     <string name="action_undo">Cofnij</string>
     <string name="channels_mark_all_read">Oznacz wszystko jako przeczytane</string>
     <string name="channels_mark_all_read_confirm">Wszystkie kanały zostaną oznaczone jako przeczytane, także w Telegramie. Tego nie da się cofnąć.</string>
+    <string name="channels_mark_all_read_action">Oznacz</string>
     <string name="settings_muted_words_title">Filtr słów</string>
     <string name="settings_muted_words_subtitle_empty">Nie pokazuj w feedzie wpisów z wybranymi słowami</string>
     <string name="muted_words_explainer">Wpisy zawierające któreś z tych słów lub hashtagów nie trafiają do feedu. Nadal zobaczysz je po otwarciu samego kanału.</string>

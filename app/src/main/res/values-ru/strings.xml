@@ -933,6 +933,7 @@
     <string name="action_undo">Отменить</string>
     <string name="channels_mark_all_read">Отметить всё прочитанным</string>
     <string name="channels_mark_all_read_confirm">Все каналы будут отмечены прочитанными, в Telegram тоже. Отменить это не получится.</string>
+    <string name="channels_mark_all_read_action">Отметить</string>
     <string name="settings_muted_words_title">Фильтр слов</string>
     <string name="settings_muted_words_subtitle_empty">Не показывать в ленте посты с определёнными словами</string>
     <string name="muted_words_explainer">Посты с этими словами или хештегами не попадают в ленту. Открыв сам канал, вы всё равно их увидите.</string>

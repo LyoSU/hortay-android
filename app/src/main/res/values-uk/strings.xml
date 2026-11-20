@@ -937,6 +937,7 @@
     <string name="action_undo">Скасувати</string>
     <string name="channels_mark_all_read">Позначити все прочитаним</string>
     <string name="channels_mark_all_read_confirm">Усі канали буде позначено прочитаними, у Telegram теж. Скасувати це не вийде.</string>
+    <string name="channels_mark_all_read_action">Позначити</string>
     <string name="settings_muted_words_title">Фільтр слів</string>
     <string name="settings_muted_words_subtitle_empty">Не показувати у стрічці пости з певними словами</string>
     <string name="muted_words_explainer">Пости з цими словами чи хештегами не потрапляють у стрічку. Ти все одно бачитимеш їх, коли відкриєш сам канал.</string>

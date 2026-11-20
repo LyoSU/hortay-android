@@ -929,6 +929,7 @@
     <string name="action_undo">Undo</string>
     <string name="channels_mark_all_read">Mark all as read</string>
     <string name="channels_mark_all_read_confirm">Every channel will be marked as read, in Telegram too. This can\'t be undone.</string>
+    <string name="channels_mark_all_read_action">Mark as read</string>
     <string name="settings_muted_words_title">Word filter</string>
     <string name="settings_muted_words_subtitle_empty">Keep posts with certain words out of the feed</string>
     <string name="muted_words_explainer">Posts that contain any of these words or hashtags stay out of the feed. You\'ll still see them when you open the channel itself.</string>

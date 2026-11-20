@@ -231,7 +231,7 @@ fun ChannelsScreen(
                         }
                     },
                 ) {
-                    Text(stringResource(action.title))
+                    Text(stringResource(action.confirmLabel))
                 }
             },
             dismissButton = {
@@ -800,10 +800,19 @@ private fun SwipeHintRow(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** Bulk feed-visibility actions from the Channels top bar (issue #3: 500-channel users). */
-private enum class FeedBulkAction(@param:StringRes val title: Int, @param:StringRes val confirm: Int) {
+private enum class FeedBulkAction(
+    @param:StringRes val title: Int,
+    @param:StringRes val confirm: Int,
+    /** Confirm button text; a short verb where repeating [title] would not fit beside Cancel. */
+    @param:StringRes val confirmLabel: Int = title,
+) {
     HideAll(R.string.channels_hide_all, R.string.channels_hide_all_confirm),
     ShowAll(R.string.channels_show_all, R.string.channels_show_all_confirm),
-    MarkAllRead(R.string.channels_mark_all_read, R.string.channels_mark_all_read_confirm),
+    MarkAllRead(
+        R.string.channels_mark_all_read,
+        R.string.channels_mark_all_read_confirm,
+        R.string.channels_mark_all_read_action,
+    ),
 }
 
 /** Quick filters above the channel list. */

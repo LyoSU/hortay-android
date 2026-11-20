@@ -893,6 +893,7 @@
     <string name="action_undo">Rückgängig</string>
     <string name="channels_mark_all_read">Alle als gelesen markieren</string>
     <string name="channels_mark_all_read_confirm">Alle Kanäle werden als gelesen markiert, auch in Telegram. Das lässt sich nicht rückgängig machen.</string>
+    <string name="channels_mark_all_read_action">Markieren</string>
     <string name="settings_muted_words_title">Wortfilter</string>
     <string name="settings_muted_words_subtitle_empty">Beiträge mit bestimmten Wörtern aus dem Feed heraushalten</string>
     <string name="muted_words_explainer">Beiträge mit einem dieser Wörter oder Hashtags erscheinen nicht im Feed. Du siehst sie weiterhin, wenn du den Kanal selbst öffnest.</string>

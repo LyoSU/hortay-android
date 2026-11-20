@@ -869,6 +869,7 @@
     <string name="action_undo">Urungkan</string>
     <string name="channels_mark_all_read">Tandai semua sudah dibaca</string>
     <string name="channels_mark_all_read_confirm">Semua kanal akan ditandai sudah dibaca, juga di Telegram. Tindakan ini tidak bisa diurungkan.</string>
+    <string name="channels_mark_all_read_action">Tandai</string>
     <string name="settings_muted_words_title">Filter kata</string>
     <string name="settings_muted_words_subtitle_empty">Jangan tampilkan kiriman dengan kata tertentu di feed</string>
     <string name="muted_words_explainer">Kiriman yang memuat salah satu kata atau tagar ini tidak muncul di feed. Kamu tetap bisa melihatnya saat membuka kanalnya.</string>

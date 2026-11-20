@@ -888,6 +888,7 @@
     <string name="action_undo">Geri al</string>
     <string name="channels_mark_all_read">Tümünü okundu say</string>
     <string name="channels_mark_all_read_confirm">Tüm kanallar Telegram\'da da okundu olarak işaretlenecek. Bu işlem geri alınamaz.</string>
+    <string name="channels_mark_all_read_action">İşaretle</string>
     <string name="settings_muted_words_title">Kelime filtresi</string>
     <string name="settings_muted_words_subtitle_empty">Belirli kelimeleri içeren gönderileri akışta gösterme</string>
     <string name="muted_words_explainer">Bu kelimelerden veya etiketlerden birini içeren gönderiler akışta görünmez. Kanalın kendisini açtığında yine de görürsün.</string>
