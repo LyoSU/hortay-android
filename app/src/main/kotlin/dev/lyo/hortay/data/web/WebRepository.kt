@@ -292,10 +292,11 @@ class WebRepository(
     }
 
     /**
-     * Ingest a `?before=` page fetched to close a gap between the channel's newest page
-     * and the posts already stored (see `WebFeedSource.fillGap`). New posts are inserted
-     * like on a normal sweep; the channel row is left alone — its validators and
-     * `older_cursor` describe the NEWEST page.
+     * Ingest posts from a page that is not the channel's newest one: a `?before=` page
+     * fetched to close a gap, or an `?after=` page of newer posts (see
+     * `WebFeedSource.fillGap` / `fetchNewerOnly`). Posts are inserted like on a normal
+     * sweep; the channel row is left alone — its validators and `older_cursor` describe
+     * the NEWEST full page.
      */
     suspend fun ingestOlderPosts(posts: List<WebPost>, fetchedAtMs: Long) = withContext(ioDispatcher) {
         db.transaction {

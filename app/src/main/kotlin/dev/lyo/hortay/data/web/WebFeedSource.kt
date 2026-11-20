@@ -594,6 +594,58 @@ class WebFeedSource(
     }
 
     /**
+     * The cheap sweep: ask only for posts newer than the newest one stored
+     * (`?after=<seq>`), instead of downloading and re-ingesting the whole newest page.
+     *
+     * t.me/s/ answers every request `Cache-Control: no-store` with no ETag or
+     * Last-Modified (checked against the live site), so a conditional GET can never
+     * come back 304 — without this every periodic sweep cost a full ~130 KB page per
+     * channel and always counted as "fresh", which also kept the adaptive backoff from
+     * ever engaging. An up-to-date channel now costs a ~19 KB shell and reports
+     * [FetchOutcome.NoOp].
+     *
+     * What it does NOT refresh is the posts already stored — their view counts,
+     * reactions, edits and CDN URLs — nor the channel header. So it only stands in for
+     * a full fetch that happened within [FULL_FETCH_INTERVAL_MS] in this process;
+     * a pull-to-refresh, a media-TTL sweep and the first sweep after launch always
+     * take the full page.
+     *
+     * Pages come oldest-first, so following them forward also closes the gap a busy
+     * channel opened since the last sweep, up to [NEWER_MAX_PAGES].
+     *
+     * @return the outcome, or null to fall back to the full fetch — nothing stored yet,
+     *   no recent full fetch, or any non-page answer (the full path owns error status).
+     */
+    private suspend fun fetchNewerOnly(username: String, fetchedAtMs: Long): FetchOutcome? {
+        val lastFull = lastFullFetchMs[username] ?: return null
+        if (fetchedAtMs - lastFull >= FULL_FETCH_INTERVAL_MS) return null
+        var after = repository.maxSeq(username) ?: return null
+        var gotNew = false
+        repeat(NEWER_MAX_PAGES) {
+            val result = fetchSemaphore.withPermit {
+                client.fetchChannelPage(username, after = after.toString(), useCache = false)
+            }
+            val posts = (result as? FetchResult.Page)?.page?.posts
+            if (posts == null) {
+                // Mid-walk failure: keep what was ingested; the next sweep resumes from it.
+                if (!gotNew) return null
+                repository.markNotModified(username, fetchedAtMs)
+                return FetchOutcome.Fresh
+            }
+            val newest = posts.maxOfOrNull { it.seq }
+            if (newest == null || newest <= after) {
+                repository.markNotModified(username, fetchedAtMs)
+                return if (gotNew) FetchOutcome.Fresh else FetchOutcome.NoOp
+            }
+            repository.ingestOlderPosts(posts, fetchedAtMs)
+            gotNew = true
+            after = newest
+        }
+        repository.markNotModified(username, fetchedAtMs)
+        return FetchOutcome.Fresh
+    }
+
+    /**
      * t.me/s/ serves about twenty posts per page, and a sweep reads only the newest page.
      * A channel that posted more than that since the last sweep (a busy news channel
      * overnight) therefore left a hole between the stored posts and the new page, with
@@ -642,6 +694,9 @@ class WebFeedSource(
      * kill is handled by [WebRepository.clearStaleLoading] on init; everything
      * else lands here) doesn't leave a stuck spinner in the Channels tab.
      */
+    /** When each channel's newest page was last fetched in full, this process. */
+    private val lastFullFetchMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     private suspend fun fetchOne(
         username: String,
         forceNetwork: Boolean,
@@ -650,6 +705,9 @@ class WebFeedSource(
     ): FetchOutcome {
         repository.markFetchStatus(username, ChannelFetchStatus.Loading)
         try {
+            if (!forceNetwork && !forceMediaRefresh) {
+                fetchNewerOnly(username, fetchedAtMs)?.let { return it }
+            }
             val result = fetchSemaphore.withPermit {
                 client.fetchChannelPage(username, useCache = !forceNetwork)
             }
@@ -682,6 +740,7 @@ class WebFeedSource(
                         forceMediaRefresh = forceMediaRefresh,
                     )
                     fillGap(username, result.page, storedMaxSeq, fetchedAtMs)
+                    lastFullFetchMs[username] = fetchedAtMs
                     return FetchOutcome.Fresh
                 }
                 FetchResult.NotModified -> {
@@ -1039,6 +1098,16 @@ class WebFeedSource(
 
         /** Older pages a sweep may fetch per channel to close a gap (~20 posts each). */
         private const val GAP_FILL_MAX_PAGES = 3
+
+        /** Pages of newer posts one cheap sweep follows per channel (~20 posts each). */
+        private const val NEWER_MAX_PAGES = 4
+
+        /**
+         * How long a full newest-page fetch keeps a channel on cheap newer-only sweeps;
+         * also the longest stored posts go without fresh view counts and reactions
+         * while the app stays open.
+         */
+        private const val FULL_FETCH_INTERVAL_MS = 30 * 60 * 1000L
 
     }
 }

@@ -70,6 +70,10 @@ class WebTelegramClient(
      * @param username channel handle without leading `@`. Caller is responsible for
      *   sanitizing user input (strip `@`, parse out of `t.me/<u>` links) — see
      *   [parseUsernameFromInput].
+     * @param after only posts NEWER than this message id, oldest first, about twenty per
+     *   page — the same page shell (channel header included) with just those posts, or
+     *   with none when nothing is newer. Checked against the live site: an up-to-date
+     *   channel answers in ~19 KB instead of the ~130 KB newest page.
      * @param before paginate older posts: pass [WebChannelPage.olderCursor] from a
      *   previous result. null fetches the latest page.
      * @param useCache when true (default), let OkHttp serve from cache + revalidate.
@@ -80,7 +84,8 @@ class WebTelegramClient(
         username: String,
         before: String? = null,
         useCache: Boolean = true,
-    ): FetchResult = fetchChannelPage(username, before, useCache, reportNotModified = true)
+        after: String? = null,
+    ): FetchResult = fetchChannelPage(username, before, after, useCache, reportNotModified = true)
 
     /**
      * @param reportNotModified when false, a 304 revalidation still parses the
@@ -91,12 +96,13 @@ class WebTelegramClient(
     private suspend fun fetchChannelPage(
         username: String,
         before: String?,
+        after: String?,
         useCache: Boolean,
         reportNotModified: Boolean,
     ): FetchResult {
         awaitGate()
 
-        val url = buildUrl(username, before)
+        val url = buildUrl(username, before, after)
 
         val request = Request.Builder()
             .url(url)
@@ -160,7 +166,7 @@ class WebTelegramClient(
             kotlinx.coroutines.withTimeout(LOOKUP_TIMEOUT_MS) {
                 // reportNotModified = false: a lookup wants the channel card, so a
                 // cache revalidation (useCache = true) must still yield a parsed page.
-                fetchChannelPage(username, before = null, useCache = useCache, reportNotModified = false)
+                fetchChannelPage(username, before = null, after = null, useCache = useCache, reportNotModified = false)
             }
         } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
             // The most common cause is the rate-limit gate: surface that
@@ -266,9 +272,10 @@ class WebTelegramClient(
         }
     }
 
-    private fun buildUrl(username: String, before: String?): String {
+    private fun buildUrl(username: String, before: String?, after: String?): String {
         val base = "https://t.me/s/$username".toHttpUrl().newBuilder()
         if (before != null) base.addQueryParameter("before", before)
+        if (after != null) base.addQueryParameter("after", after)
         return base.build().toString()
     }
 
