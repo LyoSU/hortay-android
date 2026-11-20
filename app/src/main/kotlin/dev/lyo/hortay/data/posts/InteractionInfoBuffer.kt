@@ -85,6 +85,28 @@ internal fun mergeInteractionInfo(
 }
 
 /**
+ * One `UpdateMessageInteractionInfo` applied to the info a message already holds. The
+ * comments thread applies updates one at a time to its raw `TdApi.Message` list instead
+ * of going through [InteractionInfoBuffer], and uses this so a `reactions = null`
+ * heartbeat keeps the comment's chips: the same per-field rule as [mergeInteractionInfo]
+ * (see [InteractionInfoBuffer] for why).
+ *
+ * A null [incoming] is not a heartbeat. TDLib sends no info object at all when the
+ * message has no views, forwards, visible reply info or visible reactions
+ * (`get_message_interaction_info_object`) — for a comment, that is what taking off its
+ * last reaction produces — so it clears. The feed drops such updates instead; a channel
+ * post always has views, so it never receives one.
+ */
+internal fun applyInteractionInfoUpdate(
+    existing: TdApi.MessageInteractionInfo?,
+    incoming: TdApi.MessageInteractionInfo?,
+): TdApi.MessageInteractionInfo? = when {
+    incoming == null -> null
+    existing == null -> incoming
+    else -> mergeInteractionInfo(existing, incoming)
+}
+
+/**
  * Apply a drained window to the feed in one pass. Pure function of its inputs — safe
  * inside the `_posts.update {}` CAS loop.
  *

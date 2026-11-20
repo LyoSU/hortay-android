@@ -2,10 +2,12 @@ package dev.lyo.hortay.data
 
 import dev.lyo.hortay.data.posts.InteractionInfoBuffer
 import dev.lyo.hortay.data.posts.applyInteractionInfo
+import dev.lyo.hortay.data.posts.applyInteractionInfoUpdate
 import kotlinx.collections.immutable.persistentListOf
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -22,6 +24,36 @@ class InteractionInfoBufferTest {
         forwardCount = forwards
         this.reactions = reactions
         replyInfo = replies?.let { n -> TdApi.MessageReplyInfo().apply { replyCount = n } }
+    }
+
+    @Test
+    fun `a single null-reactions update keeps the stored reactions and applies its counters`() {
+        val reactions = TdApi.MessageReactions()
+        val applied = applyInteractionInfoUpdate(
+            existing = info(views = 5, forwards = 1, reactions = reactions, replies = 2),
+            incoming = info(views = 9, forwards = 4, reactions = null, replies = 6),
+        )
+        assertSame(reactions, applied?.reactions)
+        assertEquals(9, applied?.viewCount)
+        assertEquals(4, applied?.forwardCount)
+        assertEquals(6, applied?.replyInfo?.replyCount)
+    }
+
+    @Test
+    fun `a single update with reactions replaces the stored ones`() {
+        val fresh = TdApi.MessageReactions()
+        val applied = applyInteractionInfoUpdate(
+            existing = info(reactions = TdApi.MessageReactions()),
+            incoming = info(reactions = fresh),
+        )
+        assertSame(fresh, applied?.reactions)
+    }
+
+    @Test
+    fun `a null info object clears, and the first info is taken as is`() {
+        assertNull(applyInteractionInfoUpdate(info(reactions = TdApi.MessageReactions()), null))
+        val first = info(views = 1)
+        assertSame(first, applyInteractionInfoUpdate(null, first))
     }
 
     @Test

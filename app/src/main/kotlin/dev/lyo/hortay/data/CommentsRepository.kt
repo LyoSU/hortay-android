@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.data.posts.applyInteractionInfoUpdate
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -691,12 +692,17 @@ class CommentsRepository(
                 val idx = live.indexOfFirst { it.id == upd.messageId }
                 if (idx == -1) false
                 else {
-                    // Server truth landed for this message — drop any optimistic
-                    // override we stamped on it. The next [buildTree] pass will
-                    // map the fresh interactionInfo through [MessageContentMapper]
-                    // and the chip reflects the canonical state.
-                    optimisticOverrides.remove(anchor.threadChatId to upd.messageId)
-                    live[idx].interactionInfo = upd.interactionInfo
+                    val incoming = upd.interactionInfo
+                    // Server truth about the reactions landed — drop any optimistic
+                    // override we stamped on it, and the next [buildTree] pass maps the
+                    // fresh state. A `reactions = null` heartbeat carries no reaction
+                    // truth, so it leaves the override (and the chips) alone.
+                    if (incoming == null || incoming.reactions != null) {
+                        optimisticOverrides.remove(anchor.threadChatId to upd.messageId)
+                    }
+                    // Null-preserving merge, not a plain assignment — see
+                    // [applyInteractionInfoUpdate] and the [InteractionInfoBuffer] KDoc.
+                    live[idx].interactionInfo = applyInteractionInfoUpdate(live[idx].interactionInfo, incoming)
                     true
                 }
             }

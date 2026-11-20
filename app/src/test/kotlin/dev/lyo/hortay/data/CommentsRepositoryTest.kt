@@ -475,6 +475,97 @@ class CommentsRepositoryTest {
         job.cancel()
     }
 
+    @Test
+    fun `a null-reactions interaction update keeps the comment's chips and senders`() = runTest {
+        val rows = threadAfterUpdate(TdApi.MessageInteractionInfo().apply { viewCount = 3 })
+        val reactions = rows.single().message.reactions
+        assertEquals(listOf(2), reactions.items.map { it.count })
+        assertEquals(
+            listOf(SenderRef.User(21L), SenderRef.User(22L)),
+            reactions.items.single().recentSenders.map { it.ref },
+        )
+    }
+
+    @Test
+    fun `an interaction update with new reactions replaces the comment's chips`() = runTest {
+        val rows = threadAfterUpdate(
+            TdApi.MessageInteractionInfo().apply { reactions = heartReactions(count = 3, senders = longArrayOf(23L)) },
+        )
+        val item = rows.single().message.reactions.items.single()
+        assertEquals(3, item.count)
+        assertEquals(listOf(SenderRef.User(23L)), item.recentSenders.map { it.ref })
+    }
+
+    @Test
+    fun `taking off the last reaction clears the comment's chips`() = runTest {
+        // TDLib sends no info object at all once a comment has nothing left to show.
+        val rows = threadAfterUpdate(null)
+        assertTrue(rows.single().message.reactions.items.isEmpty())
+    }
+
+    /**
+     * Bootstrap a thread whose one comment (100) carries a ❤ ×2 from users 21 and 22, apply
+     * one `UpdateMessageInteractionInfo` for it, and return the rows of the last emission.
+     */
+    private suspend fun TestScope.threadAfterUpdate(update: TdApi.MessageInteractionInfo?): List<ThreadRow> {
+        val chatId = 123L
+        val threadChatId = 9999L
+        val rootId = 7L
+        val testScope = TestScope(StandardTestDispatcher(testScheduler))
+        val comment = message(id = 100L, threadChatId, fromUserId = 11L, topicRoot = rootId).apply {
+            interactionInfo = TdApi.MessageInteractionInfo().apply {
+                reactions = heartReactions(count = 2, senders = longArrayOf(21L, 22L))
+            }
+        }
+        var historyCalls = 0
+        val td = FakeTdSender().apply {
+            onNext { _ ->
+                TdApi.MessageThreadInfo().apply {
+                    this.chatId = threadChatId
+                    this.messageThreadId = rootId
+                }
+            }
+            onAny("OpenChat") { _ -> TdApi.Ok() }
+            onAny("CloseChat") { _ -> TdApi.Ok() }
+            onAny("GetMessageThreadHistory") { _ ->
+                historyCalls++
+                TdApi.Messages().apply {
+                    messages = if (historyCalls == 1) arrayOf(comment) else emptyArray()
+                    totalCount = messages.size
+                }
+            }
+        }
+        val repo = CommentsRepository(td, fakeMapper(td), testScope, FakeStrings)
+        val collected = mutableListOf<CommentsRepository.ThreadState>()
+        val job = testScope.launch {
+            repo.observeThread(chatId, listOf(rootId)).collect { collected += it }
+        }
+        advanceUntilIdle()
+        val readyBefore = collected.count { it is CommentsRepository.ThreadState.Ready }
+
+        td.emitUpdate(TdApi.UpdateMessageInteractionInfo(threadChatId, 100L, update))
+        advanceUntilIdle()
+
+        assertEquals(
+            readyBefore + 1,
+            collected.count { it is CommentsRepository.ThreadState.Ready },
+            "one update, one emission",
+        )
+        job.cancel()
+        return (collected.last() as CommentsRepository.ThreadState.Ready).rows
+    }
+
+    private fun heartReactions(count: Int, senders: LongArray) = TdApi.MessageReactions().apply {
+        reactions = arrayOf(
+            TdApi.MessageReaction().apply {
+                type = TdApi.ReactionTypeEmoji("❤")
+                totalCount = count
+                recentSenderIds = senders.map { TdApi.MessageSenderUser(it) }.toTypedArray()
+            },
+        )
+        paidReactors = emptyArray()
+    }
+
     private fun fakeMapper(td: TdSender): MessageMapper = MessageMapper(td, FakeStrings)
 
     private fun message(
