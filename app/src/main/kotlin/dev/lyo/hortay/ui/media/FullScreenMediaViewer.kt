@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.lerp
 import dev.lyo.hortay.data.TdMedia
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlin.math.max
 import androidx.compose.animation.core.Spring
@@ -108,7 +109,6 @@ fun FullScreenMediaViewer(
     items: ImmutableList<AlbumItem>,
     initialIndex: Int,
     onDismiss: () -> Unit,
-    source: ViewerTransitionSource? = null,
 ) {
     if (items.isEmpty()) return
     val startPage = initialIndex.coerceIn(0, items.lastIndex)
@@ -122,86 +122,125 @@ fun FullScreenMediaViewer(
     // Reduced motion (system "Remove animations"): the drag-dismiss snap-back and the
     // double-tap zoom settle skip their spring physics and jump to the end state, so
     // motion-sensitive users don't get bouncy overshoot. The gestures themselves are
-    // unchanged — only the post-release animation is neutralised. The open/close container
-    // transform below is disabled outright, so the viewer appears and vanishes as before.
+    // unchanged — only the post-release animation is neutralised. The open/close transition
+    // below is disabled outright, so the viewer appears and vanishes in one frame.
     val reducedMotion = rememberReducedMotion()
     val settleSpec: AnimationSpec<Float> =
         if (reducedMotion) snap() else MaterialTheme.motionScheme.defaultSpatialSpec()
     val transformSpec: AnimationSpec<Float> = MaterialTheme.motionScheme.defaultSpatialSpec()
 
-    // ---- Open/close container transform -------------------------------------------------
-    // The viewer is a separate Dialog window, so the tapped tile can't take part in a
-    // SharedTransitionLayout. Instead [source] maps the tile into this window through screen
-    // coordinates and [transformProgress] (0 = sitting on the tile, 1 = fullscreen) drives
-    // a scale + translation + rounded clip on the pager — see [containerTransform]. Only a
-    // photo with known geometry qualifies; videos, GIFs, sourceless opens (comments
-    // anchor, rich media without a tile, guest posts without dimensions) and reduced
-    // motion keep the original appear / vanish behaviour.
-    val sourceAspect = (items[startPage] as? AlbumItem.Photo)?.media?.aspectRatio ?: 0f
-    val transformEnabled = remember { source != null && !reducedMotion && sourceAspect > 0f }
-    // Lower bound 0: the closing spring ends the moment the photo lands on the tile
+    val fadeSpec: AnimationSpec<Float> = MaterialTheme.motionScheme.defaultEffectsSpec()
+
+    // ---- Open/close transition ----------------------------------------------------------
+    // One transition for every media kind and every way in or out. [transitionProgress]
+    // runs 0 (closed) → 1 (fullscreen) on open and back on close; what it drives depends on
+    // whether the page's media has a tile on screen (see [ViewerSourceAnchor]):
+    //   - tile found → container transform: the pager scales, translates and clips from the
+    //     tile's rect to fullscreen and back ([containerTransform]). Photos, video posters
+    //     and GIFs alike, looked up by the media of the CURRENT page, so an album closes
+    //     into the tile of the page the user swiped to;
+    //   - no tile (comments anchor, a page whose album tile is scrolled away, media without
+    //     dimensions, a zoomed photo, a page mid-swipe) → the pager fades with a slight
+    //     scale instead.
+    // The viewer is a separate Dialog window, so the tile can't take part in a
+    // SharedTransitionLayout — it is mapped into this window through screen coordinates.
+    // The window's own enter/exit animation is switched off below: it kept a fading copy of
+    // the landed media over the tile for its whole duration.
+    // Lower bound 0: the closing spring ends the moment the media lands on the tile
     // instead of undershooting into a smaller-than-tile wobble before the dialog leaves.
-    val transformProgress = remember {
-        Animatable(if (transformEnabled) 0f else 1f).also { it.updateBounds(lowerBound = 0f) }
+    val transitionProgress = remember {
+        Animatable(if (reducedMotion) 1f else 0f).also { it.updateBounds(lowerBound = 0f) }
     }
     var rootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var sourceRect by remember { mutableStateOf<Rect?>(null) }
-    var transformFailed by remember { mutableStateOf(false) }
+    // Geometry of the leg in flight; null = the plain fade.
+    var leg by remember { mutableStateOf<TransitionLeg?>(null) }
+    // Open leg resolved — until then the pager paints nothing rather than flash fullscreen.
+    var ready by remember { mutableStateOf(reducedMotion) }
+    var settled by remember { mutableStateOf(reducedMotion) }
     var closing by remember { mutableStateOf(false) }
     var closeStartAlpha by remember { mutableFloatStateOf(1f) }
     var closeStartDragY by remember { mutableFloatStateOf(0f) }
-    var startPageZoomed by remember { mutableStateOf(false) }
+    val zoomedPages = remember { mutableStateMapOf<Int, Boolean>() }
 
-    // The tile gives its photo to the viewer for as long as the transform is in play, and
-    // gets it back the moment the viewer leaves by any path (see setTileHidden).
-    DisposableEffect(source) {
-        onDispose { source?.setTileHidden(false) }
+    // The tile gives its media to the viewer while the viewer shows it — otherwise the media
+    // is on screen twice during the transform — and gets it back the moment the viewer lets
+    // go of it or leaves by any path.
+    val heldTile = remember { arrayOfNulls<ViewerSourceAnchor>(1) }
+    fun holdTile(anchor: ViewerSourceAnchor?) {
+        val held = heldTile[0]
+        if (held === anchor) return
+        held?.hidden = false
+        heldTile[0] = anchor
+        anchor?.hidden = true
+    }
+    DisposableEffect(Unit) {
+        onDispose { holdTile(null) }
+    }
+
+    fun resolveLeg(page: Int, root: LayoutCoordinates): Pair<ViewerSourceAnchor, TransitionLeg>? {
+        val media = items.getOrNull(page)?.media ?: return null
+        val aspect = media.aspectRatio
+        if (aspect <= 0f) return null
+        val anchor = ViewerSourceRegistry.find(media) ?: return null
+        val rect = anchor.boundsIn(root) ?: return null
+        val screen = Rect(0f, 0f, root.size.width.toFloat(), root.size.height.toFloat())
+        if (!rect.overlaps(screen)) return null
+        return anchor to TransitionLeg(rect, anchor.cornerRadiusPx, aspect)
     }
 
     LaunchedEffect(Unit) {
-        if (!transformEnabled) return@LaunchedEffect
-        snapshotFlow { sourceRect != null || transformFailed }.first { it }
-        if (closing) return@LaunchedEffect
-        if (sourceRect != null) {
+        if (reducedMotion) return@LaunchedEffect
+        val root = snapshotFlow { rootCoords }.filterNotNull().first()
+        val resolved = resolveLeg(startPage, root)
+        leg = resolved?.second
+        ready = true
+        if (resolved != null) {
             // The dialog window presents its first frame a beat after it is laid out; hiding
             // the tile before that left an empty hole in the post for a frame.
             repeat(TILE_HANDOFF_FRAMES) { withFrameNanos { } }
             if (closing) return@LaunchedEffect
-            source?.setTileHidden(true)
-            transformProgress.animateTo(1f, transformSpec)
-        } else {
-            transformProgress.snapTo(1f)
+            holdTile(resolved.first)
+        }
+        transitionProgress.animateTo(1f, if (resolved != null) transformSpec else fadeSpec)
+        settled = true
+    }
+
+    // Once open, keep hold of whichever tile shows the current page's media (swiping an
+    // album moves the hold), so a close can land on it without a second copy underneath.
+    LaunchedEffect(pagerState.currentPage, settled) {
+        if (settled && !closing && !reducedMotion) {
+            holdTile(ViewerSourceRegistry.find(items.getOrNull(pagerState.currentPage)?.media))
         }
     }
 
     // Every dismissal path (close button, system back / predictive-back commit through the
-    // Dialog's own back callback, drag past the threshold) funnels through here. The photo
-    // shrinks back onto its tile only when the user is still on the tapped page, unzoomed,
-    // and the tile is still attached; otherwise the viewer leaves exactly as it always has.
+    // Dialog's own back callback, drag past the threshold) funnels through here.
     fun requestClose() {
         if (closing) return
-        val src = source
-        val root = rootCoords
-        val onStartPage = pagerState.currentPage == startPage &&
-            abs(pagerState.currentPageOffsetFraction) < PAGE_SETTLED_FRACTION
-        val target = if (
-            transformEnabled && !transformFailed && src != null && root != null &&
-            onStartPage && !startPageZoomed
-        ) {
-            src.boundsIn(root)
-        } else {
-            null
-        }
-        if (target == null) {
+        if (reducedMotion) {
             onDismiss()
             return
         }
-        sourceRect = target
+        val root = rootCoords
+        val page = pagerState.currentPage
+        val pageSettled = abs(pagerState.currentPageOffsetFraction) < PAGE_SETTLED_FRACTION
+        val resolved = if (root != null && pageSettled && zoomedPages[page] != true) {
+            resolveLeg(page, root)
+        } else {
+            null
+        }
+        leg = resolved?.second
+        holdTile(resolved?.first)
         closeStartAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0f, 1f)
         closeStartDragY = offsetY.value
         closing = true
         scope.launch {
-            transformProgress.animateTo(0f, transformSpec)
+            transitionProgress.animateTo(0f, if (resolved != null) transformSpec else fadeSpec)
+            // Give the tile back while this window still covers it with the landed copy,
+            // and leave only once the feed has drawn it — the two windows don't present in
+            // the same frame, so the other order blinks an empty tile.
+            holdTile(null)
+            repeat(TILE_HANDOFF_FRAMES) { withFrameNanos { } }
             onDismiss()
         }
     }
@@ -219,6 +258,7 @@ fun FullScreenMediaViewer(
         SideEffect {
             dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             dialogWindow?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            dialogWindow?.setWindowAnimations(0)
         }
         val draggable = rememberDraggableState { delta ->
             scope.launch { offsetY.snapTo(offsetY.value + delta) }
@@ -229,26 +269,18 @@ fun FullScreenMediaViewer(
         // Instagram "pulling the photo away from the page" idiom. No alpha floor:
         // any non-zero floor would leave a translucent dark sheet glued over the
         // photo while it translates, breaking the "fading away" reading of the gesture.
-        // The container transform multiplies in its progress, so the backdrop rises with
-        // the photo growing out of its tile and sinks with it on the way back; a close
+        // The open/close transition multiplies in its progress, so the backdrop rises with
+        // the media growing out of its tile and sinks with it on the way back; a close
         // freezes the drag share at release so the backdrop never brightens as the
-        // photo travels back up from its dragged position.
-        val visibleProgress = transformProgress.value.coerceIn(0f, 1f)
+        // media travels back up from its dragged position.
+        val visibleProgress = transitionProgress.value.coerceIn(0f, 1f)
         val dragAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0f, 1f)
         val backgroundAlpha = (if (closing) closeStartAlpha else dragAlpha) * visibleProgress
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .onPlaced { coords ->
-                    if (rootCoords == null) {
-                        rootCoords = coords
-                        if (transformEnabled) {
-                            val rect = source?.boundsIn(coords)
-                            if (rect == null) transformFailed = true else sourceRect = rect
-                        }
-                    }
-                }
+                .onPlaced { coords -> if (rootCoords == null) rootCoords = coords }
                 .draggable(
                     state = draggable,
                     orientation = Orientation.Vertical,
@@ -297,25 +329,30 @@ fun FullScreenMediaViewer(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        val transforming = transformEnabled && !transformFailed &&
-                            (closing || transformProgress.value != 1f)
-                        if (!transforming) {
+                        if (settled && !closing) {
                             translationY = offsetY.value
                             return@graphicsLayer
                         }
-                        val from = sourceRect
-                        if (from == null) {
-                            // Bounds not resolved yet (first layout pass): paint nothing
-                            // rather than flash the photo fullscreen for a frame.
+                        if (!ready) {
                             alpha = 0f
                             return@graphicsLayer
                         }
-                        val p = transformProgress.value
+                        val p = transitionProgress.value
+                        val current = leg
+                        if (current == null) {
+                            val shown = p.coerceIn(0f, 1f)
+                            val s = lerp(FADE_START_SCALE, 1f, shown)
+                            alpha = shown
+                            scaleX = s
+                            scaleY = s
+                            translationY = offsetY.value
+                            return@graphicsLayer
+                        }
                         val dragY = if (closing) closeStartDragY * p.coerceIn(0f, 1f) else offsetY.value
                         containerTransform(
-                            from = from,
-                            cornerRadiusPx = source?.cornerRadiusPx ?: 0f,
-                            contentAspect = sourceAspect,
+                            from = current.rect,
+                            cornerRadiusPx = current.cornerRadiusPx,
+                            contentAspect = current.aspect,
                             progress = p,
                             dragY = dragY,
                         )
@@ -327,7 +364,9 @@ fun FullScreenMediaViewer(
                     isActive = page == pagerState.currentPage,
                     pickedQuality = qualityChoices[page],
                     onQualityPick = { quality -> qualityChoices[page] = quality },
-                    onZoomedChange = { zoomed -> if (page == startPage) startPageZoomed = zoomed },
+                    onZoomedChange = { zoomed -> zoomedPages[page] = zoomed },
+                    // Player chrome would ride the transform as a shrinking overlay.
+                    showChrome = settled && !closing,
                 )
             }
 
@@ -382,7 +421,7 @@ fun FullScreenMediaViewer(
                 // Chrome fades with the container transform (layer-only read, no
                 // recomposition) so controls don't hover over a photo still on its tile.
                 modifier = Modifier
-                    .graphicsLayer { alpha = transformProgress.value.coerceIn(0f, 1f) }
+                    .graphicsLayer { alpha = transitionProgress.value.coerceIn(0f, 1f) }
                     .statusBarsPadding()
                     .padding(6.dp),
             )
@@ -474,7 +513,7 @@ fun FullScreenMediaViewer(
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .graphicsLayer { alpha = transformProgress.value.coerceIn(0f, 1f) }
+                        .graphicsLayer { alpha = transitionProgress.value.coerceIn(0f, 1f) }
                         .statusBarsPadding()
                         // Padding and spacing are 2 / 4 dp tighter than the visible rhythm
                         // (8 dp inset, 10 dp gaps): each 44 dp button reserves a 48 dp touch
@@ -608,7 +647,7 @@ fun FullScreenMediaViewer(
                     style = MaterialTheme.typography.labelLarge.tabularFigures(),
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .graphicsLayer { alpha = transformProgress.value.coerceIn(0f, 1f) }
+                        .graphicsLayer { alpha = transitionProgress.value.coerceIn(0f, 1f) }
                         .statusBarsPadding()
                         .padding(top = 12.dp)
                         .background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), counterShape)
@@ -724,6 +763,9 @@ private fun GraphicsLayerScope.containerTransform(
     clip = true
 }
 
+/** One open or close leg of the container transform: the tile it runs from or to. */
+private class TransitionLeg(val rect: Rect, val cornerRadiusPx: Float, val aspect: Float)
+
 /** Rounded clip at an arbitrary rect inside the layer — the container transform's window. */
 private class ViewerClipShape(private val rect: Rect, private val radius: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
@@ -801,6 +843,7 @@ private fun MediaPage(
     pickedQuality: VideoQuality?,
     onQualityPick: (VideoQuality) -> Unit,
     onZoomedChange: (Boolean) -> Unit,
+    showChrome: Boolean,
 ) {
     when (item) {
         is AlbumItem.Photo -> ZoomableImage(item, onZoomedChange)
@@ -823,7 +866,7 @@ private fun MediaPage(
                     // scrubber lands at the end and the user can leave the viewer
                     // without the clip restarting in the background.
                     autoLoop = item.durationSec in 1..LOOP_FULLSCREEN_MAX_SEC,
-                    showControls = true,
+                    showControls = showChrome,
                     priority = DownloadPriority.Foreground,
                     initialAspect = item.posterAspect(),
                     modifier = Modifier.fillMaxSize(),
@@ -1199,8 +1242,12 @@ private const val CHROME_BACKDROP_ALPHA = 0.55f
 // bars came out a muddy mid-grey on device.
 private val BACKDROP_BLUR_RADIUS = 48.dp
 
-// Frames the viewer's copy of the photo sits on the tile before the tile is hidden.
+// Frames the viewer's copy of the media and the tile overlap when one hands over to the
+// other (the tile is hidden after an open, shown again before the window leaves).
 private const val TILE_HANDOFF_FRAMES = 2
+
+// Scale the pager starts from (and ends at) when it fades instead of transforming.
+private const val FADE_START_SCALE = 0.94f
 private const val BACKDROP_DIM_ALPHA = 0.82f
 
 // Pager offset under which the start page counts as settled for the shrink-back close.

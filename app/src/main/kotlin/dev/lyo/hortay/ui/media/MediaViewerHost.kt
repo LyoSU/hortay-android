@@ -1,8 +1,8 @@
 package dev.lyo.hortay.ui.media
 
-import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,14 +38,11 @@ val LocalMediaViewer = staticCompositionLocalOf<MediaViewerController> {
 }
 
 class MediaViewerController internal constructor(
-    private val opener: (List<AlbumItem>, Int, ViewerTransitionSource?) -> Unit,
+    private val opener: (List<AlbumItem>, Int) -> Unit,
 ) {
     fun open(items: List<AlbumItem>, index: Int = 0) {
         if (items.isEmpty()) return
-        // Claim the tile the user just tapped (if any) as the viewer's grow-from origin.
-        // Always consumed — a stale origin must never leak into a later, unrelated open.
-        val source = ViewerSourceRegistry.consume(items.getOrNull(index.coerceIn(0, items.lastIndex)))
-        opener(items, index, source)
+        opener(items, index)
     }
 
     /** Convenience: project [PostContent] and open if it has any viewable media. */
@@ -58,7 +55,7 @@ class MediaViewerController internal constructor(
 fun MediaViewerHost(content: @Composable () -> Unit) {
     var state by remember { mutableStateOf<ViewerState?>(null) }
     val controller = remember {
-        MediaViewerController { items, idx, source -> state = ViewerState(items, idx, source) }
+        MediaViewerController { items, idx -> state = ViewerState(items, idx) }
     }
     CompositionLocalProvider(LocalMediaViewer provides controller) {
         content()
@@ -71,7 +68,6 @@ fun MediaViewerHost(content: @Composable () -> Unit) {
             items = vs.items.toImmutableList(),
             initialIndex = vs.index,
             onDismiss = { state = null },
-            source = vs.source,
         )
     }
 }
@@ -79,50 +75,20 @@ fun MediaViewerHost(content: @Composable () -> Unit) {
 private data class ViewerState(
     val items: List<AlbumItem>,
     val index: Int,
-    val source: ViewerTransitionSource?,
 )
 
 /**
- * Where the viewer's open/close container transform starts and ends: the on-screen tile the
- * user tapped. The viewer is a separate Dialog window, so it cannot share a
- * `SharedTransitionLayout` with the feed — instead it maps the tile's layout into its own
- * space through SCREEN coordinates (valid across the activity and dialog windows) at the
- * moment it needs them: once on open, and again on close so a tile that moved while the
- * viewer was up (album repair, a late layout pass) still receives the photo at its current
- * position. A tile that left the composition yields null and the viewer falls back to its
- * plain, non-animated close.
- */
-class ViewerTransitionSource internal constructor(
-    private val coordinates: LayoutCoordinates,
-    internal val cornerRadiusPx: Float,
-    private val anchor: ViewerSourceAnchor,
-) {
-    /**
-     * Hides the tile in the feed while the viewer shows its photo. Without this the photo is
-     * on screen twice during the transform — the copy flying to or from the tile and the
-     * tile itself underneath — which reads as a doubled image when it lands.
-     */
-    internal fun setTileHidden(hidden: Boolean) {
-        anchor.hidden = hidden
-    }
-
-    internal fun boundsIn(target: LayoutCoordinates): Rect? {
-        if (!coordinates.isAttached || !target.isAttached) return null
-        val size = coordinates.size
-        val topLeft = target.screenToLocal(coordinates.localToScreen(Offset.Zero))
-        val bottomRight = target.screenToLocal(
-            coordinates.localToScreen(Offset(size.width.toFloat(), size.height.toFloat())),
-        )
-        val rect = Rect(topLeft, bottomRight)
-        return rect.takeIf { it.isFinite && it.width > 1f && it.height > 1f }
-    }
-}
-
-/**
- * Tap-time handle on a feed media tile. The tile records its [LayoutCoordinates] on
- * placement (a field store — no state, no recomposition) and [mark]s itself as the origin
- * right before it fires its click, so bounds are resolved lazily at tap time and nothing new
- * flows through the feed's LazyColumn item parameters.
+ * An on-screen media tile (photo, video poster, GIF) the fullscreen viewer can grow out of
+ * and shrink back into. Every tile registers itself in [ViewerSourceRegistry] for as long as
+ * it is composed, keyed by its [TdMedia]; the viewer looks the tile up by the media of the
+ * page it is on — once on open and again on close — so no call site hands anything to the
+ * viewer, and an album closes into the tile of the page the user swiped to, not the one
+ * they tapped.
+ *
+ * The viewer is a separate Dialog window, so it cannot share a `SharedTransitionLayout`
+ * with the feed — it maps the tile's layout into its own space through SCREEN coordinates
+ * (valid across the activity and dialog windows) at the moment it needs them, so a tile
+ * that moved while the viewer was up still receives the media at its current position.
  */
 class ViewerSourceAnchor internal constructor(
     private val shape: Shape,
@@ -131,61 +97,79 @@ class ViewerSourceAnchor internal constructor(
 ) {
     internal var coordinates: LayoutCoordinates? = null
 
-    /** True while the viewer is showing this tile's photo; read in the draw phase only. */
+    /**
+     * True while the viewer is showing this tile's media; read in the draw phase only.
+     * Without it the media is on screen twice during the transform — the copy flying to or
+     * from the tile and the tile itself underneath.
+     */
     internal var hidden by mutableStateOf(false)
 
-    /** Record this tile as the grow-from origin for an imminent viewer open of [media]. */
-    fun mark(media: TdMedia) {
-        val coords = coordinates?.takeIf { it.isAttached } ?: return
-        val outline = shape.createOutline(coords.size.toSize(), layoutDirection, density)
-        val radius = (outline as? Outline.Rounded)?.roundRect?.topLeftCornerRadius?.x ?: 0f
-        ViewerSourceRegistry.record(media, coords, radius, this)
+    /** The tile's corner radius in px, from the shape its caller clips it to. */
+    internal val cornerRadiusPx: Float
+        get() {
+            val coords = coordinates?.takeIf { it.isAttached } ?: return 0f
+            val outline = shape.createOutline(coords.size.toSize(), layoutDirection, density)
+            return (outline as? Outline.Rounded)?.roundRect?.topLeftCornerRadius?.x ?: 0f
+        }
+
+    /** The tile's bounds in [target]'s space, or null when it is detached or degenerate. */
+    internal fun boundsIn(target: LayoutCoordinates): Rect? {
+        val coords = coordinates ?: return null
+        if (!coords.isAttached || !target.isAttached) return null
+        val size = coords.size
+        val topLeft = target.screenToLocal(coords.localToScreen(Offset.Zero))
+        val bottomRight = target.screenToLocal(
+            coords.localToScreen(Offset(size.width.toFloat(), size.height.toFloat())),
+        )
+        val rect = Rect(topLeft, bottomRight)
+        return rect.takeIf { it.isFinite && it.width > 1f && it.height > 1f }
     }
 }
 
-/** Anchor for a media tile clipped to [shape]; pair with [Modifier.viewerSource]. */
+/**
+ * Registers a tile showing [media], clipped to [shape] by its caller, as a viewer
+ * transition source for as long as it stays composed; pair with [Modifier.viewerSource].
+ */
 @Composable
-fun rememberViewerSourceAnchor(shape: Shape): ViewerSourceAnchor {
+fun rememberViewerSourceAnchor(media: TdMedia, shape: Shape): ViewerSourceAnchor {
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
-    return remember(shape, density, layoutDirection) {
+    val anchor = remember(shape, density, layoutDirection) {
         ViewerSourceAnchor(shape, density, layoutDirection)
     }
+    DisposableEffect(media, anchor) {
+        ViewerSourceRegistry.register(media, anchor)
+        onDispose {
+            ViewerSourceRegistry.unregister(media, anchor)
+            anchor.hidden = false
+        }
+    }
+    return anchor
 }
 
-/** Keeps [anchor] pointed at this node's layout so a tap can resolve its on-screen bounds. */
+/** Keeps [anchor] pointed at this node's layout and lets the viewer hide the tile. */
 fun Modifier.viewerSource(anchor: ViewerSourceAnchor): Modifier =
     onPlaced { anchor.coordinates = it }.graphicsLayer { alpha = if (anchor.hidden) 0f else 1f }
 
 /**
- * One-slot hand-off between a tapped tile and [MediaViewerController.open]. Main-thread only
- * (both sides run inside a click dispatch). The slot is cleared on every open, and an entry is
- * honoured only for a photo whose media matches the opened item and only within
- * [SOURCE_MAX_AGE_MS] of the tap — anything else opens exactly as before (no transform).
+ * Composed media tiles by media. Main-thread only (composition effects on one side, the
+ * viewer's effects and click handlers on the other). The same media can be composed twice
+ * (a screen under the one on top, a repost); [find] takes the most recently registered
+ * tile that is still attached, which is the one on the screen the user is looking at.
  */
 internal object ViewerSourceRegistry {
-    private class Pending(
-        val media: TdMedia,
-        val coordinates: LayoutCoordinates,
-        val cornerRadiusPx: Float,
-        val anchor: ViewerSourceAnchor,
-        val atMs: Long,
-    )
+    private val anchors = HashMap<TdMedia, ArrayList<ViewerSourceAnchor>>()
 
-    private var pending: Pending? = null
-
-    fun record(media: TdMedia, coordinates: LayoutCoordinates, cornerRadiusPx: Float, anchor: ViewerSourceAnchor) {
-        pending = Pending(media, coordinates, cornerRadiusPx, anchor, SystemClock.uptimeMillis())
+    fun register(media: TdMedia, anchor: ViewerSourceAnchor) {
+        anchors.getOrPut(media) { ArrayList(1) }.add(anchor)
     }
 
-    fun consume(item: AlbumItem?): ViewerTransitionSource? {
-        val p = pending ?: return null
-        pending = null
-        if (item !is AlbumItem.Photo || item.media != p.media) return null
-        if (SystemClock.uptimeMillis() - p.atMs > SOURCE_MAX_AGE_MS) return null
-        if (!p.coordinates.isAttached) return null
-        return ViewerTransitionSource(p.coordinates, p.cornerRadiusPx, p.anchor)
+    fun unregister(media: TdMedia, anchor: ViewerSourceAnchor) {
+        val list = anchors[media] ?: return
+        list.remove(anchor)
+        if (list.isEmpty()) anchors.remove(media)
     }
 
-    private const val SOURCE_MAX_AGE_MS = 1_000L
+    fun find(media: TdMedia?): ViewerSourceAnchor? =
+        anchors[media ?: return null]?.lastOrNull { it.coordinates?.isAttached == true }
 }

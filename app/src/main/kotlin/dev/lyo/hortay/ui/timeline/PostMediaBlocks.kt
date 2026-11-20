@@ -111,22 +111,11 @@ internal fun MediaWithSpoiler(
     isActive: Boolean = true,
     sourceShape: Shape = MaterialTheme.shapes.medium,
 ) {
-    // Photo tiles register as the fullscreen viewer's grow-from origin: the anchor tracks
-    // this tile's layout and is marked right before the click fires, so the viewer resolves
-    // the on-screen bounds lazily at tap time. [sourceShape] is the clip the caller applies
-    // around this tile, so the viewer's corner radius lands on the tile's own corners.
-    val viewerAnchor = rememberViewerSourceAnchor(sourceShape)
-    val isPhoto = item is AlbumItem.Photo
-    val openOnClick: () -> Unit = remember(item, onClick, viewerAnchor) {
-        if (!isPhoto) {
-            onClick
-        } else {
-            {
-                viewerAnchor.mark(item.media)
-                onClick()
-            }
-        }
-    }
+    // Every tile registers as a fullscreen-viewer transition source (see
+    // [rememberViewerSourceAnchor]): the viewer finds it by media to grow out of it and
+    // shrink back into it. [sourceShape] is the clip the caller applies around this tile,
+    // so the viewer's corner radius lands on the tile's own corners.
+    val viewerAnchor = rememberViewerSourceAnchor(item.media, sourceShape)
     var revealed by remember(item.media.fileId) {
         mutableStateOf(!item.hasSpoiler && !item.isSecret)
     }
@@ -229,8 +218,8 @@ internal fun MediaWithSpoiler(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .then(if (isPhoto) Modifier.viewerSource(viewerAnchor) else Modifier)
-            .clickable(enabled = revealed && !passive, role = Role.Button, onClick = openOnClick),
+            .viewerSource(viewerAnchor)
+            .clickable(enabled = revealed && !passive, role = Role.Button, onClick = onClick),
     ) {
         // When the autoplayer mounts on top, suppress the poster's own progress spinner —
         // TdVideoPlayer renders its own MediaLoadingOverlay for the playback file, and a
@@ -476,6 +465,7 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
     // Tombstone: keep the static (minithumb/cached) poster, but never mount the
     // autoplayer or route a tap to a server-deleted file. See [LocalMediaPassive].
     val passive = LocalMediaPassive.current
+    val viewerAnchor = rememberViewerSourceAnchor(content.media, MaterialTheme.shapes.medium)
 
     MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
     Box(
@@ -485,6 +475,7 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
             .clip(MaterialTheme.shapes.medium)
             // D1 — inline animation (silent MP4 GIF) is opaque rectangular video content.
             .mediaFrame(MaterialTheme.shapes.medium)
+            .viewerSource(viewerAnchor)
             .clickable(enabled = revealed && !passive, role = Role.Button) { onMediaClick(items, 0) },
     ) {
         // Same suppression as MediaWithSpoiler: when the GIF autoplayer is mounted, its own
