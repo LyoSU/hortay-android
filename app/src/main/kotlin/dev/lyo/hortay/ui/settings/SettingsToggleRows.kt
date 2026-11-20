@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import dev.lyo.hortay.data.DEFAULT_QUICK_REACTION
 import dev.lyo.hortay.data.QUICK_REACTION_CHOICES
 import dev.lyo.hortay.ui.timeline.ReactionEmojiGlyph
 import androidx.compose.runtime.Composable
@@ -177,12 +176,13 @@ internal fun ArchiveInAllFeedRow(
 @Composable
 internal fun QuickReactionRow(
     current: String?,
-    onChange: (String?) -> Unit,
+    onEnabledChange: (Boolean) -> Unit,
+    onPick: (String) -> Unit,
 ) {
     val enabled = current != null
     val shapes = settingsGroupedShapes()
     SegmentedListItem(
-        onClick = { onChange(if (enabled) null else DEFAULT_QUICK_REACTION) },
+        onClick = { onEnabledChange(!enabled) },
         shapes = shapes,
         colors = settingsRowColors(),
         leadingContent = {
@@ -199,6 +199,7 @@ internal fun QuickReactionRow(
                     FlowRow(
                         modifier = Modifier.padding(top = HortaySpacing.sm),
                         horizontalArrangement = Arrangement.spacedBy(HortaySpacing.xs),
+                        maxItemsInEachRow = QUICK_REACTION_CHOICES.size / 2,
                     ) {
                         QUICK_REACTION_CHOICES.forEach { emoji ->
                             val selected = emoji == current
@@ -213,7 +214,7 @@ internal fun QuickReactionRow(
                                     .selectable(
                                         selected = selected,
                                         role = Role.RadioButton,
-                                        onClick = { if (!selected) onChange(emoji) },
+                                        onClick = { if (!selected) onPick(emoji) },
                                     ),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -227,7 +228,7 @@ internal fun QuickReactionRow(
         trailingContent = {
             Switch(
                 checked = enabled,
-                onCheckedChange = { on -> onChange(if (on) DEFAULT_QUICK_REACTION else null) },
+                onCheckedChange = onEnabledChange,
             )
         },
         content = {

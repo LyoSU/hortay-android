@@ -452,7 +452,8 @@ private fun SettingsMain(
                         val quickReaction by settings.quickReactionState.collectAsStateWithLifecycle()
                         QuickReactionRow(
                             current = quickReaction,
-                            onChange = { next -> if (next != quickReaction) scope.launch { settings.setQuickReaction(next) } },
+                            onEnabledChange = { on -> scope.launch { settings.setQuickReactionEnabled(on) } },
+                            onPick = { emoji -> if (emoji != quickReaction) scope.launch { settings.setQuickReaction(emoji) } },
                         )
                     }
                     if (archiveInAllFeedState != null) {

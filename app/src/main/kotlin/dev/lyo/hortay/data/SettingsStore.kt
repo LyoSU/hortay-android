@@ -224,13 +224,14 @@ class SettingsStore(context: Context) {
      * tap to wait for, a single tap on a post opens it a beat later (the card cannot know
      * a second tap is not coming). Off restores the instant open. Default on with
      * [DEFAULT_QUICK_REACTION] — the one-gesture "like" readers know from other feeds.
-     * Stored as the emoji itself; an empty string is the explicit "off".
+     * The emoji and the off switch are stored apart, so switching the gesture off and
+     * back on returns the reaction the reader had picked instead of the default.
      */
     val quickReaction: Flow<String?> = dataStore.data.map { prefs ->
-        when (val stored = prefs[KEY_QUICK_REACTION]) {
-            null -> DEFAULT_QUICK_REACTION
-            "" -> null
-            else -> stored
+        if (prefs[KEY_QUICK_REACTION_OFF] == true) {
+            null
+        } else {
+            prefs[KEY_QUICK_REACTION]?.takeIf { it.isNotEmpty() } ?: DEFAULT_QUICK_REACTION
         }
     }.distinctUntilChanged()
 
@@ -241,8 +242,16 @@ class SettingsStore(context: Context) {
         DEFAULT_QUICK_REACTION,
     )
 
-    suspend fun setQuickReaction(emoji: String?) {
-        dataStore.edit { it[KEY_QUICK_REACTION] = emoji.orEmpty() }
+    /** Picks the reaction; picking one also switches the gesture on. */
+    suspend fun setQuickReaction(emoji: String) {
+        dataStore.edit {
+            it[KEY_QUICK_REACTION] = emoji
+            it[KEY_QUICK_REACTION_OFF] = false
+        }
+    }
+
+    suspend fun setQuickReactionEnabled(enabled: Boolean) {
+        dataStore.edit { it[KEY_QUICK_REACTION_OFF] = !enabled }
     }
 
     /**
@@ -374,6 +383,7 @@ class SettingsStore(context: Context) {
         val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
         val KEY_ARCHIVE_IN_ALL_FEED = booleanPreferencesKey("archive_in_all_feed")
         val KEY_GROUP_FEED = booleanPreferencesKey("group_feed")
+        val KEY_QUICK_REACTION_OFF = booleanPreferencesKey("quick_reaction_off")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
