@@ -65,8 +65,10 @@ import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -1884,11 +1886,49 @@ private val ACTION_ITEM_H_PADDING = HortaySpacing.md
  */
 private val ACTION_ROW_BOTTOM_OVERHANG = 6.dp
 
-/** Reactor faces inside a group reaction chip, sized to the 18 dp glyph beside them. */
-private val REACTION_FACE_SIZE = 18.dp
+/**
+ * Drawn size of a reaction chip's glyph — Telegram artwork, system emoji, custom emoji and the
+ * paid ⭐ alike. Equal to [ACTION_ICON_SIZE]: the chips share the action line with the line
+ * glyphs, and at the old ~17 dp they read a size smaller than their neighbours. A fixed dp
+ * like the action glyphs, not sp; the count beside it still follows the font scale.
+ */
+private val REACTION_GLYPH_SIZE = ACTION_ICON_SIZE
 
-/** Leading-edge distance between neighbouring faces in a reaction chip — the rest overlaps. */
-private val REACTION_FACE_STEP = 12.dp
+/**
+ * Width of a colour-emoji glyph in em (Noto Color Emoji advances ~1.25 em). The system-emoji
+ * text is sized from it so it fills [REACTION_GLYPH_SIZE] like the artwork drawn over it.
+ */
+private const val EMOJI_ADVANCE_EM = 1.25f
+
+/** Reactor faces inside a group reaction chip, sized to the glyph beside them. */
+private val REACTION_FACE_SIZE = REACTION_GLYPH_SIZE
+
+/**
+ * Leading-edge distance between neighbouring faces in a reaction chip — the rest overlaps.
+ * Two thirds of a face, so the overlap keeps its proportion whatever the face size.
+ */
+private val REACTION_FACE_STEP = REACTION_FACE_SIZE * 2 / 3
+
+/**
+ * Text style for a reaction chip's text glyphs (the system emoji under the Telegram artwork,
+ * the paid ⭐): a font size whose emoji is [REACTION_GLYPH_SIZE] wide and a line exactly that
+ * tall, so the text fallback, the artwork drawn over it and the choose animation centred on it
+ * all share one [REACTION_GLYPH_SIZE] box. Converted through the density's font scale, so the
+ * glyph stays a fixed dp like the action glyphs.
+ */
+@Composable
+private fun reactionGlyphTextStyle(): TextStyle {
+    val density = LocalDensity.current
+    val base = MaterialTheme.typography.titleSmall
+    return remember(density, base) {
+        with(density) {
+            base.copy(
+                fontSize = (REACTION_GLYPH_SIZE / EMOJI_ADVANCE_EM).toSp(),
+                lineHeight = REACTION_GLYPH_SIZE.toSp(),
+            )
+        }
+    }
+}
 
 /** Minimum touch height of a reaction chip; the drawn pill stays its own (smaller) size. */
 private val REACTION_TOUCH_MIN_HEIGHT = 40.dp
@@ -2018,7 +2058,7 @@ internal fun ReactionChip(
     // why the pill no longer clips its content — the shape clip moved to the ripple layer,
     // so the burst can draw past the pill. Don't add other unclipped overlays here.
     //
-    // Touch box vs drawn pill: the pill draws ~30 dp tall, too small a target in a tight
+    // Touch box vs drawn pill: the pill draws 30 dp tall (5 + the 20 dp glyph + 5), too small a target in a tight
     // row of neighbours (the scrolling strip on the action line, the comment rows). The clickable sits on an outer box at least
     // [REACTION_TOUCH_MIN_HEIGHT] tall with the pill centred inside; the press ripple is
     // re-attached to the pill itself via [indication] on the SAME interactionSource, so the
@@ -2053,7 +2093,7 @@ internal fun ReactionChip(
                     .then(
                         if (disabled) Modifier.alpha(HortayAlpha.FAINT) else Modifier,
                     )
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .padding(horizontal = 8.dp, vertical = 5.dp)
                     .then(
                         if (showSenderFaces) {
                             Modifier.animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec())
@@ -2061,24 +2101,31 @@ internal fun ReactionChip(
                     ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Every kind draws in one [REACTION_GLYPH_SIZE] box. For an emoji the box is
+                // also what the choose animation scales from (centre 2×, burst 3×, centred on
+                // it), so the effect grows with the glyph and stays centred.
+                val glyphTextStyle = reactionGlyphTextStyle()
                 when (val k = item.kind) {
                     is ReactionKind.Emoji -> ReactionEmojiGlyph(
                         emoji = k.text,
-                        style = MaterialTheme.typography.titleSmall,
+                        style = glyphTextStyle,
+                        modifier = Modifier.size(REACTION_GLYPH_SIZE),
                         chooseEffectTrigger = chooseEffectTrigger,
                     )
                     is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
                         customEmojiId = k.customEmojiId,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(REACTION_GLYPH_SIZE),
                         tintColor = tintForCustom,
                         contentDescription = null,
                     )
                     // Paid star reaction — Telegram renders a small ⭐ pill, no count
                     // separator needed because the count is already the star total.
-                    is ReactionKind.Paid -> Text(
-                        text = "⭐",
-                        style = MaterialTheme.typography.titleSmall,
-                    )
+                    is ReactionKind.Paid -> Box(
+                        modifier = Modifier.size(REACTION_GLYPH_SIZE),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "⭐", style = glyphTextStyle)
+                    }
                 }
                 Spacer(Modifier.width(5.dp))
                 val faces = if (showSenderFaces && item.showsSenderFaces()) {
