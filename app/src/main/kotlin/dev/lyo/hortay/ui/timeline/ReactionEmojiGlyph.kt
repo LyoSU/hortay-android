@@ -1,14 +1,15 @@
 package dev.lyo.hortay.ui.timeline
 
 import android.os.SystemClock
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -72,18 +73,23 @@ import kotlin.math.roundToInt
  *     re-measured — the chip, its row and the post keep their size. The trigger starts at
  *     0 in every fresh composition (the caller owns it in `remember`), so a recycled
  *     LazyColumn item or a re-entering chip never replays an old effect.
- *   - **Appear.** With [playAppear], the `appearAnimation` plays once as the glyph enters
- *     composition (the long-press picker strip opening), then rests on the static icon.
+ *   - **Appear.** With a non-negative [appearOrder] (the long-press picker strip opening)
+ *     the glyph itself pops in on a spring, staggered by its position in the strip. This
+ *     is deliberately NOT Telegram's `appearAnimation` TGS: that file is drawn in the
+ *     glossy style of the full-size emoji and at its own proportions, while the glyph
+ *     rests on the flat, outlined `staticIcon` — playing it made the strip show one set of
+ *     emoji while animating and snap to a visibly different, larger set when it ended.
+ *     Animating the resting artwork keeps a single look from the first frame on. It runs
+ *     with either artwork (also the device font in guest mode / System style).
  *
- * Neither plays under reduced motion, without the Telegram artwork (guest mode, System
- * style, failed lookup), or before the static icon is on screen — the centre animation's
- * last frame hands back to the static icon, so it needs the icon to hand back to. The
- * choose-effect files (two small TGS per emoji, kept in TDLib's file cache afterwards) are
- * fetched at [DownloadPriority.Avatar] as soon as a glyph shows its static icon, so they
- * are on disk before the first tap; the appear file only when the picker opens. A play
- * waits for its files and for the static icon up to a budget ([CHOOSE_START_BUDGET_MS] /
- * [APPEAR_START_BUDGET_MS]) and is skipped past it, while the download finishes for the
- * next one. The wait matters for a chip that is NEW with this very pick — the first
+ * The choose effect does not play under reduced motion, without the Telegram artwork
+ * (guest mode, System style, failed lookup), or before the static icon is on screen — the
+ * centre animation's last frame hands back to the static icon, so it needs the icon to
+ * hand back to. Its files (two small TGS per emoji, kept in TDLib's file cache afterwards)
+ * are fetched at [DownloadPriority.Avatar] as soon as a glyph shows its static icon, so
+ * they are on disk before the first tap. A play waits for its files and for the static
+ * icon up to [CHOOSE_START_BUDGET_MS] and is skipped past it, while the download finishes
+ * for the next one. The wait matters for a chip that is NEW with this very pick — the first
  * reaction on a post — whose icon binds a frame or two after the effect is asked for.
  * Nothing here gates the tap or the optimistic reaction flip, which run before any of it.
  */
@@ -93,7 +99,7 @@ internal fun ReactionEmojiGlyph(
     style: TextStyle,
     modifier: Modifier = Modifier,
     chooseEffectTrigger: Int = 0,
-    playAppear: Boolean = false,
+    appearOrder: Int = NO_APPEAR,
 ) {
     val resolver = LocalReactionEmojiIcons.current
     val icon: ReactionEmojiIcon? = if (resolver != null) {
@@ -134,10 +140,6 @@ internal fun ReactionEmojiGlyph(
     // animatable's progress in its draw phase.
     var inner by remember(emoji) { mutableStateOf<LottieComposition?>(null) }
     var around by remember(emoji) { mutableStateOf<LottieComposition?>(null) }
-    // The centre animation keeps its glyph in the middle ~half of its canvas (room for the
-    // motion), the appear animation fills it — so each is drawn at its own scale to land
-    // on the static icon's size.
-    var innerScale by remember(emoji) { mutableFloatStateOf(1f) }
     val innerProgress = rememberLottieAnimatable()
     val aroundProgress = rememberLottieAnimatable()
 
@@ -165,7 +167,6 @@ internal fun ReactionEmojiGlyph(
         coroutineScope {
             if (centerComp != null) {
                 launch {
-                    innerScale = CENTER_SCALE
                     playOnce(centerComp, innerProgress) { inner = it }
                 }
             }
@@ -173,22 +174,25 @@ internal fun ReactionEmojiGlyph(
         }
     }
 
-    val appearMedia = icon?.appearAnimation
-    val composedAt = remember(emoji) { SystemClock.uptimeMillis() }
-    // Keyed on the media too: the strip may open before this emoji's artwork resolves,
-    // and it still plays if the file shows up inside the budget counted from opening.
-    LaunchedEffect(playAppear, appearMedia) {
-        if (!playAppear || appearMedia == null || reducedMotion) return@LaunchedEffect
-        cache.prefetchReactionAnimation(appearMedia)
-        val budget = APPEAR_START_BUDGET_MS - (SystemClock.uptimeMillis() - composedAt)
-        val comp = cache.loadReactionAnimation(appearMedia, budget) ?: return@LaunchedEffect
-        if (!canAnimateNow) return@LaunchedEffect
-        innerScale = 1f
-        playOnce(comp, innerProgress) { inner = it }
+    val appears = appearOrder >= 0 && !reducedMotion
+    val appear = remember(emoji) { Animatable(if (appears) APPEAR_FROM else 1f) }
+    val appearSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    LaunchedEffect(appear) {
+        if (appear.value == 1f) return@LaunchedEffect
+        delay(appearOrder * APPEAR_STAGGER_MS)
+        appear.animateTo(1f, appearSpec)
     }
 
     val innerPlaying = inner != null
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(
+        modifier = modifier.graphicsLayer {
+            val value = appear.value
+            scaleX = value
+            scaleY = value
+            alpha = ((value - APPEAR_FROM) / APPEAR_FADE_SPAN).coerceIn(0f, 1f)
+        },
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
             text = emoji.withEmojiPresentation(),
             style = style,
@@ -213,7 +217,7 @@ internal fun ReactionEmojiGlyph(
             LottieAnimation(
                 composition = comp,
                 progress = { innerProgress.progress },
-                modifier = Modifier.matchParentSize().drawOversized(innerScale),
+                modifier = Modifier.matchParentSize().drawOversized(CENTER_SCALE),
             )
         }
         around?.let { comp ->
@@ -325,12 +329,17 @@ internal fun rememberReactionEffectRequest(): ReactionEffectRequest {
     return request
 }
 
-/**
- * How many emoji of the picker strip play their appear animation as it opens — the ones
- * visible without scrolling on a phone. The rest rest on the static icon: each appear
- * animation is one more file to fetch and one more Lottie drawable running at once.
- */
-internal const val PICKER_APPEAR_LIMIT = 7
+/** [ReactionEmojiGlyph]'s `appearOrder` for a glyph that is simply there, with no entrance. */
+internal const val NO_APPEAR = -1
+
+/** Scale the picker entrance starts from. */
+private const val APPEAR_FROM = 0.4f
+
+/** Part of the entrance's scale travel over which the glyph fades in. */
+private const val APPEAR_FADE_SPAN = 0.3f
+
+/** Delay between neighbouring picker emoji starting their entrance. */
+private const val APPEAR_STAGGER_MS = 24L
 
 /** The centre animation's drawn size relative to the glyph box (its glyph fills ~half the canvas). */
 private const val CENTER_SCALE = 2f
@@ -340,9 +349,6 @@ private const val AROUND_SCALE = 3f
 
 /** From the tap: how long the centre/around files may take to be ready and parsed. */
 private const val CHOOSE_START_BUDGET_MS = 1_500L
-
-/** From the picker opening: how long an appear file may take to be ready and parsed. */
-private const val APPEAR_START_BUDGET_MS = 1_200L
 
 /** Lifetime of an unconsumed [ReactionEffectRequest]. */
 private const val EFFECT_REQUEST_TTL_MS = 2_000L

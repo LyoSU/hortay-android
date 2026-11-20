@@ -79,10 +79,10 @@ class ReactionEmojiIconRepositoryTest {
         val f = Fixture(this)
         f.td.onAny("GetEmojiReaction") {
             emojiReaction(HEART, webpIcon(fileId = 1)).apply {
-                appearAnimation = tgsSticker(fileId = 2)
                 centerAnimation = tgsSticker(fileId = 3)
                 aroundAnimation = tgsSticker(fileId = 4)
                 // Not played by the reaction glyph — must not be fetched or kept.
+                appearAnimation = tgsSticker(fileId = 2)
                 selectAnimation = tgsSticker(fileId = 5)
                 effectAnimation = tgsSticker(fileId = 6)
                 activateAnimation = tgsSticker(fileId = 7)
@@ -95,7 +95,6 @@ class ReactionEmojiIconRepositoryTest {
         assertEquals(1, f.td.rpcCounts.values.sum(), "no other TDLib request — animation files download lazily from the UI")
         val icon = f.repo.get(HEART)
         assertEquals(1, icon?.media?.fileId)
-        assertEquals(2, icon?.appearAnimation?.fileId)
         assertEquals(3, icon?.centerAnimation?.fileId)
         assertEquals(4, icon?.aroundAnimation?.fileId)
         f.scope.cancel()
@@ -118,7 +117,6 @@ class ReactionEmojiIconRepositoryTest {
 
         val icon = f.repo.get(FIRE)
         assertEquals(8, icon?.media?.fileId)
-        assertNull(icon?.appearAnimation)
         assertNull(icon?.centerAnimation)
         assertNull(icon?.aroundAnimation)
         f.scope.cancel()

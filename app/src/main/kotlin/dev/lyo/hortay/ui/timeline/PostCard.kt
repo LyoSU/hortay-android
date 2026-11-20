@@ -1822,7 +1822,7 @@ internal fun ReactionPickerStrip(
                         ReactionPickerTarget(
                             kind = kind,
                             chosen = kind.stableKey in chosenKeys,
-                            playAppear = false,
+                            appearOrder = NO_APPEAR,
                             onPick = onPick,
                         )
                     }
@@ -1840,9 +1840,8 @@ internal fun ReactionPickerStrip(
                         ReactionPickerTarget(
                             kind = kind,
                             chosen = kind.stableKey in chosenKeys,
-                            // Telegram's appear animation as the strip opens, for the
-                            // leading [PICKER_APPEAR_LIMIT] emoji only (see that constant).
-                            playAppear = index < PICKER_APPEAR_LIMIT,
+                            // Pops in as the strip opens, staggered left to right.
+                            appearOrder = index,
                             onPick = onPick,
                         )
                     }
@@ -1878,7 +1877,7 @@ internal fun ReactionPickerStrip(
 private fun ReactionPickerTarget(
     kind: ReactionKind,
     chosen: Boolean,
-    playAppear: Boolean,
+    appearOrder: Int,
     onPick: (ReactionKind) -> Unit,
 ) {
     val background =
@@ -1897,7 +1896,7 @@ private fun ReactionPickerTarget(
             is ReactionKind.Emoji -> ReactionEmojiGlyph(
                 emoji = kind.text,
                 style = MaterialTheme.typography.titleLarge,
-                playAppear = playAppear,
+                appearOrder = appearOrder,
             )
             is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
                 customEmojiId = kind.customEmojiId,

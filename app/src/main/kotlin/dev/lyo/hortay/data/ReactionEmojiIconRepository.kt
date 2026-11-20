@@ -26,13 +26,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * [TdApi.Sticker]. Neither [TdApi.AvailableReaction] (just a `ReactionType`) nor
  * [TdApi.UpdateActiveEmojiReactions] (just emoji strings) carries the artwork, so the
  * per-emoji call is the only documented source. The same response also carries
- * Telegram's one-shot reaction animations; three of them are kept from it (no extra call):
- * `appearAnimation` (the picker strip plays it once as it opens), `centerAnimation` and
- * `aroundAnimation` (played once when the user picks the reaction). Only TGS stickers are
+ * Telegram's one-shot reaction animations; two of them are kept from it (no extra call):
+ * `centerAnimation` and `aroundAnimation`, played once when the user picks the reaction. Only TGS stickers are
  * kept — they go through the app's existing Lottie pipeline; any other format counts as
  * "no animation". The animation FILES are not downloaded here: [ReactionEmojiIcon] only
  * holds their TDLib file ids, and the glyph fetches one through `MediaCache` at
- * [DownloadPriority.Avatar] only when the picker opens or the user taps a reaction.
+ * [DownloadPriority.Avatar] once the reaction is on screen, ahead of the user's tap.
  *
  * Request budget:
  *   - **Lazy.** [request] is called from the reaction glyph composable only, so only
@@ -134,8 +133,6 @@ class ReactionEmojiIconRepository(
 data class ReactionEmojiIcon(
     val emoji: String,
     val media: TdMedia,
-    /** Played once by each emoji of the long-press picker strip as it opens. */
-    val appearAnimation: TdMedia? = null,
     /** Played once inside the chip's glyph box when the user picks the reaction. */
     val centerAnimation: TdMedia? = null,
     /** The burst played once around the glyph, together with [centerAnimation]. */
@@ -148,7 +145,6 @@ internal fun TdApi.EmojiReaction.toReactionEmojiIcon(emoji: String): ReactionEmo
     return ReactionEmojiIcon(
         emoji = emoji,
         media = media,
-        appearAnimation = appearAnimation.toReactionAnimationMedia(),
         centerAnimation = centerAnimation.toReactionAnimationMedia(),
         aroundAnimation = aroundAnimation.toReactionAnimationMedia(),
     )
