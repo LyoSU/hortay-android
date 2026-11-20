@@ -783,6 +783,7 @@ class AppGraph(context: Context) {
         //
         // Registered last, so these run after the hooks registered at construction.
         session.onEnd("graph") { runLogoutCleanup() }
+        session.onEnd("minithumbTints") { dev.lyo.hortay.ui.media.MinithumbTints.clear() }
         session.bind(tdClient.loggedOut)
     }
 

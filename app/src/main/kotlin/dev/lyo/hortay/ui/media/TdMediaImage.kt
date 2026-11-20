@@ -327,6 +327,9 @@ internal object MinithumbTints {
 
     fun peek(key: Key): Color? = cache.get(key)?.toTint()
 
+    /** Logout wipe: the keys are the previous account's thumbnail bytes. */
+    fun clear() = cache.evictAll()
+
     suspend fun compute(key: Key): Color? = withContext(Dispatchers.Default) {
         cache.get(key)?.let { return@withContext it.toTint() }
         val argb = averageArgb(key.bytes)
