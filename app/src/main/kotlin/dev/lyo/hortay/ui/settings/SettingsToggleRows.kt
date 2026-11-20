@@ -21,7 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
@@ -205,7 +205,7 @@ internal fun QuickReactionRow(
                             val selected = emoji == current
                             Box(
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .sizeIn(minWidth = 44.dp, minHeight = 44.dp)
                                     .clip(CircleShape)
                                     .background(
                                         if (selected) MaterialTheme.colorScheme.primaryContainer
@@ -215,7 +215,10 @@ internal fun QuickReactionRow(
                                         selected = selected,
                                         role = Role.RadioButton,
                                         onClick = { if (!selected) onPick(emoji) },
-                                    ),
+                                    )
+                                    // The cell grows with the glyph: at font scale 2.0 a fixed
+                                    // 44 dp circle left the emoji touching each other.
+                                    .padding(6.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 ReactionEmojiGlyph(emoji = emoji, style = MaterialTheme.typography.titleLarge)
