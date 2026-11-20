@@ -146,7 +146,15 @@ class WebTelegramClient(
                 Log.w(TAG, "fetchChannelPage(${username}) failed: ${error.message}")
                 return@withContext FetchResult.NetworkError(error)
             }
-            response.use { handleResponse(it, username, reportNotModified) }
+            // The body is streamed: a connection dropped after the headers makes
+            // `body.string()` throw. That is the same network failure as above, and
+            // must not escape into the caller's coroutine (Add channel has no handler).
+            try {
+                response.use { handleResponse(it, username, reportNotModified) }
+            } catch (error: java.io.IOException) {
+                Log.w(TAG, "fetchChannelPage(${username}) body read failed: ${error.message}")
+                FetchResult.NetworkError(error)
+            }
         }
     }
 
