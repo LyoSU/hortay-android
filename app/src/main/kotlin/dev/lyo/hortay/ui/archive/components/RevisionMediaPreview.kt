@@ -13,8 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -28,6 +30,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import coil3.video.VideoFrameDecoder
+import coil3.video.videoFrameMillis
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.archive.ArchivedMediaRef
@@ -91,7 +95,6 @@ private fun VisualMedia(
         value = resolver?.resolve(media, postDeleted) ?: ArchivedMediaSource.PreviewOnly
     }
     val shape = MaterialTheme.shapes.medium
-    val context = LocalContext.current
     Box(
         modifier = modifier
             .heightIn(max = REVISION_MEDIA_MAX_HEIGHT)
@@ -103,12 +106,7 @@ private fun VisualMedia(
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         when (val s = source) {
-            is ArchivedMediaSource.ArchivedFile -> AsyncImage(
-                model = remember(s.path, context) { ImageRequest.Builder(context).data(File(s.path)).build() },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            is ArchivedMediaSource.ArchivedFile -> ArchivedFileImage(media, s.path)
             is ArchivedMediaSource.TdlibFile -> TdMediaImage(
                 media = TdMedia(
                     fileId = s.fileId,
@@ -129,6 +127,44 @@ private fun VisualMedia(
         }
     }
 }
+
+/**
+ * The archive's own copy, `archive_media/<sha>.bin`. The `.bin` name gives Coil no MIME hint,
+ * so for video, GIF (animation) and round-video copies its default decoder chain tries the
+ * bitmap decoder, fails, and the box stays empty — the request names [VideoFrameDecoder]
+ * explicitly and takes the first frame. Photos keep the default chain.
+ *
+ * Until the file decodes, the blurred minithumb sits underneath without a badge (no flash
+ * before a sharp frame lands); a copy that fails to decode (corrupt, unsupported codec)
+ * falls back to the full [PreviewOnly] rendering with its badge instead of an empty box.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.ArchivedFileImage(media: ArchivedMediaRef, path: String) {
+    val context = LocalContext.current
+    val isVideo = media.type != "photo"
+    val request = remember(path, isVideo, context) {
+        ImageRequest.Builder(context)
+            .data(File(path))
+            .apply { if (isVideo) decoderFactory(VideoFrameDecoder.Factory()).videoFrameMillis(0L) }
+            .build()
+    }
+    var load by remember(path) { mutableStateOf(ArchivedLoad.Loading) }
+    if (load != ArchivedLoad.Success) {
+        PreviewOnly(media, showBadge = load == ArchivedLoad.Failed)
+    }
+    if (load != ArchivedLoad.Failed) {
+        AsyncImage(
+            model = request,
+            contentDescription = null,
+            onSuccess = { load = ArchivedLoad.Success },
+            onError = { load = ArchivedLoad.Failed },
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+private enum class ArchivedLoad { Loading, Success, Failed }
 
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.PreviewOnly(media: ArchivedMediaRef, showBadge: Boolean) {
