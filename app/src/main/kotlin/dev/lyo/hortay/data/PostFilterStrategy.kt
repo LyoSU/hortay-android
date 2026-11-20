@@ -115,6 +115,8 @@ object PostFilterStrategy {
         val merged = anchor.copy(
             views = members.maxOf { it.views },
             commentCount = members.mapNotNull { it.commentCount }.maxOrNull(),
+            // Like the count, the repliers ride a single member of the album.
+            recentRepliers = members.firstOrNull { it.recentRepliers.isNotEmpty() }?.recentRepliers ?: anchor.recentRepliers,
             reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
             albumMessageIds = sorted.map { it.id },
             isPinned = members.any { it.isPinned },

@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data
 
 import androidx.compose.runtime.Immutable
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 
 /**
  * UI-facing message model — used for both channel feed posts AND discussion-thread comments.
@@ -54,6 +56,14 @@ data class TimelinePost(
     val reactions: Reactions,
     /** Null when the channel has no linked discussion group; 0 when discussion is enabled but empty. Always null for comments. */
     val commentCount: Int?,
+    /**
+     * Up to three of the latest commenters, newest first, as Telegram reports them with the
+     * post (`recent_replier_ids`) — drawn as a small face pile next to the comment count.
+     * Resolved when the message is mapped; live count updates keep the faces they had, so
+     * the pile can lag the count until the post is mapped again. Empty for comments, for
+     * posts without a discussion group and in guest mode.
+     */
+    val recentRepliers: ImmutableList<ReplierAvatar> = persistentListOf(),
     /**
      * All message ids belonging to this album, in posting order. Empty for standalone
      * posts. Telegram attaches the discussion thread to a SINGLE album member (usually
@@ -152,4 +162,12 @@ data class ChannelContext(
     val handle: String?,
     val avatarThumb: ByteArray?,
     val avatarFileId: Int?,
+)
+
+/** One recent commenter of a post: just enough to draw a face (or an initial). */
+@Immutable
+data class ReplierAvatar(
+    val name: String,
+    val thumb: ByteArray?,
+    val fileId: Int?,
 )

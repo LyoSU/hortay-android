@@ -18,6 +18,7 @@
 - The Channels tab can hide every channel from the feed or show them all again in one step, so keeping only a few channels in a long list no longer takes a tap per channel.
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
 - A bookmark button under every post saves it to the Saved tab in one tap, next to a Share button.
+- The comment count under a post shows the faces of the latest commenters.
 - Settings → Appearance lets you pick a System, Light or Dark theme, with a Pure black option for dark mode.
 - Settings → Reading lets you choose the text size of posts, comments and articles in four steps, with a live preview.
 - Voice messages and audio tracks have a speed button that switches between 1×, 1.5× and 2×.

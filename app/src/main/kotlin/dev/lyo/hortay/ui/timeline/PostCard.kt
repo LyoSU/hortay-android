@@ -94,7 +94,10 @@ import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
+import dev.lyo.hortay.data.ReplierAvatar
 import dev.lyo.hortay.data.TimelinePost
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import dev.lyo.hortay.data.isUnreadAt
 import dev.lyo.hortay.data.stableKey
@@ -565,6 +568,7 @@ fun PostCard(
                         views = post.views,
                         forwardCount = post.forwardCount,
                         commentCount = post.commentCount,
+                        recentRepliers = post.recentRepliers,
                         reactions = post.reactions,
                         // The comments anchor (clickable = false) is already the thread, so its
                         // count stays a read-only stat there.
@@ -1419,6 +1423,8 @@ private fun ActionRow(
     forwardCount: Int,
     commentCount: Int?,
     reactions: dev.lyo.hortay.data.Reactions,
+    /** Faces of the latest commenters, shown only where the count opens the thread. */
+    recentRepliers: ImmutableList<ReplierAvatar> = persistentListOf(),
     /** Null renders the comment count as a read-only stat (the comments anchor itself). */
     onCommentsClick: (() -> Unit)?,
     /** Whether Save / Share render at all — the same gate as the "⋯" action sheet. */
@@ -1517,6 +1523,10 @@ private fun ActionRow(
                 symbol = "line_comment",
                 count = formatViews(safeCommentCount),
                 onClick = onCommentsClick,
+                // On the comments anchor the thread is right below — no need to preview it.
+                trailing = if (onCommentsClick != null && recentRepliers.isNotEmpty()) {
+                    { ReplierFacePile(recentRepliers) }
+                } else null,
             )
         }
         // Forwarding is ONE item: the forward arrow carries the forward count and, where the
@@ -1610,6 +1620,8 @@ private fun ActionItem(
     contentDescription: String? = null,
     filled: Boolean = false,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    /** Optional content after the count (the commenters' face pile). */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val shape = HortayExpressive.Pill.asComposeShape()
     Row(
@@ -1644,9 +1656,49 @@ private fun ActionItem(
                     maxLines = 1,
                 )
             }
+            if (trailing != null) {
+                Spacer(Modifier.width(HortaySpacing.sm))
+                trailing()
+            }
         }
     }
 }
+
+/**
+ * Overlapping faces of a post's latest commenters, after the comment count: a thread with
+ * people in it reads as a conversation, not as a number. Decorative — the count next to it
+ * is what a screen reader announces. Each face sits on a ring in the page colour so the
+ * overlap stays legible on any avatar.
+ */
+@Composable
+private fun ReplierFacePile(repliers: ImmutableList<ReplierAvatar>) {
+    Box {
+        repliers.forEachIndexed { i, replier ->
+            Box(
+                modifier = Modifier
+                    .padding(start = REPLIER_FACE_STEP * i)
+                    .size(REPLIER_FACE_SIZE)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(1.5.dp),
+            ) {
+                TdAvatar(
+                    name = replier.name,
+                    thumb = replier.thumb,
+                    fileId = replier.fileId,
+                    size = REPLIER_FACE_SIZE - 3.dp,
+                    background = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    textStyle = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+    }
+}
+
+private val REPLIER_FACE_SIZE = 22.dp
+
+/** Distance between neighbouring faces' leading edges — the rest overlaps. */
+private val REPLIER_FACE_STEP = 15.dp
 
 /** Glyph size of every item on the action line (line family, see [ActionRow]). */
 private val ACTION_ICON_SIZE = 20.dp

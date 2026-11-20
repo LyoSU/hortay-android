@@ -1,5 +1,8 @@
 package dev.lyo.hortay.data
 
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import dev.lyo.hortay.R
 import org.drinkless.tdlib.TdApi
 
@@ -104,6 +107,7 @@ class MessageMapper(
             reply = mapReply(message.replyTo, message.chatId),
             reactions = MessageContentMapper.mapReactions(message.interactionInfo?.reactions),
             commentCount = message.interactionInfo?.replyInfo?.replyCount,
+            recentRepliers = mapRecentRepliers(message.interactionInfo?.replyInfo),
             // Filled in by PostFilterStrategy.mergeAlbumMembers — per-message mapping has
             // no idea which siblings exist yet.
             albumMessageIds = emptyList(),
@@ -248,6 +252,21 @@ class MessageMapper(
             avatarThumb = c.photo?.minithumbnail?.data,
             avatarFileId = c.photo?.small?.id,
         )
+    }
+
+    /**
+     * The faces of a post's latest commenters. TDLib ships the ids with the message and
+     * keeps name + photo of those users/chats available even when they are otherwise
+     * inaccessible (td_api.tl `messageReplyInfo.recent_replier_ids`), so this is local
+     * lookups only — no thread fetch per post.
+     */
+    private suspend fun mapRecentRepliers(info: TdApi.MessageReplyInfo?): ImmutableList<ReplierAvatar> {
+        val ids = info?.recentReplierIds
+        if (ids.isNullOrEmpty() || info.replyCount <= 0) return persistentListOf()
+        return ids.take(MAX_RECENT_REPLIERS).map { id ->
+            val resolved = resolveSender(id)
+            ReplierAvatar(name = resolved.name, thumb = resolved.avatarThumb, fileId = resolved.avatarFileId)
+        }.toImmutableList()
     }
 
     private suspend fun mapForwardOrigin(origin: TdApi.MessageOrigin): ForwardOrigin = when (origin) {
@@ -452,3 +471,6 @@ private fun TdApi.VerificationStatus.toMark(): SenderVerification? = when {
     isFake -> SenderVerification.Fake
     else -> null
 }
+
+/** TDLib reports at most three; the cap also bounds the lookups per mapped post. */
+private const val MAX_RECENT_REPLIERS = 3
