@@ -97,6 +97,8 @@ internal fun TabContentSwitcher(
                     //     and channel overlay use the same vocabulary, so the
                     //     gesture model and motion language are uniform.
                     tabStateHolder.SaveableStateProvider(key = "feed-channel:__all__") {
+                        val mutedSavedKeys by graph.postsRepository.mutedSavedKeys
+                            .collectAsStateWithLifecycle()
                         TimelineScreen(
                             feed = graph.postsRepository,
                             tdlibRepo = graph.postsRepository,
@@ -108,6 +110,7 @@ internal fun TabContentSwitcher(
                             bookmarks = graph.bookmarkStore,
                             contentPadding = padding,
                             showOnlyBookmarked = false,
+                            feedExcludedKeys = mutedSavedKeys,
                             onChannelOpen = { id, scrollTo -> onSafelyOpenChannel(id, scrollTo) },
                             onOpenComments = { post -> onPushComments(post) },
                             onShowFullPost = onShowFullPost,

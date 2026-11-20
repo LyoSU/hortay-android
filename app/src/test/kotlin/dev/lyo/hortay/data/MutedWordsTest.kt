@@ -49,6 +49,22 @@ class MutedWordsTest {
     }
 
     @Test
+    fun `a saved post survives a muted word and is reported as saved-only`() {
+        val posts = listOf(post(1, "spam saved"), post(2, "spam"), post(3, "clean"))
+        val filter = MutedWordsFilter()
+        val saved = setOf(posts[0].bookmarkKey())
+        assertEquals(listOf(1L, 3L), filter.apply(posts, setOf("spam"), saved).map { it.id })
+        assertEquals(saved, filter.savedOnly)
+        // Unsaving it removes it from the list and from the saved-only set.
+        assertEquals(listOf(3L), filter.apply(posts, setOf("spam"), emptySet()).map { it.id })
+        assertTrue(filter.savedOnly.isEmpty())
+        // No muted words: nothing is "saved-only", every post is an ordinary feed row.
+        filter.apply(posts, setOf("spam"), saved)
+        assertSame(posts, filter.apply(posts, emptySet(), saved))
+        assertTrue(filter.savedOnly.isEmpty())
+    }
+
+    @Test
     fun `entries are normalised and one-letter entries are refused`() {
         assertEquals("big sale", MutedWordsStore.normalize("  Big   SALE "))
         assertEquals("#промо", MutedWordsStore.normalize("#Промо"))

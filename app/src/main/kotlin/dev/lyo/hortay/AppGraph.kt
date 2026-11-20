@@ -257,6 +257,8 @@ class AppGraph(context: Context) {
         ArchiveRepository(archiveDb, archiveSettingsState, archivedMediaStore, appScope)
     val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState, archivedMediaStore)
 
+    val bookmarkStore: BookmarkStore = BookmarkStore(context)
+
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
         mapper = messageMapper,
@@ -269,6 +271,7 @@ class AppGraph(context: Context) {
         res = res,
         ignoredChannels = ignoredChannels,
         mutedWords = mutedWords,
+        savedKeys = bookmarkStore.bookmarks,
         coldStartBackfill = coldStartBackfillStore,
         archiveRepository = archiveRepository,
         archiveMediaStore = archivedMediaStore,
@@ -380,8 +383,6 @@ class AppGraph(context: Context) {
             resolveActivePolicy(lifecycleBridge.networkType.value, autoDownloadStore.settings.value)
         }
     }
-
-    val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
     val statsRepository: StatsRepository = StatsRepository(tdClient, userMessages, res)
 

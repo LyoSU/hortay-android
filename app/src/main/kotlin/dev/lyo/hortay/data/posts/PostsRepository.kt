@@ -148,6 +148,11 @@ class PostsRepository(
     /** Muted words for the merged feed; same read-side contract as [ignoredChannels]. */
     private val mutedWords: dev.lyo.hortay.data.MutedWordsStore? = null,
     /**
+     * Bookmark keys (`BookmarkStore.bookmarks`). A saved post survives the word filter
+     * so it stays in the Saved tab — see [mutedSavedKeys]. Null = nothing is saved.
+     */
+    private val savedKeys: Flow<Set<String>>? = null,
+    /**
      * One-shot persisted flag for the first-sign-in history backfill (see
      * [runFirstSignInBackfill]). Optional for the same test-constructor
      * reason as [ignoredChannels]; when null, the backfill becomes a no-op.
@@ -418,6 +423,20 @@ class PostsRepository(
     // to first access, by which point both fields are initialised. No race:
     // first access is from TimelineViewModel.init through `repo.subscribedPosts`,
     // long after PostsRepository's constructor returns.
+    private val _mutedSavedKeys =
+        MutableStateFlow<kotlinx.collections.immutable.PersistentSet<String>>(
+            kotlinx.collections.immutable.persistentSetOf(),
+        )
+
+    /**
+     * Bookmark keys of the rows [subscribedPosts] carries only for the Saved tab: saved
+     * posts that contain a muted word. The Feed route drops them by key
+     * (`TimelineScreen.feedExcludedKeys`), the same way guest mode drops
+     * `WebFeedSource.savedOnlyKeys`.
+     */
+    val mutedSavedKeys: StateFlow<kotlinx.collections.immutable.PersistentSet<String>> =
+        _mutedSavedKeys.asStateFlow()
+
     override val subscribedPosts: StateFlow<PersistentList<TimelinePost>> by lazy {
         // `ignored` participates in the same `combine` as the chat-list gates so
         // an un-hide propagates in a single coherent emission — no transient
@@ -428,7 +447,10 @@ class PostsRepository(
         // Hidden channels and muted words travel as one pair for the same reason as
         // `archiveAuxFlow` below: the typed `combine` stops at five flows.
         val mutedFlow: Flow<Set<String>> = mutedWords?.words ?: flowOf(emptySet())
-        val feedFilterFlow = combine(ignoredFlow, mutedFlow) { hidden, muted -> hidden to muted }
+        val savedFlow: Flow<Set<String>> = savedKeys ?: flowOf(emptySet())
+        val feedFilterFlow = combine(ignoredFlow, mutedFlow, savedFlow) { hidden, muted, saved ->
+            Triple(hidden, muted, saved)
+        }
         val mutedWordsFilter = dev.lyo.hortay.data.MutedWordsFilter()
         // Tombstones flow — TDLib-only archived DELETED snapshots reconstructed as ghost
         // posts. Merges into the live feed in the same combine so chat-list gates and
@@ -448,13 +470,14 @@ class PostsRepository(
         // to Array<Any>, which we'd then have to cast at every read).
         val archiveAuxFlow = combine(tombstonesFlow, revisionCountsFlow) { t, r -> t to r }
         combine(_posts, _mainChatIds, _archivedChatIds, feedFilterFlow, archiveAuxFlow) { all, mainIds, archivedIds, feedFilter, archiveAux ->
-            val (ignored, muted) = feedFilter
+            val (ignored, muted, saved) = feedFilter
             val (tombstones, revCounts) = archiveAux
             val subscribed = if (mainIds.isEmpty() && archivedIds.isEmpty()) all
             else all.filter { it.chatId in mainIds || it.chatId in archivedIds }
             val shown = if (ignored.isEmpty()) subscribed
             else subscribed.filter { it.chatId !in ignored }
-            val gated = mutedWordsFilter.apply(shown, muted)
+            val gated = mutedWordsFilter.apply(shown, muted, saved)
+            _mutedSavedKeys.value = mutedWordsFilter.savedOnly
             // Seed revisionCount from archive — preserves the EditedChip counter across
             // relaunches. Live-session bumps via handleContentChanged already work; this
             // patches in the values for posts that were edited in earlier sessions and
@@ -490,6 +513,8 @@ class PostsRepository(
                         t.chatId !in ignored
                 }
                 .map { reuseGhost(it) }
+                // A deleted post's text is still text the reader muted.
+                .filter { muted.isEmpty() || !dev.lyo.hortay.data.MutedWordsFilter.isMuted(it.content.captionPlain, muted) }
                 .toList()
             if (ghosts.isEmpty()) filtered.toPersistentList()
             else (filtered + ghosts).sortedByDescending { it.date }.toPersistentList()

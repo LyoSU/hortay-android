@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.collections.immutable.ImmutableSet
+import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.coroutines.flow.Flow
@@ -82,10 +83,23 @@ class MutedWordsFilter {
     private var memoWords: Set<String> = emptySet()
     private var memo = IdentityHashMap<PostContent, Boolean>()
 
-    fun apply(posts: List<TimelinePost>, words: Set<String>): List<TimelinePost> {
+    /**
+     * Keys of the posts the last [apply] kept only because they are saved: a muted word
+     * must not make a bookmark vanish from the Saved tab, so those rows stay in the
+     * list and the feed drops them by key instead (see `PostsRepository.mutedSavedKeys`).
+     */
+    var savedOnly: PersistentSet<String> = persistentSetOf()
+        private set
+
+    fun apply(
+        posts: List<TimelinePost>,
+        words: Set<String>,
+        savedKeys: Set<String> = emptySet(),
+    ): List<TimelinePost> {
         if (words.isEmpty()) {
             if (memo.isNotEmpty()) memo = IdentityHashMap()
             memoWords = words
+            savedOnly = persistentSetOf()
             return posts
         }
         val previous = if (words == memoWords) memo else null
@@ -99,7 +113,18 @@ class MutedWordsFilter {
         }
         memo = next
         memoWords = words
-        return if (anyMuted) posts.filter { next[it.content] != true } else posts
+        if (!anyMuted) {
+            savedOnly = persistentSetOf()
+            return posts
+        }
+        val kept = HashSet<String>()
+        val out = posts.filter { post ->
+            if (next[post.content] != true) return@filter true
+            val key = post.bookmarkKey()
+            (key in savedKeys).also { saved -> if (saved) kept += key }
+        }
+        savedOnly = if (kept.isEmpty()) persistentSetOf() else kept.toPersistentSet()
+        return out
     }
 
     companion object {
