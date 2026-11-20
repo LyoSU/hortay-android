@@ -54,6 +54,7 @@
 - Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.
 - Replies in a comments thread are linked to the comment they answer by a thin line, and new comments slide into place instead of jumping.
 - Reaction chips are easier to tap without hitting a neighbouring one.
+- Reaction, view, comment and forward counts roll to their new value, a new reaction eases in, and reactions glide to their new place when their order changes, instead of everything snapping.
 - On tablets and wide windows, the bottom navigation bar, Channels and Settings keep a comfortable width instead of stretching across the screen.
 - Error messages say what happened in plain words first, Telegram's rate limit is described the same way everywhere, and sign-in uses Telegram's own "two-step verification" wording.
 - Tapping a photo, video or GIF grows it out of its place in the feed into the fullscreen viewer over a blurred backdrop, and closing shrinks it back — in an album, into the item you swiped to.

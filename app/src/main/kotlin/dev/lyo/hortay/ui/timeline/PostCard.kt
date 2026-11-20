@@ -1,6 +1,8 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateBounds
+import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
@@ -17,14 +19,8 @@ import dev.lyo.hortay.ui.components.contextMenuAnchor
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -1476,61 +1472,86 @@ private fun ActionRow(
     effectRequest: ReactionEffectRequest? = null,
 ) {
     val haptics = LocalHapticFeedback.current
-    if (reactions.items.isNotEmpty()) {
-        // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
-        // star-amount confirmation flow we don't host. Tap surfaces a snackbar
-        // explaining the situation, with an action button that opens *this
-        // specific* post in Telegram (via the per-post callback, routed
-        // through [PostActions.openInTelegram]). The chip is rendered at the
-        // [HortayAlpha.FAINT] alpha to read as informational rather than interactive (see
-        // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
-        // bouncing the user out of Hortay before they can change their mind.
-        val res = LocalContext.current.resources
-        val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
-        val openTelegramLabel = res.getString(R.string.action_open_telegram)
-        val paidExplainer = res.getString(R.string.reactions_paid_explainer)
-        // Rows of chips stack with NO extra gap: every chip reserves a
-        // [REACTION_TOUCH_MIN_HEIGHT] touch box around its drawn pill (see [ReactionChip]),
-        // and that slack is the visible gap between chip rows.
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(HortaySpacing.sm),
-        ) {
-            // Key each chip by its reaction-bucket identity, NOT by position. TDLib ranks
-            // reaction buckets by frequency and re-orders them on every
-            // UpdateMessageInteractionInfo; a positional (unkeyed) loop would then reuse a
-            // chip slot that was rendering custom emoji A to render custom emoji B, and the
-            // underlying Coil AsyncImage keeps painting A's already-decoded bitmap until B
-            // decodes — so two different reactions momentarily render the SAME custom emoji.
-            // A stable key moves composition state with the bucket instead of reusing by slot.
-            reactions.items.forEach { item ->
-                key(item.kind.stableKey) {
-                    val isPaid = item.kind is ReactionKind.Paid
-                    val tapHandler: () -> Unit = if (isPaid) {
-                        {
-                            bus?.post(
-                                text = paidExplainer,
-                                severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
-                                action = dev.lyo.hortay.data.UserMessageBus.Action.Run(
-                                    label = openTelegramLabel,
-                                    onClick = onPaidReactionOpenPost,
-                                ),
+    // True once this card has been on screen for a frame: a chip composed after that is a
+    // reaction that arrived while the reader was looking, and it pops in. Chips present
+    // when the card composes (scroll, cold start) are just drawn.
+    val settled = remember { booleanArrayOf(false) }
+    LaunchedEffect(Unit) { settled[0] = true }
+    // The wrapper stays in the tree with no reactions so the first one can grow the card
+    // from zero height instead of making it jump; see [smoothHeight].
+    Box(modifier = Modifier.fillMaxWidth().smoothHeight()) {
+        if (reactions.items.isNotEmpty()) {
+            // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
+            // star-amount confirmation flow we don't host. Tap surfaces a snackbar
+            // explaining the situation, with an action button that opens *this
+            // specific* post in Telegram (via the per-post callback, routed
+            // through [PostActions.openInTelegram]). The chip is rendered at the
+            // [HortayAlpha.FAINT] alpha to read as informational rather than interactive (see
+            // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
+            // bouncing the user out of Hortay before they can change their mind.
+            val res = LocalContext.current.resources
+            val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
+            val openTelegramLabel = res.getString(R.string.action_open_telegram)
+            val paidExplainer = res.getString(R.string.reactions_paid_explainer)
+            // Rows of chips stack with NO extra gap: every chip reserves a
+            // [REACTION_TOUCH_MIN_HEIGHT] touch box around its drawn pill (see [ReactionChip]),
+            // and that slack is the visible gap between chip rows.
+            // TDLib re-ranks the buckets on every update, so chips trade places while the
+            // reader watches. Inside this lookahead scope each chip glides to its new slot
+            // instead of teleporting. The scope is local to the chip rows: scrolling the feed
+            // moves the scope with the chips and starts nothing, unlike the retired
+            // `animateItem` on whole feed rows (see TimelineFeedColumn).
+            LookaheadScope {
+                val chipBounds = this
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(HortaySpacing.sm),
+                ) {
+                    // Key each chip by its reaction-bucket identity, NOT by position. TDLib ranks
+                    // reaction buckets by frequency and re-orders them on every
+                    // UpdateMessageInteractionInfo; a positional (unkeyed) loop would then reuse a
+                    // chip slot that was rendering custom emoji A to render custom emoji B, and the
+                    // underlying Coil AsyncImage keeps painting A's already-decoded bitmap until B
+                    // decodes — so two different reactions momentarily render the SAME custom emoji.
+                    // A stable key moves composition state with the bucket instead of reusing by slot.
+                    reactions.items.forEach { item ->
+                        key(item.kind.stableKey) {
+                            val isPaid = item.kind is ReactionKind.Paid
+                            val tapHandler: () -> Unit = if (isPaid) {
+                                {
+                                    bus?.post(
+                                        text = paidExplainer,
+                                        severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                                        action = dev.lyo.hortay.data.UserMessageBus.Action.Run(
+                                            label = openTelegramLabel,
+                                            onClick = onPaidReactionOpenPost,
+                                        ),
+                                    )
+                                }
+                            } else {
+                                {
+                                    // Toggle haptic on a real reaction add/remove — ToggleOff when
+                                    // un-reacting (the chip was already the user's choice), ToggleOn
+                                    // otherwise. Paid reactions skip this: their tap raises an
+                                    // explainer snackbar, not a state change.
+                                    haptics.performHapticFeedback(
+                                        if (item.isChosen) HapticFeedbackType.ToggleOff
+                                        else HapticFeedbackType.ToggleOn,
+                                    )
+                                    onReactionTap(item)
+                                }
+                            }
+                            ReactionChip(
+                                item,
+                                modifier = Modifier
+                                    .animateBounds(chipBounds)
+                                    .popIn(animate = settled[0]),
+                                onClick = tapHandler,
+                                disabled = isPaid,
+                                effectRequest = effectRequest,
                             )
-                        }
-                    } else {
-                        {
-                            // Toggle haptic on a real reaction add/remove — ToggleOff when
-                            // un-reacting (the chip was already the user's choice), ToggleOn
-                            // otherwise. Paid reactions skip this: their tap raises an
-                            // explainer snackbar, not a state change.
-                            haptics.performHapticFeedback(
-                                if (item.isChosen) HapticFeedbackType.ToggleOff
-                                else HapticFeedbackType.ToggleOn,
-                            )
-                            onReactionTap(item)
                         }
                     }
-                    ReactionChip(item, onClick = tapHandler, disabled = isPaid, effectRequest = effectRequest)
                 }
             }
         }
@@ -1553,7 +1574,7 @@ private fun ActionRow(
         if (hasComments) {
             ActionItem(
                 symbol = "line_comment",
-                count = formatViews(safeCommentCount),
+                count = safeCommentCount,
                 onClick = onCommentsClick,
                 // On the comments anchor the thread is right below — no need to preview it.
                 trailing = if (onCommentsClick != null && recentRepliers.isNotEmpty()) {
@@ -1569,7 +1590,7 @@ private fun ActionRow(
         if (showPostActions || forwardCount > 0) {
             ActionItem(
                 symbol = "line_forward",
-                count = if (forwardCount > 0) formatViews(forwardCount) else null,
+                count = forwardCount.takeIf { it > 0 },
                 contentDescription = if (showPostActions) stringResource(R.string.post_share) else null,
                 onClick = if (showPostActions) onShareClick else null,
             )
@@ -1598,7 +1619,7 @@ private fun ActionRow(
         // Views trail the run: the only item that is never a control, so it reads as the
         // line's closing metadata instead of sitting between two buttons.
         if (views > 0) {
-            ActionItem(symbol = "line_views", count = formatViews(views))
+            ActionItem(symbol = "line_views", count = views)
         }
     }
 }
@@ -1647,7 +1668,8 @@ private fun Modifier.trimBottom(trim: Dp): Modifier = layout { measurable, const
 @Composable
 private fun ActionItem(
     symbol: String,
-    count: String? = null,
+    /** Raw count; formatted here so the roll knows which way the number moved. */
+    count: Int? = null,
     onClick: (() -> Unit)? = null,
     contentDescription: String? = null,
     filled: Boolean = false,
@@ -1679,13 +1701,13 @@ private fun ActionItem(
             )
             if (count != null) {
                 Spacer(Modifier.width(HortaySpacing.xs))
-                Text(
-                    text = count,
-                    // C2 — tabular figures so a view-count tick never reflows the item
-                    // width and shifts its neighbours.
+                // C2 — tabular figures so a view-count tick never reflows the item width
+                // and shifts its neighbours; the new value rolls in (see [RollingCount]).
+                RollingCount(
+                    value = count,
+                    text = formatViews(count),
                     style = MaterialTheme.typography.bodyMedium.tabularFigures(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
                 )
             }
             if (trailing != null) {
@@ -1781,6 +1803,7 @@ private val REACTION_TOUCH_MIN_HEIGHT = 40.dp
 @Composable
 internal fun ReactionChip(
     item: ReactionItem,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     /**
      * Render the chip as informational rather than active. Currently used for
@@ -1872,7 +1895,7 @@ internal fun ReactionChip(
     val pillIndication = LocalIndication.current
     Box(
         modifier = if (chipClick != null) {
-            Modifier
+            modifier
                 .heightIn(min = REACTION_TOUCH_MIN_HEIGHT)
                 .semantics { selected = item.isChosen }
                 .clickable(
@@ -1881,7 +1904,7 @@ internal fun ReactionChip(
                     role = Role.Button,
                     onClick = chipClick,
                 )
-        } else Modifier,
+        } else modifier,
         contentAlignment = Alignment.Center,
     ) {
         // The pill: shape-aware background + border, NO content clip (see the burst note
@@ -1920,41 +1943,13 @@ internal fun ReactionChip(
                     )
                 }
                 Spacer(Modifier.width(5.dp))
-                // M3 — mini digit-roll on count changes: the new value slides in vertically
-                // (up when the count grows, down when it shrinks) while the old slides out and
-                // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so
-                // the roll never reflows neighbours. Under reduced motion the roll collapses
-                // to a plain crossfade. `clipToBounds` confines the sliding digits to the
-                // counter's own box — the spatial spring overshoots by design, and without
-                // the clip the outgoing digit peeked past the chip edge for a frame.
-                // Specs are read in @Composable scope and captured by the transitionSpec
-                // lambda (which is NOT composable, so it can't read MaterialTheme itself).
-                val reducedMotion = rememberReducedMotion()
-                val countStyle = MaterialTheme.typography.labelMedium.tabularFigures()
-                val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-                val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()
-                AnimatedContent(
-                    targetState = item.count,
-                    modifier = Modifier.clipToBounds(),
-                    transitionSpec = {
-                        if (reducedMotion) {
-                            fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
-                        } else {
-                            val up = targetState > initialState
-                            (slideInVertically(spatialSpec) { h -> if (up) h else -h } + fadeIn(fadeSpec))
-                                .togetherWith(
-                                    slideOutVertically(spatialSpec) { h -> if (up) -h else h } + fadeOut(fadeSpec),
-                                )
-                        }
-                    },
-                    label = "reaction-count-roll",
-                ) { count ->
-                    Text(
-                        text = formatViews(count),
-                        style = countStyle,
-                        color = countColor,
-                    )
-                }
+                // The count rolls to its new value; see [RollingCount].
+                RollingCount(
+                    value = item.count,
+                    text = formatViews(item.count),
+                    style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                    color = countColor,
+                )
             }
             if (chipClick != null) {
                 Box(
