@@ -804,6 +804,7 @@
     <string name="discover_no_results">Nie znaleziono kanałów</string>
     <string name="discover_subscribe">Subskrybuj</string>
     <string name="discover_subscribed">Subskrybujesz</string>
+    <string name="discover_subscribing">Subskrybowanie…</string>
     <string name="discover_recommended_title">Polecane przez Twoje kanały</string>
     <string name="discover_recommended_finding">Szukam kanałów podobnych do Twoich…</string>
     <string name="discover_recommended_by_one">Polecany przez %1$s</string>

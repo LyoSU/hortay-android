@@ -788,6 +788,7 @@
     <string name="discover_no_results">Aucune chaîne trouvée</string>
     <string name="discover_subscribe">S\'abonner</string>
     <string name="discover_subscribed">Abonné</string>
+    <string name="discover_subscribing">Abonnement…</string>
     <string name="discover_recommended_title">Recommandées par tes chaînes</string>
     <string name="discover_recommended_finding">Recherche de chaînes comme les tiennes…</string>
     <string name="discover_recommended_by_one">Recommandée par %1$s</string>

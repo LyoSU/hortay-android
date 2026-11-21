@@ -273,8 +273,17 @@ class TimelineViewModel(
         storyCoverageEnabled.value = enabled
     }
 
-    /** Holds the per-post token cache; guarded by its own monitor (see [storyPeers]). */
-    private val storyClusterer = StoryClusterer()
+    /**
+     * Holds the per-post token cache, single-threaded behind its own monitor, which only
+     * [Dispatchers.Default] passes take. A session reset bumps its generation instead.
+     */
+    private val storyClusterer = SessionStoryClusterer()
+
+    /** Mirror of [storyClusterer]'s generation, so a reset re-emits [storyPeers] at once. */
+    private val storyGeneration = MutableStateFlow(storyClusterer.currentGeneration)
+
+    /** A pass's result and the session generation its feed was read under. */
+    private class StoryResult(val generation: Long, val peers: ImmutableMap<String, ImmutableList<StoryPeer>>)
 
     /**
      * "Also covered by": feed row key → other channels' posts about the same story
@@ -283,19 +292,34 @@ class TimelineViewModel(
      * time — `debounce` keeps only the newest feed while a pass is running, so passes never
      * queue up. Each pass re-tokenises only new or edited posts (the clusterer's cache).
      *
+     * Session-safe: each pass carries the generation it was started under, and the last
+     * `combine` shows a result only while that generation is current. [resetSessionState]
+     * bumps the generation, so the exposed value drops to empty the moment the session ends,
+     * and a pass still running for the previous account is discarded, never published.
+     *
      * Reads [posts], not the pending arrivals: a post behind the "new posts" pill is not on
      * screen, so it neither gets nor lends an annotation until it is accepted.
      */
     @OptIn(FlowPreview::class)
     val storyPeers: StateFlow<ImmutableMap<String, ImmutableList<StoryPeer>>> =
-        combine(posts, storyCoverageEnabled) { feed, enabled -> if (enabled) feed else null }
-            .debounce(STORY_DEBOUNCE_MS)
-            .map { feed -> if (feed == null) persistentMapOf() else computeStoryPeers(feed) }
-            .flowOn(Dispatchers.Default)
+        combine(
+            combine(posts, storyCoverageEnabled, storyGeneration) { feed, enabled, generation ->
+                (if (enabled) feed else null) to generation
+            }
+                .debounce(STORY_DEBOUNCE_MS)
+                .map { (feed, generation) ->
+                    StoryResult(generation, if (feed == null) persistentMapOf() else computeStoryPeers(feed, generation))
+                }
+                .flowOn(Dispatchers.Default),
+            storyGeneration,
+        ) { result, generation -> if (result.generation == generation) result.peers else persistentMapOf() }
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentMapOf())
 
-    private fun computeStoryPeers(feed: List<TimelinePost>): ImmutableMap<String, ImmutableList<StoryPeer>> {
+    private fun computeStoryPeers(
+        feed: List<TimelinePost>,
+        generation: Long,
+    ): ImmutableMap<String, ImmutableList<StoryPeer>> {
         val input = feed.mapNotNull { p ->
             if (p.parentId != null || p.isDeleted || p.content is PostContent.Service) return@mapNotNull null
             val text = p.content.captionPlain
@@ -303,8 +327,9 @@ class TimelineViewModel(
             StoryPost(key = p.feedKey(), chatId = p.chatId, date = p.date, text = text, version = p.editDate)
         }
         // A cancelled pass (the flow restarting after WhileSubscribed) can still be running
-        // when the next one starts; the monitor keeps the clusterer's cache single-threaded.
-        val peers = synchronized(storyClusterer) { storyClusterer.cluster(input) }
+        // when the next one starts; the clusterer's monitor keeps its cache single-threaded.
+        // Null: the session ended during the pass, so its peers are dropped.
+        val peers = storyClusterer.cluster(input, generation) ?: return persistentMapOf()
         return peers.mapValues { it.value.toImmutableList() }.toImmutableMap()
     }
 
@@ -410,7 +435,8 @@ class TimelineViewModel(
         pinnedScrollSeedKeys.clear()
         feedScrollAnchors.clear()
         _expandedSeries.value = persistentSetOf()
-        synchronized(storyClusterer) { storyClusterer.clear() }
+        // Never the clusterer's monitor here: a running pass may hold it for a long time.
+        storyGeneration.value = storyClusterer.reset()
         launchBootstrap()
     }
 

@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /** A recommended channel and the user's channels that vouch for it, most relevant first. */
@@ -57,18 +59,32 @@ data class RecommendedState(
  * list as similar (`getChatSimilarChats`), ranked by how many vouch for each
  * ([rankRecommendations]).
  *
- * Network budget — `getChatSimilarChats` is a server call on a bucket of ~30 calls before
- * a ~27 s FLOOD_WAIT, so the scan is deliberately timid:
- *  - **On demand only.** [requestScan] is called when the signed-in add-channel sheet shows
- *    its empty state — never at cold start — and the scan first waits for
+ * Network budget — `getChatSimilarChats` is a server call on a bucket measured at about 30
+ * calls per ~30 s window, after which the server answers FLOOD_WAIT for 26–28 s. That flood
+ * arms [TdClient]'s ONE account-wide gate, freezing the user's own taps (Subscribe, opening
+ * a channel) for its whole length, so this background scan must never be what trips it:
+ *  - **On demand only.** [requestScan] is called once per opening of the signed-in
+ *    add-channel sheet — never at cold start — and the scan first waits for
  *    [StartupCoordinator.Phase.Active]. It runs in the session scope, so logout cancels it.
- *  - **One call at a time**, paced through [ChannelDiscoveryRepository.paced] (≥ 1 s
- *    apart, shared with the curated-handle resolves), sources in chat-list order, at most
- *    [MAX_SOURCES_PER_SCAN] network calls per scan.
- *  - **Stop, don't retry.** A FLOOD_WAIT (420 / 429, already armed in [TdClient]'s gate) or
- *    a send timeout ends the scan quietly with what it has; the next demand resumes from
- *    the next unscanned source. No snackbar — this is background work the user didn't ask
- *    for. Any other error records an empty entry so that source is not retried until TTL.
+ *  - **Spaced well inside the bucket.** One call at a time, started at least
+ *    [SIMILAR_CALL_SPACING_MS] (2.5 s) after the previous one: at most 30 / 2.5 = 12 calls
+ *    (13 counting both window edges) in any 30 s window, under half the bucket — and still
+ *    under 30 if the window were twice as long. The spacing is slept OUTSIDE the shared
+ *    [ChannelDiscoveryRepository.paced] throttle (≥ 1 s, shared with the curated-handle
+ *    resolves), so those resolves and the user's actions are never queued behind it; the
+ *    call itself still goes through `paced`, so the two never stack their bursts.
+ *  - **A per-scan budget** of [MAX_CALLS_PER_SCAN] (40) calls, sources in chat-list
+ *    order: with the spacing a full scan takes ~100 s (39 × 2.5 s) and peaks at 12–13 calls
+ *    per window, so the budget is safe on its own; the rest resume on the next demand.
+ *  - **Stop, don't retry** — the safety net if the bucket is already drained by something
+ *    else. A FLOOD_WAIT (420 / 429, already armed in [TdClient]'s gate) or a send timeout
+ *    ends the scan quietly with what it has and starts a cooldown of at least
+ *    [FLOOD_COOLDOWN_MS] (longer if the server asked for longer, up to
+ *    [MAX_FLOOD_COOLDOWN_MS]) during which [requestScan] is a no-op, so re-entering the
+ *    sheet's empty state cannot restart the scan the moment the gate opens. After it the
+ *    next demand resumes from the next unscanned source. No snackbar — this is background
+ *    work the user didn't ask for. Any other error records an empty entry so that source is
+ *    not retried until TTL.
  *  - **Persisted** in [SimilarChatsStore] with a [TTL_MS] lifetime: fresh entries are never
  *    refetched, entries of channels the user left are pruned, and a reopened sheet paints
  *    from disk with zero network.
@@ -76,6 +92,10 @@ data class RecommendedState(
  * Card data comes from local calls only ([ChannelDiscoveryRepository.offlineCard]); the
  * scan publishes after every source so the section fills in progressively. Channels hidden
  * from the feed do not vote and are not fetched.
+ *
+ * Session end ([clear]): every scan captures a session generation, and each of its
+ * memory / store / state writes happens under [lock] only while that generation is still
+ * current, so a scan that started before the wipe can neither publish nor write after it.
  */
 class RecommendedChannelsRepository(
     private val td: TdSender,
@@ -88,23 +108,46 @@ class RecommendedChannelsRepository(
     private val startupPhase: StateFlow<StartupCoordinator.Phase>,
     /** Current session scope, read at launch time (replaced on logout). */
     private val sessionScope: () -> CoroutineScope,
+    /** Wall clock: entry freshness ([TTL_MS]) and the flood cooldown. */
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Monotonic milliseconds for the call spacing; immune to the user changing the clock. */
+    private val elapsedMs: () -> Long = { System.nanoTime() / NANOS_PER_MS },
 ) {
     private val _state = MutableStateFlow(RecommendedState())
     val state: StateFlow<RecommendedState> = _state.asStateFlow()
 
     private val scanJob = AtomicReference<Job?>(null)
 
-    // Guards [entries] and every publish; cards/titles are concurrent maps because
-    // [onMembershipChanged] is called from outside a coroutine.
+    /** Session generation; bumped by [clear]. A scan acts only while its captured value is current. */
+    private val generation = AtomicLong(0L)
+
+    /** Set when a scan stopped on a flood / send timeout; [requestScan] is a no-op while active. */
+    private val cooldown = AtomicReference<Cooldown?>(null)
+
+    /** [elapsedMs] when the last similar-chats call was sent; null before the first one. */
+    @Volatile
+    private var lastSimilarCallAt: Long? = null
+
+    // Guards [entries], every store write and every publish; cards/titles are concurrent maps
+    // because [onMembershipChanged] is called from outside a coroutine.
     private val lock = Mutex()
     private var entries: MutableMap<Long, SimilarEntry>? = null
     private val cards = ConcurrentHashMap<Long, DiscoverChannel>()
     private val noCard: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     private val titles = ConcurrentHashMap<Long, String>()
 
-    /** Start (or resume) a scan unless one is already running. Cheap when everything is fresh. */
+    /** A stop's cooldown: [lengthMs] from [startedAtMs] (wall clock). */
+    private class Cooldown(val startedAtMs: Long, val lengthMs: Long) {
+        // A clock moved backwards ends it rather than stretching it.
+        fun isActive(now: Long): Boolean = now - startedAtMs in 0 until lengthMs
+    }
+
+    /**
+     * Start (or resume) a scan unless one is already running or a flood stop's cooldown is
+     * still on. Cheap when everything is fresh.
+     */
     fun requestScan() {
+        if (cooldown.get()?.isActive(clock()) == true) return
         val current = scanJob.get()
         if (current?.isActive == true) return
         val job = sessionScope().launch(start = CoroutineStart.LAZY) { scan() }
@@ -136,74 +179,113 @@ class RecommendedChannelsRepository(
         }
     }
 
-    /** Session-end wipe: stop the scan, forget memory and the persisted store. */
+    /**
+     * Session-end wipe: stop the scan, forget memory, the persisted store and the cooldown.
+     *
+     * The generation is bumped first, so the running scan's writes stop even before it
+     * finishes cancelling, and again inside the lock together with the wipe, so a scan
+     * launched in the meantime (the sheet calling [requestScan] during logout) that read the
+     * old store before the wipe is just as unable to write or publish after it. That scan is
+     * cancelled last.
+     */
     suspend fun clear() {
+        generation.incrementAndGet()
         scanJob.getAndSet(null)?.cancelAndJoin()
         lock.withLock {
+            generation.incrementAndGet()
             entries = null
             cards.clear()
             noCard.clear()
             titles.clear()
+            cooldown.set(null)
             _state.value = RecommendedState()
+            store.clear()
         }
-        store.clear()
+        scanJob.getAndSet(null)?.cancel()
     }
 
     private suspend fun scan() {
+        val gen = generation.get()
         startupPhase.first { it == StartupCoordinator.Phase.Active }
         val ranked = subscribedChannels()
         val subscribed = ranked.toSet()
         val hidden = hiddenChannels()
         val sources = ranked.filter { it !in hidden }
         val stale = lock.withLock {
+            if (gen != generation.get()) return
             val map = entries ?: store.load().toMutableMap().also { entries = it }
             // Only once the subscription list is known: an empty list before the chat list
             // loaded would otherwise wipe every entry.
             if (subscribed.isNotEmpty() && map.keys.retainAll(subscribed)) store.retain(subscribed)
-            sources.filter { !isFresh(map[it]) }.take(MAX_SOURCES_PER_SCAN)
+            sources.filter { !isFresh(map[it]) }.take(MAX_CALLS_PER_SCAN)
         }
-        publish(sources, subscribed, hidden, scanning = stale.isNotEmpty())
+        publish(gen, sources, subscribed, hidden, scanning = stale.isNotEmpty())
         try {
             for (source in stale) {
-                val similar = fetch(source) ?: break
+                val similar = fetch(gen, source) ?: break
                 val entry = SimilarEntry(similar, clock())
-                store.put(source, entry)
-                lock.withLock { entries?.put(source, entry) }
-                publish(sources, subscribed, hidden, scanning = true)
+                val written = lock.withLock {
+                    if (gen != generation.get()) return@withLock false
+                    store.put(source, entry)
+                    entries?.put(source, entry)
+                    true
+                }
+                if (!written) return
+                publish(gen, sources, subscribed, hidden, scanning = true)
             }
         } finally {
-            _state.update { it.copy(scanning = false) }
+            if (gen == generation.get()) _state.update { it.copy(scanning = false) }
         }
-        publish(sources, subscribed, hidden, scanning = false)
+        publish(gen, sources, subscribed, hidden, scanning = false)
     }
 
     /** Similar ids of [source]; empty on a per-source error; null means "stop the scan". */
-    private suspend fun fetch(source: Long): List<Long>? = try {
-        discovery.paced { td.send(TdApi.GetChatSimilarChats(source)) }.chatIds.toList()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: TdClient.TdException) {
-        if (TdClient.isFloodWaitCode(e.code) || e.code == TdClient.SEND_TIMEOUT_CODE) {
-            Log.i(TAG, "scan stopped at $source: ${e.message}")
+    private suspend fun fetch(gen: Long, source: Long): List<Long>? {
+        awaitCallSpacing()
+        return try {
+            discovery.paced {
+                lastSimilarCallAt = elapsedMs()
+                td.send(TdApi.GetChatSimilarChats(source))
+            }.chatIds.toList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: TdClient.TdException) {
+            if (TdClient.isFloodWaitCode(e.code) || e.code == TdClient.SEND_TIMEOUT_CODE) {
+                val retryAfterMs = (TdClient.parseFloodWaitSeconds(e) ?: 0) * MS_PER_SECOND
+                val lengthMs = maxOf(FLOOD_COOLDOWN_MS, retryAfterMs).coerceAtMost(MAX_FLOOD_COOLDOWN_MS)
+                Log.i(TAG, "scan stopped at $source for ${lengthMs / MS_PER_SECOND}s: ${e.message}")
+                lock.withLock {
+                    if (gen == generation.get()) cooldown.set(Cooldown(clock(), lengthMs))
+                }
+                null
+            } else {
+                Log.w(TAG, "similar($source) failed: ${e.message}")
+                emptyList()
+            }
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            Log.w(TAG, "scan stopped at $source", e)
             null
-        } else {
-            Log.w(TAG, "similar($source) failed: ${e.message}")
-            emptyList()
         }
-    } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-        Log.w(TAG, "scan stopped at $source", e)
-        null
+    }
+
+    /** Sleep until [SIMILAR_CALL_SPACING_MS] has passed since the last call, holding no lock. */
+    private suspend fun awaitCallSpacing() {
+        val last = lastSimilarCallAt ?: return
+        val since = (elapsedMs() - last).coerceAtLeast(0L)
+        if (since < SIMILAR_CALL_SPACING_MS) delay(SIMILAR_CALL_SPACING_MS - since)
     }
 
     private fun isFresh(entry: SimilarEntry?): Boolean =
         entry != null && clock() - entry.fetchedAtMs in 0 until TTL_MS
 
     private suspend fun publish(
+        gen: Long,
         sources: List<Long>,
         subscribed: Set<Long>,
         hidden: Set<Long>,
         scanning: Boolean,
     ) = lock.withLock {
+        if (gen != generation.get()) return@withLock
         val map = entries ?: return@withLock
         val similar = LinkedHashMap<Long, List<Long>>()
         for (s in sources) map[s]?.let { similar[s] = it.similar }
@@ -249,9 +331,26 @@ class RecommendedChannelsRepository(
 
     companion object {
         private const val TAG = "RecommendedChannels"
+        private const val NANOS_PER_MS = 1_000_000L
+        private const val MS_PER_SECOND = 1_000L
 
-        /** Network calls one scan may spend; the rest resume on the next demand. */
-        const val MAX_SOURCES_PER_SCAN = 60
+        /**
+         * Similar-chats calls one scan may spend; the rest resume on the next demand. Safe on
+         * its own with [SIMILAR_CALL_SPACING_MS]: 40 calls span ~100 s, ≤ 13 in any 30 s window.
+         */
+        const val MAX_CALLS_PER_SCAN = 40
+
+        /**
+         * Least time between two similar-chats calls, start to start: ≤ 12 calls per ~30 s
+         * window (13 counting both edges), under half the ~30-call bucket.
+         */
+        const val SIMILAR_CALL_SPACING_MS = 2_500L
+
+        /** Shortest pause in scanning after a flood or send-timeout stop (5 minutes). */
+        const val FLOOD_COOLDOWN_MS = 5L * 60 * 1000
+
+        /** Cap on a server-requested retry-after taken as the cooldown (1 hour). */
+        const val MAX_FLOOD_COOLDOWN_MS = 60L * 60 * 1000
 
         /** How long a source's similar list is trusted before it is fetched again (3 days). */
         const val TTL_MS = 3L * 24 * 60 * 60 * 1000

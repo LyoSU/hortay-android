@@ -118,13 +118,12 @@ fun AddChannelTdSheet(
         }
     }
 
-    // "Recommended by your channels": scanned on demand, only while the empty-query state
-    // (where the section lives) is on screen; the repository paces, persists and resumes.
+    // "Recommended by your channels": one scan request per sheet opening (the sheet opens on
+    // the empty-query state where the section lives) — not on every return to that state
+    // while typing, which would restart a scan the repository just stopped. The repository
+    // paces, persists, resumes and holds a cooldown after a flood stop.
     val recommendedState by recommended.state.collectAsStateWithLifecycle()
-    val showingSuggestions = query.trim().length < 2
-    if (showingSuggestions) {
-        LaunchedEffect(Unit) { recommended.requestScan() }
-    }
+    LaunchedEffect(Unit) { recommended.requestScan() }
     // Rows subscribed from this sheet: [holding] keeps one mounted through its "Subscribed"
     // confirmation even though the join already flipped its membership; [justJoined]
     // drops it after the hold, like the curated rows below.

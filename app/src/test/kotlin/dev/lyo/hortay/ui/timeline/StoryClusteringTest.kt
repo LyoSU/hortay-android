@@ -147,6 +147,46 @@ class StoryClusteringTest {
         assertTrue(result.isEmpty(), "the edited post left the story, leaving two channels")
     }
 
+    @Test
+    fun `a pass started before a session reset does not publish, and the next one starts cold`() {
+        val inner = StoryClusterer()
+        val session = SessionStoryClusterer(inner)
+        val posts = filler() + story("a", 1) + story("b", 2) + story("c", 3)
+        val before = session.currentGeneration
+        assertEquals(3, session.cluster(posts, before)?.size)
+        assertEquals(posts.size, inner.tokenisedCount)
+
+        // The feed was read under `before`; the session ends before the pass runs.
+        val next = session.reset()
+        assertEquals(null, session.cluster(posts, before))
+        assertEquals(posts.size, inner.tokenisedCount, "a stale pass does no work")
+
+        // The first pass of the new session clears the previous account's cache first.
+        assertEquals(3, session.cluster(posts, next)?.size)
+        assertEquals(2 * posts.size, inner.tokenisedCount)
+    }
+
+    @Test
+    fun `a reset never waits on a running pass, whose generation it retires`() {
+        val session = SessionStoryClusterer()
+        val posts = filler() + story("a", 1) + story("b", 2) + story("c", 3)
+        val generation = session.currentGeneration
+        val started = java.util.concurrent.CountDownLatch(1)
+        val resetDone = java.util.concurrent.CountDownLatch(1)
+        // Hold the monitor the way a long pass does; reset must not wait for it.
+        val holder = Thread {
+            synchronized(session) {
+                started.countDown()
+                resetDone.await()
+            }
+        }.apply { start() }
+        started.await()
+        session.reset()
+        resetDone.countDown()
+        holder.join()
+        assertEquals(null, session.cluster(posts, generation))
+    }
+
     // withStoryCoverage: merging into the feed annotations.
 
     private fun post(chatId: Long, id: Long): TimelinePost = TimelinePost(

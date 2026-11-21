@@ -845,6 +845,7 @@
     <string name="discover_no_results">لم يتم العثور على قنوات</string>
     <string name="discover_subscribe">اشتراك</string>
     <string name="discover_subscribed">مشترك</string>
+    <string name="discover_subscribing">جارٍ الاشتراك…</string>
     <string name="discover_recommended_title">تقترحها قنواتك</string>
     <string name="discover_recommended_finding">جارٍ البحث عن قنوات تشبه قنواتك…</string>
     <string name="discover_recommended_by_one">تقترحها %1$s</string>

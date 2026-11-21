@@ -807,6 +807,7 @@
     <string name="discover_no_results">Каналы не найдены</string>
     <string name="discover_subscribe">Подписаться</string>
     <string name="discover_subscribed">Вы подписаны</string>
+    <string name="discover_subscribing">Подписываемся…</string>
     <string name="discover_recommended_title">Советуют ваши каналы</string>
     <string name="discover_recommended_finding">Ищем каналы, похожие на ваши…</string>
     <string name="discover_recommended_by_one">Советует %1$s</string>

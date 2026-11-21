@@ -785,6 +785,7 @@
     <string name="discover_no_results">Nessun canale trovato</string>
     <string name="discover_subscribe">Iscriviti</string>
     <string name="discover_subscribed">Iscritto</string>
+    <string name="discover_subscribing">Iscrizione in corso…</string>
     <string name="discover_recommended_title">Consigliati dai tuoi canali</string>
     <string name="discover_recommended_finding">Cerco canali simili ai tuoi…</string>
     <string name="discover_recommended_by_one">Consigliato da %1$s</string>

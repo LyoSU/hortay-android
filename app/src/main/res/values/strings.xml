@@ -802,6 +802,7 @@
     <string name="discover_no_results">No channels found</string>
     <string name="discover_subscribe">Subscribe</string>
     <string name="discover_subscribed">Subscribed</string>
+    <string name="discover_subscribing">Subscribing…</string>
     <string name="discover_recommended_title">Recommended by your channels</string>
     <string name="discover_recommended_finding">Finding channels like yours…</string>
     <string name="discover_recommended_by_one">Recommended by %1$s</string>

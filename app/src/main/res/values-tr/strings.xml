@@ -764,6 +764,7 @@
     <string name="discover_no_results">Kanal bulunamadı</string>
     <string name="discover_subscribe">Abone ol</string>
     <string name="discover_subscribed">Abone olundu</string>
+    <string name="discover_subscribing">Abone olunuyor…</string>
     <string name="discover_recommended_title">Kanallarının önerdikleri</string>
     <string name="discover_recommended_finding">Kanallarına benzer kanallar aranıyor…</string>
     <string name="discover_recommended_by_one">%1$s öneriyor</string>

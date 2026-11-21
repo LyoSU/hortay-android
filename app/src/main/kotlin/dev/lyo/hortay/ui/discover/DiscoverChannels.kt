@@ -37,12 +37,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.animatorDurationScale
 import dev.lyo.hortay.data.discover.ChannelCardData
 import dev.lyo.hortay.data.discover.SuggestedGroup
@@ -265,8 +270,10 @@ fun ChannelDiscoverRow(
  *    row from the list. On failure it rolls straight back to Idle (the caller
  *    surfaces the error snackbar) — reversible, so no confirm.
  *
- * With no visible label, [label] / [subscribedLabel] become the button's
- * `contentDescription`, so screen readers still hear "Subscribe" / "Subscribed".
+ * With no visible label, [label] is the button's `contentDescription` and the state
+ * rides in `stateDescription` ("Subscribing…" in flight, [subscribedLabel] once done). The
+ * button is a polite live region, so a screen reader announces the change while focus stays
+ * on it — the spinner and the check are otherwise silent.
  *
  * The glyph↔spinner↔check swap crossfades via `fastEffectsSpec`; under reduced
  * motion (`animatorDurationScale() == 0`) the crossfade collapses to an instant
@@ -293,7 +300,11 @@ private fun SubscribeButton(
     }
     val subscribed = resolvedState == SubscribeState.SUBSCRIBED
     val colorScheme = MaterialTheme.colorScheme
-    val description = if (subscribed) subscribedLabel else label
+    val stateText = when (resolvedState) {
+        SubscribeState.IDLE -> null
+        SubscribeState.IN_FLIGHT -> stringResource(R.string.discover_subscribing)
+        SubscribeState.SUBSCRIBED -> subscribedLabel
+    }
 
     FilledTonalIconButton(
         onClick = {
@@ -321,7 +332,11 @@ private fun SubscribeButton(
                 colorScheme.onSecondaryContainer
             },
         ),
-        modifier = Modifier.semantics { contentDescription = description },
+        modifier = Modifier.semantics {
+            contentDescription = label
+            stateText?.let { stateDescription = it }
+            liveRegion = LiveRegionMode.Polite
+        },
     ) {
         AnimatedContent(
             targetState = resolvedState,

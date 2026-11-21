@@ -1,6 +1,7 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.runtime.Immutable
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.max
@@ -316,4 +317,45 @@ internal class StoryClusterer(private val cacheSize: Int = STORY_TOKEN_CACHE_SIZ
         }
         return result
     }
+}
+
+/**
+ * A [StoryClusterer] whose cache belongs to one account session, resettable from the main
+ * thread without ever waiting on a running pass.
+ *
+ * A pass over a big feed is long and not cancellable, and it holds this object's monitor
+ * for its whole length (the monitor keeps the clusterer's cache single-threaded). Taking
+ * that monitor from the main thread to clear the cache at logout could freeze the UI for
+ * the rest of the pass. Instead [reset] only bumps an atomic generation: the next pass of
+ * the new generation clears the cache under the monitor before it runs, and a pass captured
+ * under an older generation returns null — before it starts or after it finishes —
+ * so the previous account's peers are never published.
+ */
+internal class SessionStoryClusterer(private val clusterer: StoryClusterer = StoryClusterer()) {
+
+    private val generation = AtomicLong(0L)
+
+    // Generation the cache was filled under; guarded by this object's monitor.
+    private var cacheGeneration = 0L
+
+    /** The current session generation; capture it together with the feed a pass will read. */
+    val currentGeneration: Long get() = generation.get()
+
+    /** Start a new session generation and return it. Never blocks; callable from any thread. */
+    fun reset(): Long = generation.incrementAndGet()
+
+    /**
+     * Story peers of [input] (see [StoryClusterer.cluster]), or null when [passGeneration] is
+     * no longer current — the result belongs to a session that has ended and must be dropped.
+     */
+    fun cluster(input: List<StoryPost>, passGeneration: Long): Map<String, List<StoryPeer>>? =
+        synchronized(this) {
+            if (passGeneration != generation.get()) return@synchronized null
+            if (cacheGeneration != passGeneration) {
+                clusterer.clear()
+                cacheGeneration = passGeneration
+            }
+            val peers = clusterer.cluster(input)
+            peers.takeIf { passGeneration == generation.get() }
+        }
 }
