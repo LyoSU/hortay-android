@@ -10,24 +10,19 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,8 +36,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -167,7 +163,8 @@ fun DiscoverSearchField(
 
 /**
  * One channel card: avatar (TDLib minithumb→file ladder or a web CDN URL), display
- * name, `@handle · subscribers`, an editorial blurb, and a trailing action button.
+ * name, `@handle · subscribers`, an editorial blurb, and a trailing circular
+ * subscribe icon button (see [SubscribeButton]).
  * While [loading] (hydration in flight) the avatar falls back to the initial-letter
  * disc and the subscriber line is omitted — no skeleton flicker, the row just fills
  * in when the live data lands.
@@ -253,23 +250,25 @@ fun ChannelDiscoverRow(
 }
 
 /**
- * Per-row subscribe button with a disciplined, layout-stable state machine
- * (DESIGN_POLISH H1 + M2). 36 dp compact height; the WIDTH is pinned by invisible
- * sizing ghosts of the widest states (the idle label and the check+[subscribedLabel]
- * row composed at alpha 0 under the live content), so the button cannot change size
- * across Idle → InFlight → Subscribed in ANY locale — doctrine rule 3, "nothing jumps
- * under the finger". (`widthIn(min)` alone was not enough: `AnimatedContent` resizes
- * to its content, so a wide "Підписатися" visibly shrank to the spinner mid-flight.)
+ * Per-row subscribe control: a compact circular tonal icon button (40 dp visual,
+ * 48 dp touch target via M3's minimum interactive size) with a disciplined state
+ * machine (DESIGN_POLISH H1 + M2). Its size is fixed by the icon-button container,
+ * so it cannot change across Idle → InFlight → Subscribed in ANY locale — doctrine
+ * rule 3, "nothing jumps under the finger" — and the title/subtitle beside it get
+ * the rest of the row instead of losing almost half of it to a localised label.
  *
- *  - **Idle** → tonal label.
- *  - **InFlight** → an inline spinner replaces the label the instant the row is
+ *  - **Idle** → `add` glyph on the tonal container.
+ *  - **InFlight** → an inline spinner replaces the glyph the instant the row is
  *    tapped (optimistic: the press is acknowledged before the network answers).
- *  - **Subscribed** → on success the button shows a `check_circle` glyph +
- *    [subscribedLabel] in a disabled state for ~1.5 s before the parent drops the
+ *  - **Subscribed** → on success the button shows a `check_circle` glyph on a quiet
+ *    surface container in a disabled state for ~1.5 s before the parent drops the
  *    row from the list. On failure it rolls straight back to Idle (the caller
  *    surfaces the error snackbar) — reversible, so no confirm.
  *
- * The label↔spinner↔check swap crossfades via `fastEffectsSpec`; under reduced
+ * With no visible label, [label] / [subscribedLabel] become the button's
+ * `contentDescription`, so screen readers still hear "Subscribe" / "Subscribed".
+ *
+ * The glyph↔spinner↔check swap crossfades via `fastEffectsSpec`; under reduced
  * motion (`animatorDurationScale() == 0`) the crossfade collapses to an instant
  * swap so the state still changes visibly without animation.
  */
@@ -292,10 +291,13 @@ private fun SubscribeButton(
     } else {
         state
     }
+    val subscribed = resolvedState == SubscribeState.SUBSCRIBED
+    val colorScheme = MaterialTheme.colorScheme
+    val description = if (subscribed) subscribedLabel else label
 
-    FilledTonalButton(
+    FilledTonalIconButton(
         onClick = {
-            if (state != SubscribeState.IDLE) return@FilledTonalButton
+            if (state != SubscribeState.IDLE) return@FilledTonalIconButton
             state = SubscribeState.IN_FLIGHT
             scope.launch {
                 val ok = onAction()
@@ -303,58 +305,44 @@ private fun SubscribeButton(
             }
         },
         enabled = enabled && resolvedState == SubscribeState.IDLE,
-        shapes = ButtonDefaults.shapes(),
-        // Compact content padding so the 36 dp minimum height isn't over-constrained
-        // (the default 24×8 dp leaves no room for the label at this height).
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-        modifier = Modifier
-            .widthIn(min = 96.dp)
-            .heightIn(min = 36.dp),
+        shapes = IconButtonDefaults.shapes(),
+        // The button is only disabled while in flight (keep the tonal fill so the
+        // spinner reads as the same control) or once subscribed (quiet surface, the
+        // check in `primary` carries the confirmation).
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            disabledContainerColor = if (subscribed) {
+                colorScheme.surfaceContainerHigh
+            } else {
+                colorScheme.secondaryContainer
+            },
+            disabledContentColor = if (subscribed) {
+                colorScheme.primary
+            } else {
+                colorScheme.onSecondaryContainer
+            },
+        ),
+        modifier = Modifier.semantics { contentDescription = description },
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            // Invisible sizing ghosts: the two widest states reserve the button's
-            // final width so the AnimatedContent swap below can never resize it.
-            // Alpha 0 keeps them out of sight; the live content is the a11y node.
-            SubscribedContent(subscribedLabel, modifier = Modifier.alpha(0f))
-            Text(label, maxLines = 1, modifier = Modifier.alpha(0f))
-            AnimatedContent(
-                targetState = resolvedState,
-                transitionSpec = {
-                    if (reducedMotion) {
-                        fadeIn(animationSpec = snapEffects) togetherWith
-                            fadeOut(animationSpec = snapEffects)
-                    } else {
-                        fadeIn(animationSpec = effectsSpec) togetherWith
-                            fadeOut(animationSpec = effectsSpec)
-                    }
-                },
-                label = "subscribe_state",
-            ) { s ->
-                when (s) {
-                    SubscribeState.IDLE -> Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    SubscribeState.IN_FLIGHT -> Box(
-                        modifier = Modifier.height(20.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        LoadingIndicator(modifier = Modifier.size(16.dp))
-                    }
-                    SubscribeState.SUBSCRIBED -> SubscribedContent(subscribedLabel)
+        AnimatedContent(
+            targetState = resolvedState,
+            transitionSpec = {
+                if (reducedMotion) {
+                    fadeIn(animationSpec = snapEffects) togetherWith
+                        fadeOut(animationSpec = snapEffects)
+                } else {
+                    fadeIn(animationSpec = effectsSpec) togetherWith
+                        fadeOut(animationSpec = effectsSpec)
                 }
+            },
+            contentAlignment = Alignment.Center,
+            label = "subscribe_state",
+        ) { s ->
+            when (s) {
+                SubscribeState.IDLE -> Symbol(name = "add", size = 24.dp)
+                SubscribeState.IN_FLIGHT -> LoadingIndicator(modifier = Modifier.size(24.dp))
+                SubscribeState.SUBSCRIBED -> Symbol(name = "check_circle", size = 24.dp)
             }
         }
-    }
-}
-
-/** The "✓ Subscribed" confirmation row — also composed invisibly as a sizing ghost. */
-@Composable
-private fun SubscribedContent(label: String, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Symbol(name = "check_circle", size = 16.dp)
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

@@ -79,6 +79,7 @@
 - The Channels tab has a compact header, and its "Find channels" button shrinks to an icon once you scroll.
 - Post text breaks into lines more evenly.
 - Settings rows sit in grouped blocks, each with a round icon tile that lights up when its switch is on.
+- In channel suggestions and search results, Subscribe is a compact round button, so channel names and descriptions get the full row width.
 
 ### Fixed
 - Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.
