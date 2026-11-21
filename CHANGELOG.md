@@ -208,6 +208,7 @@
 - Guest mode uses several times less data to check channels for new posts.
 - The guest-mode feed no longer rebuilds every post each time a channel is checked.
 - Photos and videos in the feed ask Telegram about each file once instead of twice.
+- The first fill-in of recent posts after signing in finishes several times faster.
 
 ### Architecture
 - The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.

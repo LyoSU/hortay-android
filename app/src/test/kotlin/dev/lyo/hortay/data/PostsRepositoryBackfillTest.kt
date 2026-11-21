@@ -28,8 +28,8 @@ import org.junit.jupiter.api.Test
  *   - **Throttle** between RPCs honours Levin's 30-per-30s cap
  *     (tdlib/td#743) — tested via virtual time.
  *
- * Tests use [kotlinx.coroutines.test.runTest]'s virtual time so the 1.1 s
- * throttle doesn't actually slow the suite down; `advanceUntilIdle` advances
+ * Tests use [kotlinx.coroutines.test.runTest]'s virtual time so the
+ * [dev.lyo.hortay.data.posts.BACKFILL_THROTTLE_MS] throttle doesn't actually slow the suite down; `advanceUntilIdle` advances
  * past every `delay`.
  */
 class PostsRepositoryBackfillTest {

@@ -951,16 +951,19 @@ class PostsRepository(
      * fetches a few extra posts for the user's most-active channels so the feed
      * lands "already full" on a fresh sign-in.
      *
-     * **Budget, per Aliaksei Levin (tdlib/td#743): `GetChatHistory` is capped
-     * server-side at 30 requests / 30 seconds — sustained 1 RPC/sec.** Going
-     * above that earns FLOOD_WAIT (code 420/429) on the whole account for
-     * minutes-to-hours. We pick top-[BACKFILL_TOP_K] channels by
+     * **Budget: `GetChatHistory` is capped server-side per 30-second window —
+     * 30 requests per Aliaksei Levin (tdlib/td#743), 60 observed in a
+     * 2026-11-21 measurement (see the constants' KDoc).** It is a count per
+     * window, not a sustained rate; going over earns FLOOD_WAIT (code 420/429)
+     * on the whole account for minutes-to-hours. What keeps the backfill safe
+     * is its CALL COUNT: [BACKFILL_TOP_K] = 20 calls fit inside one window at
+     * any spacing under either figure. We pick top-[BACKFILL_TOP_K] channels by
      * `chat.positions[ChatListMain].order` desc (TDLib's own activity sort
-     * signal — same one Telegram uses to rank the chat list), throttle
-     * [BACKFILL_THROTTLE_MS] between calls (1 s + 100 ms margin so a
-     * concurrent user RPC doesn't push us over the bucket edge), and fetch
-     * [BACKFILL_POSTS_PER_CHAT] messages per channel. Total runtime
-     * ~[BACKFILL_TOP_K] × [BACKFILL_THROTTLE_MS] ≈ 22 s of background work.
+     * signal — same one Telegram uses to rank the chat list), space calls
+     * [BACKFILL_THROTTLE_MS] apart (so the burst doesn't monopolise the bucket
+     * user-driven history loads share), and fetch [BACKFILL_POSTS_PER_CHAT]
+     * messages per channel. Total runtime ~[BACKFILL_TOP_K] ×
+     * [BACKFILL_THROTTLE_MS] ≈ 6 s of background work plus the calls themselves.
      *
      * **Circuit-break on FLOOD_WAIT.** If a single call returns 420/429, stop
      * the loop and DO NOT mark the flag done. Reason: the account-global
@@ -1007,7 +1010,7 @@ class PostsRepository(
         val epoch = sessionEpoch.get()
 
         // Snapshot top-K under the live state. Not held under refreshMutex —
-        // the throttled fetch loop is too long (~22 s) to block pull-to-refresh
+        // the throttled fetch loop is too long (~6 s plus network) to block pull-to-refresh
         // or [clear] on. A stale snapshot is fine: chat positions can shift
         // mid-backfill (a new UpdateNewMessage moves a channel up), but the
         // version we captured at sync-completion is a reasonable approximation
@@ -1069,9 +1072,9 @@ class PostsRepository(
             // in the top-K list is independent.
             err?.let { runCatching { Log.w(TAG, "Backfill GetChatHistory failed for chat=${chat.id}: ${it.message}") } }
             if (res.isSuccess) anyFetched = true
-            // localAlbumsOnly: the backfill's GetChatHistory calls already spend the
-            // 30 req / 30 s budget at the throttle's edge. A networked album coalesce
-            // here would add unthrottled GetChatHistory calls on top of it; fragmented
+            // localAlbumsOnly: the backfill is safe because of its bounded call count
+            // (BACKFILL_TOP_K per window). A networked album coalesce per fetched chat
+            // would multiply that count with unthrottled GetChatHistory calls; fragmented
             // albums at the window edge are repaired by the Layer-2 focus repair instead.
             res.getOrNull()?.messages?.toList()?.takeIf { it.isNotEmpty() }
                 ?.let { messages -> ingest(chat.id, messages, localAlbumsOnly = true) }
@@ -2883,9 +2886,10 @@ class PostsRepository(
         // snapshot restore doesn't spike TDLib's worker thread on cold start.
         const val SNAPSHOT_RESTORE_CONCURRENCY = 8
 
-        // Min gap between Layer-2 networked album repairs. Sized like BACKFILL_THROTTLE_MS
-        // (1100 ms): the trigger is human scroll/dwell over the rare degraded card, so the
-        // natural rate is already far under 30 req/30 s — this is the fast-fling backstop.
+        // Min gap between Layer-2 networked album repairs: 1100 ms. Each repair may spend
+        // up to ALBUM_REPAIR_FETCH_ATTEMPTS GetChatHistory calls, and the trigger is human
+        // scroll/dwell over the rare degraded card, so the natural rate is already far
+        // under the 30-per-30 s window — this gap is the fast-fling backstop.
         const val ALBUM_REPAIR_THROTTLE_MS = 1_100L
 
         // Surround-window attempts per repair (see performAlbumRepair). 3 × the
@@ -2932,25 +2936,42 @@ private data class AlbumRepairRequest(val chatId: Long, val anchorId: Long, val 
  * private companion) so unit tests in the same module can reference them
  * without reflection.
  *
- *   - [BACKFILL_TOP_K] = 20. With [BACKFILL_THROTTLE_MS] = 1100 ms → ~22 s
- *     background runtime. Short enough that the backfill is "mostly done"
- *     before the user scrolls past the top of the feed; long enough to land
- *     a few historical posts per "favourite" channel a typical user reads.
+ *   - [BACKFILL_TOP_K] = 20. With [BACKFILL_THROTTLE_MS] = 300 ms → ~6 s
+ *     background runtime plus the calls themselves. Enough to land a few
+ *     historical posts per "favourite" channel a typical user reads. The call
+ *     COUNT is what keeps the backfill inside the server's per-window budget
+ *     (see [BACKFILL_THROTTLE_MS]): 20 is under both 30 (Levin) and 60
+ *     (measured). Don't lift it past ~25 — that brings one burst back to the
+ *     edge of Levin's 30-per-window figure, and accounts with a lower budget
+ *     than the measured one would hit account-global FLOOD_WAIT.
  *   - [BACKFILL_POSTS_PER_CHAT] = 10. RPC cost is per-call, not per-message
  *     (TDLib caps `GetChatHistory.limit` at 100 — anything ≤ that is free
  *     vs N=1). At TOP_K × POSTS_PER_CHAT = 200 unique posts, the merged
  *     feed has ~25-30 screens of scroll headroom before paginating. Higher N
  *     risks pushing live arrivals out of the [PostsRepository] snapshot
  *     top-N persistent window.
- *   - [BACKFILL_THROTTLE_MS] = 1100. Aliaksei Levin (tdlib/td#743): server
- *     limits `GetChatHistory` to 30 requests / 30 seconds = 1 RPC/sec
- *     sustained. We add 100 ms so a concurrent user-driven `td.send`
- *     (open chat, load older, etc.) sharing the same bucket doesn't push
- *     our cadence past the edge.
+ *   - [BACKFILL_THROTTLE_MS] = 300. Previously 1100: Aliaksei Levin's
+ *     "30 requests / 30 seconds" (tdlib/td#743) was read as a sustained
+ *     1 RPC/sec, plus 100 ms margin. A 2026-11-21 measurement against the
+ *     production server (raw `messages.getHistory`, one non-Premium account)
+ *     showed the limit is a count per window, not a rate: two unpaced bursts
+ *     each got exactly 60 calls through (in 8.6 s and 8.8 s), the 61st
+ *     returned FLOOD_WAIT, and time-to-limit plus the wait summed to ~30 s
+ *     both times (second run: hit at 8.8 s, wait 22 s); 45 calls at 1100 ms
+ *     spacing and then 90 calls at 500 ms spacing all passed. Observed
+ *     budget: 60 requests per 30 s window. The backfill's 20 calls fit in one
+ *     window at any spacing under either figure, so spacing no longer keeps
+ *     it safe — [BACKFILL_TOP_K] does. The 300 ms that remains keeps the
+ *     burst from monopolising the bucket user-driven history loads share
+ *     (open channel, load older, album repair) and leaves room in case TDLib
+ *     issues more than one server request per `GetChatHistory`.
+ *     Caveats: one account, one day, raw MTProto rather than through TDLib;
+ *     other accounts may have a lower budget — hence [BACKFILL_TOP_K] stays
+ *     at 20.
  */
 const val BACKFILL_TOP_K = 20
 const val BACKFILL_POSTS_PER_CHAT = 10
-const val BACKFILL_THROTTLE_MS = 1100L
+const val BACKFILL_THROTTLE_MS = 300L
 
 /** Gap between the per-channel acks of [PostsRepository.markChannelsRead]. */
 private const val MARK_READ_SPACING_MS = 120L
