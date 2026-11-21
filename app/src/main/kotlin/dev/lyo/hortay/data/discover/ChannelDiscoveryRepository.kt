@@ -3,6 +3,8 @@ package dev.lyo.hortay.data.discover
 import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.TdSender
 import dev.lyo.hortay.data.warnUnlessCancelled
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
@@ -22,10 +24,12 @@ import java.util.concurrent.ConcurrentHashMap
  * sheet paints instantly.
  *
  * Session-scoped: [resolveCache] carries `isMember`, which is account-specific, so
- * [clear] is called from the logout cleanup.
+ * [clear] is registered with `AppGraph.session.onEnd`. [backgroundScope] is the current
+ * session's scope, read at call time (the session replaces it on logout).
  */
 class ChannelDiscoveryRepository(
     private val td: TdSender,
+    private val backgroundScope: () -> CoroutineScope,
 ) {
     private val resolveCache = ConcurrentHashMap<String, DiscoverChannel>()
     private val similarCache = ConcurrentHashMap<Long, List<DiscoverChannel>>()
@@ -91,6 +95,39 @@ class ChannelDiscoveryRepository(
         similarCache[chatId] = out
         return out.filterNot { it.isMember }
     }
+
+    /**
+     * Card for a chat TDLib already knows (a similar-chats id, a cached channel) from local
+     * calls only — `GetChat` + `GetSupergroup` are both served from TDLib's database. Null
+     * for non-channels and chats TDLib has no record of. Never `GetSupergroupFullInfo`:
+     * that is a server call on the tightest bucket and must not run per candidate.
+     */
+    suspend fun offlineCard(chatId: Long): DiscoverChannel? {
+        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }
+            .warnUnlessCancelled(TAG, "offlineCard/getChat")
+            .getOrNull() ?: return null
+        return toCard(chat)
+    }
+
+    /**
+     * Tell TDLib the user opened [openedChatId] from [sourceChatId]'s similar-channels list
+     * (td_api.tl `openChatSimilarChat`: "Informs TDLib that a chat was opened from the list
+     * of similar chats"). Fire-and-forget in the session scope — a failure changes nothing
+     * the user can see, so it is logged and dropped.
+     */
+    fun reportSimilarOpened(sourceChatId: Long, openedChatId: Long) {
+        if (sourceChatId == 0L || openedChatId == 0L) return
+        backgroundScope().launch {
+            runCatching { td.send(TdApi.OpenChatSimilarChat(sourceChatId, openedChatId)) }
+                .warnUnlessCancelled(TAG, "openChatSimilarChat")
+        }
+    }
+
+    /**
+     * Pace a server-bound call behind the same ~1/s gate the curated resolves use, so the
+     * recommended-channels scan and the curated hydration never stack their bursts.
+     */
+    internal suspend fun <T> paced(block: suspend () -> T): T = throttled(block)
 
     fun clear() {
         resolveCache.clear()

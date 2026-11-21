@@ -788,6 +788,14 @@
     <string name="discover_no_results">Aucune chaîne trouvée</string>
     <string name="discover_subscribe">S\'abonner</string>
     <string name="discover_subscribed">Abonné</string>
+    <string name="discover_recommended_title">Recommandées par tes chaînes</string>
+    <string name="discover_recommended_finding">Recherche de chaînes comme les tiennes…</string>
+    <string name="discover_recommended_by_one">Recommandée par %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="one">Recommandée par %1$d de tes chaînes</item>
+        <item quantity="many">Recommandée par %1$d de tes chaînes</item>
+        <item quantity="other">Recommandée par %1$d de tes chaînes</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">Proxy</string>
     <string name="proxy_section">Connexion</string>

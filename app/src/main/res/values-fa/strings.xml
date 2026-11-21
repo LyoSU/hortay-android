@@ -763,6 +763,13 @@
     <string name="discover_no_results">کانالی یافت نشد</string>
     <string name="discover_subscribe">دنبال کردن</string>
     <string name="discover_subscribed">دنبال‌شده</string>
+    <string name="discover_recommended_title">پیشنهاد کانال‌های شما</string>
+    <string name="discover_recommended_finding">در حال یافتن کانال‌هایی شبیه کانال‌های شما…</string>
+    <string name="discover_recommended_by_one">پیشنهاد %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="one">پیشنهاد %1$d کانال از کانال‌های شما</item>
+        <item quantity="other">پیشنهاد %1$d کانال از کانال‌های شما</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">پروکسی</string>
     <string name="proxy_section">اتصال</string>

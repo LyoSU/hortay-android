@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -29,7 +31,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.discover.DiscoverSearchField
@@ -39,8 +44,11 @@ import dev.lyo.hortay.data.discover.ChannelCardData
 import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
 import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
 import dev.lyo.hortay.data.discover.DiscoverChannel
+import dev.lyo.hortay.data.discover.RecommendedChannel
+import dev.lyo.hortay.data.discover.RecommendedChannelsRepository
 import dev.lyo.hortay.data.discover.SuggestedGroup
 import dev.lyo.hortay.ui.discover.ChannelDiscoverRow
+import dev.lyo.hortay.ui.discover.SectionHeader
 import dev.lyo.hortay.ui.discover.discoverSuggestions
 import dev.lyo.hortay.ui.timeline.formatSubscribers
 import kotlinx.collections.immutable.ImmutableList
@@ -72,8 +80,11 @@ fun AddChannelTdSheet(
     suggestionsRepo: ChannelSuggestionsRepository,
     discovery: ChannelDiscoveryRepository,
     actions: ChannelActionsRepository,
+    recommended: RecommendedChannelsRepository,
     locale: String,
     onDismiss: () -> Unit,
+    /** Opens a channel from the "Recommended by your channels" section; null keeps rows inert. */
+    onOpenChannel: ((Long) -> Unit)? = null,
 ) {
     val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
@@ -105,6 +116,42 @@ fun AddChannelTdSheet(
                 if (remaining.isEmpty()) null else g.copy(channels = remaining.toImmutableList())
             }
         }
+    }
+
+    // "Recommended by your channels": scanned on demand, only while the empty-query state
+    // (where the section lives) is on screen; the repository paces, persists and resumes.
+    val recommendedState by recommended.state.collectAsStateWithLifecycle()
+    val showingSuggestions = query.trim().length < 2
+    if (showingSuggestions) {
+        LaunchedEffect(Unit) { recommended.requestScan() }
+    }
+    // Rows subscribed from this sheet: [holding] keeps one mounted through its "Subscribed"
+    // confirmation even though the join already flipped its membership; [justJoined]
+    // drops it after the hold, like the curated rows below.
+    val holding = remember { mutableStateMapOf<Long, Unit>() }
+    val justJoined = remember { mutableStateMapOf<Long, Unit>() }
+    val visibleRecommended by remember {
+        derivedStateOf {
+            recommendedState.items.filter { item ->
+                val id = item.channel.chatId
+                id !in justJoined && (!item.channel.isMember || id in holding)
+            }.toImmutableList()
+        }
+    }
+
+    suspend fun subscribeRecommended(item: RecommendedChannel): Boolean {
+        val id = item.channel.chatId
+        holding[id] = Unit
+        if (!actions.joinChat(id)) {
+            holding.remove(id)
+            return false
+        }
+        scope.launch {
+            delay(SUBSCRIBE_CONFIRM_HOLD_MS)
+            justJoined[id] = Unit
+            holding.remove(id)
+        }
+        return true
     }
 
     // Debounced public-channel search.
@@ -223,6 +270,19 @@ fun AddChannelTdSheet(
                     )
                 }
             } else {
+                recommendedSection(
+                    items = visibleRecommended,
+                    showPlaceholder = recommendedState.scanning && recommendedState.items.isEmpty(),
+                    addLabel = subscribeLabel,
+                    subscribedLabel = subscribedLabel,
+                    onAdd = { item -> subscribeRecommended(item) },
+                    onOpen = onOpenChannel?.let { open ->
+                        { item: RecommendedChannel ->
+                            discovery.reportSimilarOpened(item.topVoter, item.channel.chatId)
+                            open(item.channel.chatId)
+                        }
+                    },
+                )
                 discoverSuggestions(
                     groups = visibleGroups,
                     hydrated = hydrated,
@@ -232,6 +292,65 @@ fun AddChannelTdSheet(
                 )
             }
         }
+    }
+}
+
+/**
+ * "Recommended by your channels" above the curated groups: a header and one row per
+ * candidate with who vouches for it. While the first scan runs with nothing to show yet,
+ * one quiet placeholder line; with no candidates and no scan, nothing at all.
+ */
+private fun LazyListScope.recommendedSection(
+    items: ImmutableList<RecommendedChannel>,
+    showPlaceholder: Boolean,
+    addLabel: String,
+    subscribedLabel: String,
+    onAdd: suspend (RecommendedChannel) -> Boolean,
+    onOpen: ((RecommendedChannel) -> Unit)?,
+) {
+    if (items.isEmpty() && !showPlaceholder) return
+    item(key = "rec_header", contentType = "discover_header") {
+        SectionHeader(stringResource(R.string.discover_recommended_title))
+    }
+    if (items.isEmpty()) {
+        item(key = "rec_placeholder", contentType = "rec_placeholder") {
+            Text(
+                text = stringResource(R.string.discover_recommended_finding),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+        }
+        return
+    }
+    items(
+        items = items,
+        key = { "rec_${it.channel.chatId}" },
+        contentType = { "discover_row" },
+    ) { item ->
+        val channel = item.channel
+        val topVoterTitle = item.topVoterTitle
+        val vouched = if (item.votes == 1 && topVoterTitle != null) {
+            stringResource(R.string.discover_recommended_by_one, topVoterTitle)
+        } else {
+            pluralStringResource(R.plurals.discover_recommended_by_count, item.votes, item.votes)
+        }
+        ChannelDiscoverRow(
+            name = channel.title,
+            handle = channel.username?.let { "@$it" }.orEmpty(),
+            subscribers = channel.subscribers?.let { formatSubscribers(it) },
+            description = vouched,
+            avatarThumb = channel.avatarThumb,
+            avatarFileId = channel.avatarFileId,
+            avatarUrl = null,
+            actionLabel = addLabel,
+            subscribedLabel = subscribedLabel,
+            actionEnabled = true,
+            onAction = remember(item, onAdd) { { onAdd(item) } },
+            onClick = onOpen?.let { open -> remember(item, open) { { open(item) } } },
+        )
     }
 }
 

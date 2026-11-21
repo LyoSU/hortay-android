@@ -769,6 +769,13 @@
     <string name="discover_no_results">Keine Kanäle gefunden</string>
     <string name="discover_subscribe">Abonnieren</string>
     <string name="discover_subscribed">Abonniert</string>
+    <string name="discover_recommended_title">Empfohlen von deinen Kanälen</string>
+    <string name="discover_recommended_finding">Suche Kanäle wie deine…</string>
+    <string name="discover_recommended_by_one">Empfohlen von %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="one">Empfohlen von %1$d deiner Kanäle</item>
+        <item quantity="other">Empfohlen von %1$d deiner Kanäle</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">Proxy</string>
     <string name="proxy_section">Verbindung</string>

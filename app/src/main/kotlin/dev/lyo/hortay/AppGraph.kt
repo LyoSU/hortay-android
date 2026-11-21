@@ -85,6 +85,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -445,6 +446,7 @@ class AppGraph(context: Context) {
         ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res) { chatId, isMember ->
             // Read lazily at call time — [channelDiscovery] is declared further down.
             channelDiscovery.updateMembership(chatId, isMember)
+            recommendedChannels.onMembershipChanged(chatId, isMember)
         }
 
     /**
@@ -656,9 +658,28 @@ class AppGraph(context: Context) {
      * TDLib-side channel discovery (resolve a curated handle to a live card, search
      * public channels by name) for authenticated mode. Never touches t.me/s — auth
      * mode talks to Telegram only. Resolve cache is session-scoped (`isMember`), so
-     * it is cleared in [runLogoutCleanup].
+     * its wipe is registered with [session].
      */
-    val channelDiscovery: ChannelDiscoveryRepository = ChannelDiscoveryRepository(tdClient)
+    val channelDiscovery: ChannelDiscoveryRepository =
+        ChannelDiscoveryRepository(tdClient) { session.scope }
+            .also { discovery -> session.onEnd("channelDiscovery") { discovery.clear() } }
+
+    /**
+     * "Recommended by your channels" in the signed-in add-channel sheet: similar-chat
+     * votes aggregated over the user's own channels. Scans only on demand, after
+     * [startupCoordinator] is Active, in [session]'s scope; the persisted per-source
+     * cache is account-bound and wiped with the session.
+     */
+    val recommendedChannels: dev.lyo.hortay.data.discover.RecommendedChannelsRepository =
+        dev.lyo.hortay.data.discover.RecommendedChannelsRepository(
+            td = tdClient,
+            discovery = channelDiscovery,
+            store = dev.lyo.hortay.data.discover.SimilarChatsStoreImpl(context),
+            subscribedChannels = { postsRepository.subscribedChannelsByRank() },
+            hiddenChannels = { ignoredChannels.ignored.first() },
+            startupPhase = startupCoordinator.phase,
+            sessionScope = { session.scope },
+        ).also { repo -> session.onEnd("recommendedChannels") { repo.clear() } }
 
     /**
      * Persistent list of channel usernames the user has subscribed to in anonymous
@@ -902,9 +923,6 @@ class AppGraph(context: Context) {
         // excluded-chat set, which is keyed on TDLib chatIds). The master
         // `enabled` toggle is a global user preference and survives logout.
         runCatching { archiveSettingsStore.resetForLogout() }.warnUnlessCancelled(TAG, "logout cleanup: archiveSettingsStore")
-        // Discovery resolve cache carries account-specific `isMember`; drop it so
-        // account B doesn't see account A's subscribe/open state on a suggestion.
-        runCatching { channelDiscovery.clear() }.warnUnlessCancelled(TAG, "logout cleanup: channelDiscovery")
     }
 
     private companion object {

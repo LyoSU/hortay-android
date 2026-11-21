@@ -845,6 +845,17 @@
     <string name="discover_no_results">لم يتم العثور على قنوات</string>
     <string name="discover_subscribe">اشتراك</string>
     <string name="discover_subscribed">مشترك</string>
+    <string name="discover_recommended_title">تقترحها قنواتك</string>
+    <string name="discover_recommended_finding">جارٍ البحث عن قنوات تشبه قنواتك…</string>
+    <string name="discover_recommended_by_one">تقترحها %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="zero">تقترحها %1$d من قنواتك</item>
+        <item quantity="one">تقترحها قناة واحدة من قنواتك</item>
+        <item quantity="two">تقترحها قناتان من قنواتك</item>
+        <item quantity="few">تقترحها %1$d من قنواتك</item>
+        <item quantity="many">تقترحها %1$d قناة من قنواتك</item>
+        <item quantity="other">تقترحها %1$d قناة من قنواتك</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">بروكسي</string>
     <string name="proxy_section">الاتصال</string>

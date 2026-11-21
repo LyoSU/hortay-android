@@ -792,6 +792,14 @@
     <string name="discover_no_results">Nenhum canal encontrado</string>
     <string name="discover_subscribe">Inscrever-se</string>
     <string name="discover_subscribed">Inscrito</string>
+    <string name="discover_recommended_title">Recomendados pelos seus canais</string>
+    <string name="discover_recommended_finding">Procurando canais como os seus…</string>
+    <string name="discover_recommended_by_one">Recomendado por %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="one">Recomendado por %1$d dos seus canais</item>
+        <item quantity="many">Recomendado por %1$d dos seus canais</item>
+        <item quantity="other">Recomendado por %1$d dos seus canais</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">Proxy</string>
     <string name="proxy_section">Conexão</string>

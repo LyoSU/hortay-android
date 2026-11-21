@@ -237,7 +237,13 @@ fun ChannelInfoSheet(
                 SimilarChannels(
                     channels = similar,
                     onSubscribe = { channel -> actions.joinChat(channel.chatId) },
-                    onOpen = onOpenChannel?.let { open -> { id: Long -> onDismiss(); open(id) } },
+                    onOpen = onOpenChannel?.let { open ->
+                        { id: Long ->
+                            discovery?.reportSimilarOpened(sourceChatId = chatId, openedChatId = id)
+                            onDismiss()
+                            open(id)
+                        }
+                    },
                 )
             }
         }

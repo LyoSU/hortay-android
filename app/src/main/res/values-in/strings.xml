@@ -746,6 +746,12 @@
     <string name="discover_no_results">Tidak ada kanal ditemukan</string>
     <string name="discover_subscribe">Langganan</string>
     <string name="discover_subscribed">Berlangganan</string>
+    <string name="discover_recommended_title">Direkomendasikan saluranmu</string>
+    <string name="discover_recommended_finding">Mencari saluran yang mirip dengan milikmu…</string>
+    <string name="discover_recommended_by_one">Direkomendasikan oleh %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="other">Direkomendasikan oleh %1$d saluranmu</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">Proxy</string>
     <string name="proxy_section">Koneksi</string>

@@ -43,7 +43,7 @@ class ChannelDiscoveryMembershipTest {
                 }
             }
         }
-        val repo = ChannelDiscoveryRepository(td)
+        val repo = ChannelDiscoveryRepository(td) { this }
         assertEquals(false, repo.resolve("news")?.isMember)
 
         repo.updateMembership(-100L, isMember = true)

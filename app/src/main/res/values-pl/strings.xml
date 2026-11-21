@@ -804,6 +804,15 @@
     <string name="discover_no_results">Nie znaleziono kanałów</string>
     <string name="discover_subscribe">Subskrybuj</string>
     <string name="discover_subscribed">Subskrybujesz</string>
+    <string name="discover_recommended_title">Polecane przez Twoje kanały</string>
+    <string name="discover_recommended_finding">Szukam kanałów podobnych do Twoich…</string>
+    <string name="discover_recommended_by_one">Polecany przez %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="one">Polecany przez %1$d z Twoich kanałów</item>
+        <item quantity="few">Polecany przez %1$d z Twoich kanałów</item>
+        <item quantity="many">Polecany przez %1$d z Twoich kanałów</item>
+        <item quantity="other">Polecany przez %1$d z Twoich kanałów</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">Proxy</string>
     <string name="proxy_section">Połączenie</string>

@@ -788,6 +788,13 @@
     <string name="discover_no_results">No se encontraron canales</string>
     <string name="discover_subscribe">Suscribirse</string>
     <string name="discover_subscribed">Suscrito</string>
+    <string name="discover_recommended_title">Recomendados por tus canales</string>
+    <string name="discover_recommended_finding">Buscando canales como los tuyos…</string>
+    <string name="discover_recommended_by_one">Recomendado por %1$s</string>
+    <plurals name="discover_recommended_by_count">
+        <item quantity="one">Recomendado por %1$d de tus canales</item>
+        <item quantity="other">Recomendado por %1$d de tus canales</item>
+    </plurals>
     <!-- Proxy -->
     <string name="proxy_title">Proxy</string>
     <string name="proxy_section">Conexión</string>

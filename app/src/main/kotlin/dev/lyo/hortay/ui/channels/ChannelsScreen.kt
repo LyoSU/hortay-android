@@ -389,8 +389,13 @@ fun ChannelsScreen(
             suggestionsRepo = graph.channelSuggestions,
             discovery = graph.channelDiscovery,
             actions = graph.channelActions,
+            recommended = graph.recommendedChannels,
             locale = Locale.current.language.lowercase(),
             onDismiss = { addSheetOpen = false },
+            onOpenChannel = { chatId ->
+                addSheetOpen = false
+                onChannelClick(chatId)
+            },
         )
     }
 }

@@ -2697,6 +2697,15 @@ class PostsRepository(
         (_mainChatIds.value + _archivedChatIds.value).filterTo(HashSet()) { it in channelChatIds }
 
     /**
+     * [subscribedChatIds] in chat-list order, most relevant first — the same live rank the
+     * first-sign-in backfill picks its top-K by (main-list order, last-message date for
+     * archived chats). Feeds the "Recommended by your channels" scan, which walks its
+     * sources in this order so a partial scan covers the channels the user reads most.
+     */
+    fun subscribedChannelsByRank(): List<Long> =
+        subscribedChatIds().sortedWith(compareByDescending<Long> { backfillRank(it) }.thenBy { it })
+
+    /**
      * Wipe every piece of per-account in-memory state held by this repo.
      * Called from [AppGraph]'s logout handler in response to
      * [TdClient.loggedOut] so account A's cached posts / chat metadata /
