@@ -82,6 +82,12 @@ class ArchiveRepository(
      * recorder's consumer, IO), never in the handlers' enqueue-side gates.
      */
     private val available: () -> Boolean = { true },
+    /**
+     * Removes the archive's real storage — `archive.db` with its -wal / -shm / -journal
+     * files and the copied media directory. Called by [clear] only while [available] is
+     * false; see [wipeArchiveStorage].
+     */
+    private val wipeStorage: () -> Unit = {},
 ) {
 
     internal val writeMutex = Mutex()
@@ -505,20 +511,30 @@ class ArchiveRepository(
     }
 
     /**
-     * Wipes the archive (logout, "delete archive"). When `archive.db` could not be opened
-     * this run, only the in-memory stand-in is wiped and the media files are left alone:
-     * they belong to the untouched file, which a later build may still open.
+     * Wipes the archive (logout, "delete archive"): every message, version and channel row,
+     * schema 2's v1 rows (`PostSnapshotLegacy`, still kept by `2.sqm` — the v1 blobs are the
+     * user's posts too), the copied media files and the decision journal.
+     *
+     * When `archive.db` could not be opened this run ([available] false), the tables wiped
+     * are the in-memory stand-in's, so the real storage is removed by [wipeStorage] instead:
+     * the user asked for deletion, and a file left in place would come back on the next
+     * successful open. [GuardedSqlDriver] has already closed the primary in that state.
+     *
+     * The media wipe runs under `writeMutex` too, so no capture slips between the table wipe
+     * and the file wipe. Lock order is safe: [ArchivedMediaStore]'s own mutex is never held
+     * while `writeMutex` is taken (copies, claims and the orphan sweep take only the former).
      */
     suspend fun clear() {
+        val onDisk = available()
         writeMutex.withLock {
             db.transaction {
                 db.messageVersionQueries.clearAll()
                 db.archivedMessageQueries.clearAll()
                 db.archivedChannelQueries.clearAll()
+                db.archivedMessageQueries.dropLegacyTable()
             }
+            if (onDisk) runCatching { mediaStore?.clearAll() } else runCatching(wipeStorage)
         }
-        // Outside writeMutex — mediaStore takes its own mutex.
-        if (available()) runCatching { mediaStore?.clearAll() }
         // The decision journal describes rows that no longer exist (and, on logout, the
         // previous account's chats) — wiped with them.
         journal?.clear()
@@ -787,7 +803,7 @@ class ArchiveRepository(
         if (cap == Int.MAX_VALUE) return
         // Whole messages, cheapest-to-lose first (see evictToCap). Media files of evicted
         // versions become unreferenced and are reclaimed by the orphan sweep.
-        db.evictToCap(cap)
+        db.evictToCap(cap, clock() - CAP_BASELINE_PROTECTION_MS)
     }
 
     /** Empty stand-in for a row we can't decode — see [decodeContent]. */

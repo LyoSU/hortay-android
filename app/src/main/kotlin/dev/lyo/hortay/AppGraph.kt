@@ -274,6 +274,7 @@ class AppGraph(context: Context) {
             mediaStore = archivedMediaStore,
             journal = archiveJournal,
             available = { archiveDriver.isAvailable },
+            wipeStorage = { dev.lyo.hortay.data.archive.wipeArchiveStorage(context) },
         )
 
     /**

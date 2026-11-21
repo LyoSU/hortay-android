@@ -34,17 +34,26 @@ internal fun ArchiveDatabase.dropMessagesOlderThan(cutoffMs: Long): Int = transa
 
 /**
  * Record cap: keeps at most [cap] messages (each with its whole history). Past it, the
- * messages that carry no history go first — one TDLib version, not deleted: a post that
- * never changed, which the archive browser never lists — oldest first; then the oldest
- * histories. Returns how many messages were removed.
+ * messages that carry no history — one TDLib version, not deleted: a post that never
+ * changed, which the archive browser never lists — go first, oldest first, but only once
+ * their last event is older than [protectBeforeMs]; then everything else, oldest first, so
+ * a recently captured baseline competes with the histories purely by age.
+ *
+ * Why the protection window: when every unchanged post went first, a cap filled with
+ * histories evicted each fresh baseline on the next cap tick, so the post's later deletion
+ * found nothing held (no tombstone) and its first edit lost the original. Callers pass
+ * `now - `[CAP_BASELINE_PROTECTION_MS]. Returns how many messages were removed.
  */
-internal fun ArchiveDatabase.evictToCap(cap: Int): Int = transactionWithResult {
+internal fun ArchiveDatabase.evictToCap(cap: Int, protectBeforeMs: Long): Int = transactionWithResult {
     val excess = archivedMessageQueries.countAll().executeAsOne() - cap
     if (excess <= 0) return@transactionWithResult 0
-    val ids = archivedMessageQueries.selectEvictionOrder(excess).executeAsList()
+    val ids = archivedMessageQueries.selectEvictionOrder(protectBeforeMs, excess).executeAsList()
     deleteMessages(ids)
     ids.size
 }
+
+/** How long a freshly captured unchanged post is kept out of the cap's first tier ([evictToCap]). */
+internal const val CAP_BASELINE_PROTECTION_MS = 3L * 24 * 60 * 60 * 1000
 
 /**
  * Folds the phantom versions older canonical forms let through, and upgrades every TDLib

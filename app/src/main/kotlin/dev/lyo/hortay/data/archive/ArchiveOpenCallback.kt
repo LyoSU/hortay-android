@@ -37,4 +37,14 @@ fun openArchiveDriver(context: Context): GuardedSqlDriver = GuardedSqlDriver(
     onFailure = { e -> Log.e("ArchiveDb", "archive.db could not be opened; the archive is off for this run", e) },
 )
 
+/**
+ * Deletes the archive's storage on disk: `archive.db` and its -wal / -shm / -journal files
+ * ([Context.deleteDatabase]) and the copied media directory ([ArchivedMediaStore.mediaDir]).
+ * Only for a run in which the file is not open (see [ArchiveRepository.clear]).
+ */
+fun wipeArchiveStorage(context: Context) {
+    context.deleteDatabase(ARCHIVE_DB_NAME)
+    ArchivedMediaStore.mediaDir(context).deleteRecursively()
+}
+
 const val ARCHIVE_DB_NAME = "archive.db"

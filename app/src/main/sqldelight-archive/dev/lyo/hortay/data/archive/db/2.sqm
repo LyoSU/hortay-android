@@ -34,8 +34,15 @@
 --
 -- PostSnapshotLegacy keeps the v1 rows untouched (not read by the app, not counted in
 -- the storage size, not exported) so a bad mapping can be repaired by a follow-up
--- migration. It may be dropped (DROP TABLE IF EXISTS PostSnapshotLegacy) by the first
--- migration of the release after the one that ships schema 3.
+-- migration. Wiping the archive (logout, "delete archive": ArchiveRepository.clear) drops
+-- it with everything else. Otherwise it may be dropped (DROP TABLE IF EXISTS
+-- PostSnapshotLegacy) by the first migration of the release after the one that ships
+-- schema 3.
+--
+-- idx_PostSnapshotLegacy_migrate exists only while this migration runs: the per-message
+-- correlated lookups below (deleted_at_ms, the deleted album_key) filter on kind + chat,
+-- which no v1 index leads with, so without it each message scanned every legacy row of
+-- its channel. It is dropped at the end, so the resulting schema is the fresh one.
 
 ALTER TABLE PostSnapshot RENAME TO PostSnapshotLegacy;
 
@@ -83,6 +90,9 @@ CREATE INDEX idx_MessageVersion_message
 
 CREATE INDEX idx_MessageVersion_media
     ON MessageVersion(media_sha);
+
+CREATE INDEX idx_PostSnapshotLegacy_migrate
+    ON PostSnapshotLegacy(kind, source_kind, source_key);
 
 INSERT INTO ArchivedMessage(source_kind, source_key, message_key, album_key, is_comment, published_at_ms,
                             first_captured_at_ms, last_event_at_ms, deleted_at_ms)
@@ -189,3 +199,4 @@ DROP INDEX IF EXISTS idx_PostSnapshot_msg;
 DROP INDEX IF EXISTS idx_PostSnapshot_seen;
 DROP INDEX IF EXISTS idx_PostSnapshot_id;
 DROP INDEX IF EXISTS idx_PostSnapshot_captured;
+DROP INDEX IF EXISTS idx_PostSnapshotLegacy_migrate;

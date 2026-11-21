@@ -46,7 +46,7 @@ class ArchivedMediaStore(
 
     /** Lazily created. Survives across launches; cleared by [clearAll]. */
     private val rootDir: File by lazy {
-        File(context.filesDir, "archive_media").apply { mkdirs() }
+        mediaDir(context).apply { mkdirs() }
     }
 
     /**
@@ -159,6 +159,9 @@ class ArchivedMediaStore(
 
     companion object {
         private const val BUFFER_SIZE = 8 * 1024
+
+        /** Where the copies live: `filesDir/archive_media/`. */
+        fun mediaDir(context: Context): File = File(context.filesDir, "archive_media")
 
         /**
          * Per-file cap for archived media copies. Any fully-downloaded file is a

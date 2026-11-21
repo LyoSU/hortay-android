@@ -17,7 +17,8 @@ import kotlinx.coroutines.withContext
  *  2. Retention — removes whole messages whose newest event (`last_event_at_ms`: a capture
  *     or the deletion) is older than the retention period. v1 dropped single rows by their
  *     capture time, which could strip an edited post of its original version.
- *  3. Cap — keeps at most `maxRecords` messages; see [evictToCap] for who goes first.
+ *  3. Cap — keeps at most `maxRecords` messages: unchanged posts older than
+ *     [CAP_BASELINE_PROTECTION_MS] first, then everything else by age; see [evictToCap].
  *  4. [ArchivedMediaStore.sweepOrphans] — removes media files no version references any more
  *     (past a one-hour grace), which is how steps 1–3 and purges free disk space.
  *
@@ -44,7 +45,9 @@ class ArchiveSweep(
                 if (s.retentionDays != Int.MAX_VALUE) {
                     db.dropMessagesOlderThan(clock() - s.retentionDays.toLong() * DAY_MS)
                 }
-                if (s.maxRecords != Int.MAX_VALUE) db.evictToCap(s.maxRecords)
+                if (s.maxRecords != Int.MAX_VALUE) {
+                    db.evictToCap(s.maxRecords, protectBeforeMs = clock() - CAP_BASELINE_PROTECTION_MS)
+                }
             }
             mediaStore?.sweepOrphans()
         }

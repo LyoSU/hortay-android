@@ -285,6 +285,45 @@ class ArchiveMigrationTest {
         assertEquals(DETAIL_DUP_REHASH, same.detail)
     }
 
+    /** "Delete archive" / logout wipes the v1 rows 2.sqm kept, not only the v3 tables. */
+    @Test
+    fun clearDropsTheLegacyTableOfAMigratedArchive() = kotlinx.coroutines.test.runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { v1Fixture(it); migrate(it) }
+        val repo = ArchiveRepository(
+            ArchiveDatabase(driver), kotlinx.coroutines.flow.MutableStateFlow(ArchiveSettings(enabled = true)),
+        )
+
+        repo.clear()
+
+        assertEquals(0L, count(driver, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'PostSnapshotLegacy'"))
+        for (table in listOf("ArchivedMessage", "MessageVersion", "ArchivedChannel")) {
+            assertEquals(0L, count(driver, "SELECT COUNT(*) FROM $table"), table)
+        }
+        // A second wipe (no legacy table any more) still succeeds.
+        repo.clear()
+    }
+
+    @Test
+    fun clearOnAFreshArchiveWithoutTheLegacyTable() = kotlinx.coroutines.test.runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { ArchiveDatabase.Schema.create(it) }
+        val repo = ArchiveRepository(
+            ArchiveDatabase(driver), kotlinx.coroutines.flow.MutableStateFlow(ArchiveSettings(enabled = true)),
+        )
+        repo.captureTdlibBaseline(ChatRef.tdlib(42), "1", null, testMeta("one"), originalDateMs = 1L)
+
+        repo.clear()
+
+        assertEquals(0L, count(driver, "SELECT COUNT(*) FROM ArchivedMessage"))
+        assertEquals(0L, count(driver, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'PostSnapshotLegacy'"))
+    }
+
+    /** The migration-only legacy index never survives into the migrated schema. */
+    @Test
+    fun migrationDropsItsTemporaryLegacyIndex() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { v1Fixture(it); migrate(it) }
+        assertEquals(0L, count(driver, "SELECT COUNT(*) FROM sqlite_master WHERE tbl_name = 'PostSnapshotLegacy' AND type = 'index'"))
+    }
+
     @Test
     fun jdbcSqliteVersion() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)

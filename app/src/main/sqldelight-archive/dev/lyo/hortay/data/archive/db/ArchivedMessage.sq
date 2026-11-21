@@ -79,16 +79,22 @@ SELECT id FROM ArchivedMessage WHERE last_event_at_ms < ?;
 countAll:
 SELECT COUNT(*) FROM ArchivedMessage;
 
--- Cap eviction order: first the messages that carry no history (one TDLib version, not
--- deleted — an unchanged post the browser never lists), oldest first; then everything
--- else, oldest history first. Guest-mode messages always count as history: guest captures
--- store only the version a change replaced.
+-- Cap eviction order, two tiers, each oldest event first (then id):
+--  0. messages that carry no history (one TDLib version, not deleted — an unchanged post
+--     the browser never lists) whose last event is older than :protectBefore;
+--  1. everything else: histories, and the unchanged posts captured recently.
+-- Recent baselines compete with histories purely by age: putting every unchanged post
+-- first let a cap full of histories evict each fresh baseline on the next tick, so a
+-- later deletion of that post found nothing held and an edit lost its original.
+-- Guest-mode messages always count as history: guest captures store only the version a
+-- change replaced.
 selectEvictionOrder:
 SELECT m.id
 FROM ArchivedMessage m
 ORDER BY CASE
            WHEN m.deleted_at_ms IS NULL
             AND m.source_kind <> 'WEB'
+            AND m.last_event_at_ms < :protectBefore
             AND (SELECT COUNT(*) FROM MessageVersion v WHERE v.message_id = m.id) <= 1
            THEN 0 ELSE 1
          END,
@@ -155,3 +161,8 @@ LIMIT ?;
 
 clearAll:
 DELETE FROM ArchivedMessage;
+
+-- Schema 2's v1 rows (PostSnapshotLegacy, kept by 2.sqm): wiped with the archive. Fresh
+-- installs never had the table.
+dropLegacyTable:
+DROP TABLE IF EXISTS PostSnapshotLegacy;

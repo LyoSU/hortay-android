@@ -104,11 +104,12 @@ class ArchiveSweepTest {
     }
 
     /**
-     * Past the cap, messages without history (one version, not deleted) go first, oldest
-     * first; histories and deletions are kept while there is anything else to drop.
+     * Past the cap, messages without history (one version, not deleted) captured longer than
+     * [CAP_BASELINE_PROTECTION_MS] ago go first, oldest first; histories and deletions are
+     * kept while there is any such message to drop.
      */
     @Test
-    fun cap_evictsUnchangedMessagesBeforeHistories() = runTest {
+    fun cap_evictsOldUnchangedMessagesBeforeHistories() = runTest {
         val f = Fixture(ArchiveSettings(enabled = true, maxRecords = 3))
         f.now = 10L
         f.repo.captureTdlibBaseline(chat, "edited", null, testMeta("v1"), originalDateMs = 1L)
@@ -119,10 +120,33 @@ class ArchiveSweepTest {
             f.now = 100L + i
             f.repo.captureTdlibBaseline(chat, "plain$i", null, testMeta("p$i"), originalDateMs = 1L)
         }
+        f.now = 103L + CAP_BASELINE_PROTECTION_MS + 1L
 
         f.sweep().run()
 
         assertEquals(listOf("deleted", "edited", "plain3"), keys(f))
+    }
+
+    /**
+     * A cap full of histories must not evict every fresh baseline on the next tick: a
+     * recently captured unchanged post competes with the histories by age, so the oldest
+     * histories go and the new baselines stay to give a later deletion its tombstone.
+     */
+    @Test
+    fun cap_keepsFreshBaselinesWhenFullOfHistories() = runTest {
+        val f = Fixture(ArchiveSettings(enabled = true, maxRecords = 3))
+        for (i in 1..3) {
+            f.now = 1_000L + i
+            f.repo.captureTdlibBaseline(chat, "h$i", null, testMeta("v1"), originalDateMs = 1L)
+            f.repo.captureTdlibEdit(chat, "h$i", null, editedAtMs = f.now, meta = testMeta("v2"))
+        }
+        f.now = 10L * day
+        f.repo.captureTdlibBaseline(chat, "b1", null, testMeta("fresh1"), originalDateMs = f.now)
+        f.repo.captureTdlibBaseline(chat, "b2", null, testMeta("fresh2"), originalDateMs = f.now)
+
+        f.sweep().run()
+
+        assertEquals(listOf("b1", "b2", "h3"), keys(f))
     }
 
     @Test

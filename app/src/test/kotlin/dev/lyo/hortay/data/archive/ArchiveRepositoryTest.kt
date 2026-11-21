@@ -449,4 +449,23 @@ class ArchiveRepositoryTest {
         )
         assertEquals(true, Fixture(ArchiveSettings(enabled = true)).repo.capturesEditsFor(chat))
     }
+
+    /**
+     * With the archive unavailable, clear() wipes only the in-memory stand-in — the real
+     * storage must go through the wipe hook, or it comes back on the next successful open.
+     */
+    @Test
+    fun clear_wipesTheRealStorageOnlyWhenTheArchiveIsUnavailable() = runTest {
+        for (available in listOf(true, false)) {
+            var wipes = 0
+            val repo = ArchiveRepository(
+                newArchiveDb(), MutableStateFlow(ArchiveSettings(enabled = true)),
+                available = { available }, wipeStorage = { wipes++ },
+            )
+
+            repo.clear()
+
+            assertEquals(if (available) 0 else 1, wipes, "available=$available")
+        }
+    }
 }
