@@ -77,6 +77,15 @@ SELECT * FROM MessageVersion WHERE message_id = ? ORDER BY sort_at_ms ASC, id AS
 minithumbsByIds:
 SELECT id, media_minithumb FROM MessageVersion WHERE id IN ? AND media_minithumb IS NOT NULL;
 
+-- The archived media copies of the versions the archive browser previews (ArchiveEntries.kt
+-- toArchiveEntries): the file's path, and the blob only for versions that have a copy — the
+-- media type (photo or video-like) lives in the blob's media ref, not in a column.
+archivedCopiesByIds:
+SELECT v.id, v.content_kind, v.content_blob, f.path
+FROM MessageVersion v
+INNER JOIN ArchivedMediaFile f ON f.sha = v.media_sha
+WHERE v.id IN ?;
+
 deleteByMessageIds:
 DELETE FROM MessageVersion WHERE message_id IN ?;
 

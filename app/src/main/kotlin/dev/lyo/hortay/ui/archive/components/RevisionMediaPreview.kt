@@ -1,6 +1,5 @@
 package dev.lyo.hortay.ui.archive.components
 
-import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -30,14 +29,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import coil3.ImageLoader
-import coil3.decode.Decoder
-import coil3.fetch.SourceFetchResult
-import coil3.request.ImageRequest
-import coil3.request.Options
-import coil3.video.VideoFrameDecoder
-import coil3.video.videoFrameOption
-import coil3.video.videoFramePercent
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.archive.ArchivedMediaRef
@@ -48,7 +39,6 @@ import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.timeline.DurationChip
 import dev.lyo.hortay.ui.timeline.formatDuration
 import dev.lyo.hortay.ui.timeline.mediaAspectRatio
-import java.io.File
 
 /**
  * Media of one archived version, compact so the text — the thing whose history this is —
@@ -135,17 +125,8 @@ private fun VisualMedia(
 }
 
 /**
- * The archive's own copy, `archive_media/<sha>.bin`. The `.bin` name gives Coil no MIME type,
- * so for video, GIF (animation) and round-video copies the default decoder chain tries the
- * bitmap decoder, fails, and the box stays empty. Naming `VideoFrameDecoder.Factory()` on the
- * request is not enough either — that factory returns null unless the fetch result's MIME
- * type starts with `video/` (tried; it fell straight to the preview-only fallback on device).
- * [ArchivedVideoFrameDecoderFactory] skips the MIME gate. Photos keep the default chain.
- *
- * The poster is the sync frame nearest [VIDEO_POSTER_FRAME_PERCENT] into the clip rather
- * than frame 0, which is black on clips that fade in. On a short clip the nearest sync frame
- * is usually the first one anyway; a longer clip lands on a real keyframe, so no extra
- * decoding past a GOP boundary.
+ * The archive's own copy, `archive_media/<sha>.bin`, through [archivedFileRequest] (which
+ * carries why a `.bin` video copy needs its own decoder factory and which frame is the poster).
  *
  * Until the file decodes, the blurred minithumb sits underneath without a badge (no flash
  * before a sharp frame lands); a copy that fails to decode (corrupt, unsupported codec)
@@ -155,18 +136,7 @@ private fun VisualMedia(
 private fun androidx.compose.foundation.layout.BoxScope.ArchivedFileImage(media: ArchivedMediaRef, path: String) {
     val context = LocalContext.current
     val isVideo = media.type != "photo"
-    val request = remember(path, isVideo, context) {
-        ImageRequest.Builder(context)
-            .data(File(path))
-            .apply {
-                if (isVideo) {
-                    decoderFactory(ArchivedVideoFrameDecoderFactory)
-                    videoFramePercent(VIDEO_POSTER_FRAME_PERCENT)
-                    videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                }
-            }
-            .build()
-    }
+    val request = remember(path, isVideo, context) { archivedFileRequest(context, path, isVideo) }
     var load by remember(path) { mutableStateOf(ArchivedLoad.Loading) }
     if (load != ArchivedLoad.Success) {
         PreviewOnly(media, showBadge = load == ArchivedLoad.Failed)
@@ -184,20 +154,6 @@ private fun androidx.compose.foundation.layout.BoxScope.ArchivedFileImage(media:
 }
 
 private enum class ArchivedLoad { Loading, Success, Failed }
-
-/**
- * [VideoFrameDecoder] without its factory's `video/` MIME check. Only attached to requests
- * for archived non-photo copies, whose type is known from [ArchivedMediaRef.type] rather
- * than from the (extension-less) file. The decoder reads a file source by path through
- * `MediaMetadataRetriever`; a copy it can't read fails the request, which shows the
- * preview-only fallback.
- */
-private object ArchivedVideoFrameDecoderFactory : Decoder.Factory {
-    override fun create(result: SourceFetchResult, options: Options, imageLoader: ImageLoader): Decoder =
-        VideoFrameDecoder(result.source, options)
-}
-
-private const val VIDEO_POSTER_FRAME_PERCENT = 0.1
 
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.PreviewOnly(media: ArchivedMediaRef, showBadge: Boolean) {

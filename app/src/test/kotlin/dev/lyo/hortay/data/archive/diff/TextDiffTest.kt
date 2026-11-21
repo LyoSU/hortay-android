@@ -44,6 +44,41 @@ class TextDiffTest {
         assertEquals(old to new, rebuild(old, new))
     }
 
+    /** The diff as readable pieces: `=x` equal, `-x` deleted, `+x` inserted. */
+    private fun pieces(old: String, new: String): List<String> {
+        assertEquals(old to new, rebuild(old, new))
+        return TextDiff.compute(old, new).map {
+            when (it.op) {
+                TextDiff.Op.Equal -> "=" + old.substring(it.oldStart, it.oldEnd)
+                TextDiff.Op.Delete -> "-" + old.substring(it.oldStart, it.oldEnd)
+                TextDiff.Op.Insert -> "+" + new.substring(it.newStart, it.newEnd)
+            }
+        }
+    }
+
+    @Test
+    fun `a changed view counter reads as one replacement`() {
+        assertEquals(listOf("=👁", "-405,7K", "+602,2K"), pieces("👁405,7K", "👁602,2K"))
+    }
+
+    @Test
+    fun `separators between two digits stay inside the number`() {
+        assertEquals(listOf("=x ", "-1.5", "+2.5", "= y"), pieces("x 1.5 y", "x 2.5 y"))
+        assertEquals(listOf("-12,345.67", "+12,345.68"), pieces("12,345.67", "12,345.68"))
+        assertEquals(listOf("=at ", "-21:49", "+22:05"), pieces("at 21:49", "at 22:05"))
+        assertEquals(listOf("-١٢٫٥", "+١٣٫٥"), pieces("١٢٫٥", "١٣٫٥"))
+    }
+
+    @Test
+    fun `separators not between two digits stay symbols`() {
+        assertEquals(listOf("=end", "-.", "+!", "= Next"), pieces("end. Next", "end! Next"))
+        assertEquals(listOf("=a", "-,", "+;", "=b"), pieces("a,b", "a;b"))
+        assertEquals(listOf("=1, ", "-2", "+3"), pieces("1, 2", "1, 3"))
+        assertEquals(listOf("=up ", "-5", "+6", "=."), pieces("up 5.", "up 6."))
+        assertEquals(listOf("=see ", "-v1", "+v2", "=."), pieces("see v1.", "see v2."))
+        assertEquals(listOf("=time", "-:", "+=", "=12"), pieces("time:12", "time=12"))
+    }
+
     @Test
     fun `identical texts are one equal run`() {
         assertEquals(listOf(TextDiff.Op.Equal), TextDiff.compute("same", "same").map { it.op })

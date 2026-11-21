@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -16,9 +17,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -27,9 +35,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.archive.ArchiveEntry
 import dev.lyo.hortay.data.archive.ArchiveEntryStatus
+import dev.lyo.hortay.data.archive.ArchivedThumbnailCopy
 import dev.lyo.hortay.ui.archive.ArchiveAvatar
 import dev.lyo.hortay.ui.media.MinithumbImage
 import dev.lyo.hortay.ui.media.TdAvatar
@@ -38,7 +48,8 @@ import dev.lyo.hortay.ui.theme.tabularFigures
 /**
  * One archive browser row: channel avatar, channel name and time, a status line ("Deleted"
  * in the error colour, "Edited · N versions" neutral), up to two lines of the last captured
- * text, and a small thumbnail when the post had media. Quiet by design — a list, not a feed:
+ * text, and a small thumbnail when the post had media (sharp from the archive's own copy
+ * when it holds one, else the inline minithumb). Quiet by design — a list, not a feed:
  * no card, no tint, the status word carries the meaning.
  *
  * @param avatar the chat's live avatar when it is still known; null falls back to the
@@ -125,15 +136,44 @@ fun ArchiveEntryRow(
             Box(
                 modifier = Modifier
                     .padding(top = 2.dp)
-                    .size(52.dp)
+                    .size(THUMBNAIL_SIZE)
                     .clip(RoundedCornerShape(10.dp))
                     .background(scheme.surfaceContainerHigh),
             ) {
-                MinithumbImage(bytes = thumb, contentDescription = null)
+                ThumbnailImage(minithumb = thumb, copy = entry.mediaCopy)
             }
         }
     }
 }
+
+/**
+ * The row's thumbnail: the archive's sharp copy when it holds one, decoded at
+ * [THUMBNAIL_SIZE] (a frame for video-like copies, see [archivedFileRequest]), over the
+ * inline minithumb. The minithumb is the placeholder while the copy decodes and stays as
+ * the picture when there is no copy or it fails to decode; it is dropped only once the
+ * copy has drawn.
+ */
+@Composable
+private fun ThumbnailImage(minithumb: ByteArray, copy: ArchivedThumbnailCopy?) {
+    var copyShown by remember(copy) { mutableStateOf(false) }
+    if (!copyShown) MinithumbImage(bytes = minithumb, contentDescription = null)
+    if (copy == null) return
+    val context = LocalContext.current
+    val sizePx = with(LocalDensity.current) { THUMBNAIL_SIZE.roundToPx() }
+    val request = remember(copy, sizePx, context) {
+        archivedFileRequest(context, copy.path, copy.isVideoFrame, sizePx)
+    }
+    AsyncImage(
+        model = request,
+        contentDescription = null,
+        onSuccess = { copyShown = true },
+        onError = { copyShown = false },
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+private val THUMBNAIL_SIZE = 52.dp
 
 @Composable
 private fun MutedLine(text: String) {

@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -32,6 +33,8 @@ class ArchiveEntriesTest {
         thumb: ByteArray? = null,
         chatRef: ChatRef = chat,
         isComment: Boolean = false,
+        blob: ByteArray = byteArrayOf(1),
+        mediaSha: String? = null,
     ) {
         archivedMessageQueries.insertIfAbsent(
             chatRef.kind.name, chatRef.key, key, album, if (isComment) 1L else 0L, null, sortAt, sortAt,
@@ -41,7 +44,7 @@ class ArchiveEntriesTest {
         messageVersionQueries.insert(
             id, sortAt, null, sortAt, VersionOrigin.LIVE_EDIT.name,
             if (chatRef.kind == SourceKind.WEB) CONTENT_KIND_WEB else CONTENT_KIND_TDLIB,
-            byteArrayOf(1), "h$key$sortAt", ContentNormalizer.HASH_VERSION, text, null, thumb,
+            blob, "h$key$sortAt", ContentNormalizer.HASH_VERSION, text, mediaSha, thumb,
         )
     }
 
@@ -151,6 +154,67 @@ class ArchiveEntriesTest {
 
         // One-byte blob + the 1 000-byte file.
         assertEquals(1_001L, repo.observeStorageBytes().first())
+    }
+
+    private fun mediaBlob(type: String, mimeType: String? = null): ByteArray = ContentBlobCodec.encode(
+        testMeta("").copy(mediaRef = ArchivedMediaRef(type = type, mimeType = mimeType)),
+    )
+
+    private fun ArchiveDatabase.mediaFile(sha: String) =
+        archivedMediaFileQueries.insert(sha, "/archive_media/$sha.bin", 10L, null, 0L, 0L)
+
+    @Test
+    fun editedPhoto_carriesTheArchivedCopyOfThePreviewedVersion() = runTest {
+        val (repo, db) = newDb()
+        val thumb = byteArrayOf(7)
+        db.mediaFile("p1")
+        db.version("1", 100, "old", thumb = thumb, blob = mediaBlob("photo"), mediaSha = "p1")
+        db.version("1", 200, "new", thumb = thumb, blob = mediaBlob("photo"), mediaSha = "p1")
+
+        val e = repo.observeEntries().first().single()
+        assertArrayEquals(thumb, e.mediaMinithumb)
+        assertEquals(ArchivedThumbnailCopy("/archive_media/p1.bin", isVideoFrame = false), e.mediaCopy)
+    }
+
+    @Test
+    fun deletedAlbumVideo_carriesAVideoFrameCopy() = runTest {
+        val (repo, db) = newDb()
+        db.mediaFile("v1")
+        db.version("1", 100, "caption", album = "alb")
+        db.version("2", 100, "", album = "alb", thumb = byteArrayOf(3), blob = mediaBlob("video"), mediaSha = "v1")
+        db.deleted(500, "1", "2", album = "alb")
+
+        val e = repo.observeEntries().first().single()
+        assertEquals(ArchivedThumbnailCopy("/archive_media/v1.bin", isVideoFrame = true), e.mediaCopy)
+    }
+
+    @Test
+    fun animationCopy_isAFrameUnlessItIsAnImage() {
+        assertEquals(true, thumbnailCopyOf(CONTENT_KIND_TDLIB, mediaBlob("animation", "video/mp4"), "/a")?.isVideoFrame)
+        assertEquals(false, thumbnailCopyOf(CONTENT_KIND_TDLIB, mediaBlob("animation", "image/gif"), "/a")?.isVideoFrame)
+        assertEquals(true, thumbnailCopyOf(CONTENT_KIND_TDLIB, mediaBlob("videoNote"), "/a")?.isVideoFrame)
+    }
+
+    /** No copy on the previewed version, or a copy that is not a picture: minithumb only. */
+    @Test
+    fun entryWithoutDrawableCopy_keepsOnlyTheMinithumb() = runTest {
+        val (repo, db) = newDb()
+        val thumb = byteArrayOf(4)
+        db.mediaFile("old")
+        db.mediaFile("doc")
+        db.version("1", 100, "a", thumb = thumb, blob = mediaBlob("photo"), mediaSha = "old")
+        db.version("1", 200, "b", thumb = thumb, blob = mediaBlob("photo"))
+        db.version("2", 100, "c", thumb = thumb, blob = mediaBlob("document"), mediaSha = "doc")
+        db.version("2", 200, "d", thumb = thumb, blob = mediaBlob("document"), mediaSha = "doc")
+        db.version("3", 100, "e", thumb = thumb, blob = byteArrayOf(1), mediaSha = "old")
+        db.version("3", 200, "f", thumb = thumb, blob = byteArrayOf(1), mediaSha = "old")
+
+        val entries = repo.observeEntries().first()
+        assertEquals(3, entries.size)
+        entries.forEach {
+            assertArrayEquals(thumb, it.mediaMinithumb)
+            assertNull(it.mediaCopy, it.messageKey)
+        }
     }
 
     @Test

@@ -21,6 +21,10 @@ enum class ArchiveEntryStatus { Deleted, Edited }
  *   ([dedupeVersions]), so stored versions are distinct ones.
  * @property textPreview text of the latest captured version (album: the first member with
  *   text); empty when there is none.
+ * @property mediaMinithumb inline preview of the version the thumbnail shows (album: the
+ *   first member with one); null when the entry has no picture.
+ * @property mediaCopy the archive's own sharp copy of that same version's media, when it
+ *   holds one the list can draw; the row keeps [mediaMinithumb] as placeholder and fallback.
  * @property messageIds every archived message the entry stands for — what removing it purges.
  */
 @Immutable
@@ -36,6 +40,7 @@ data class ArchiveEntry(
     val textPreview: String,
     val mediaMinithumb: ByteArray?,
     val messageIds: ImmutableList<Long>,
+    val mediaCopy: ArchivedThumbnailCopy? = null,
 ) {
     /** Stable list key: one entry per (chat, message). */
     val key: String get() = "${chat.kind.name}:${chat.key}:$messageKey"
@@ -52,7 +57,8 @@ data class ArchiveEntry(
             other.versionCount == versionCount &&
             other.textPreview == textPreview &&
             other.mediaMinithumb.contentEquals(mediaMinithumb) &&
-            other.messageIds == messageIds
+            other.messageIds == messageIds &&
+            other.mediaCopy == mediaCopy
 
     override fun hashCode(): Int {
         var h = chat.hashCode()
@@ -64,6 +70,15 @@ data class ArchiveEntry(
         return h
     }
 }
+
+/**
+ * A sharp archived copy (`archive_media/<sha>.bin`) the archive list can draw as a thumbnail.
+ *
+ * @property isVideoFrame the copy is a video, GIF-as-video or round video, so the row draws a
+ *   decoded frame; false for a photo (or an image-typed animation), decoded as a bitmap.
+ */
+@Immutable
+data class ArchivedThumbnailCopy(val path: String, val isVideoFrame: Boolean)
 
 /** Channel metadata the archive keeps per chat (ArchivedChannel row). */
 @Immutable
@@ -89,12 +104,13 @@ internal data class ArchiveEntryRow(
     val thumbVersionId: Long?,
 )
 
-/** An entry before its minithumb is loaded: [thumbVersionId] names the version to take it from. */
+/** An entry before its thumbnail is loaded: [thumbVersionId] names the version to take it from. */
 internal data class ArchiveEntryDraft(val entry: ArchiveEntry, val thumbVersionId: Long?)
 
 /**
  * Maps `selectEntryMessages` rows to entries: channel metadata from ArchivedChannel,
- * grouping by [buildArchiveEntries], then minithumbs for just the versions the entries show.
+ * grouping by [buildArchiveEntries], then minithumbs and archived media copies for just the
+ * versions the entries show — two chunked `IN` reads for the whole list, never one per row.
  * Blocking; [ArchiveRepository.observeEntries] runs it on the IO dispatcher.
  */
 internal fun ArchiveDatabase.toArchiveEntries(rows: List<SelectEntryMessages>): ImmutableList<ArchiveEntry> {
@@ -119,15 +135,37 @@ internal fun ArchiveDatabase.toArchiveEntries(rows: List<SelectEntryMessages>): 
     }.toMap()
     val drafts = buildArchiveEntries(light, channels)
     val thumbs = HashMap<Long, ByteArray>()
+    val copies = HashMap<Long, ArchivedThumbnailCopy>()
     drafts.mapNotNull { it.thumbVersionId }.chunked(SQL_VARIABLE_CHUNK).forEach { ids ->
         messageVersionQueries.minithumbsByIds(ids).executeAsList().forEach { t ->
             t.media_minithumb?.let { thumbs[t.id] = it }
         }
+        messageVersionQueries.archivedCopiesByIds(ids).executeAsList().forEach { c ->
+            thumbnailCopyOf(c.content_kind, c.content_blob, c.path)?.let { copies[c.id] = it }
+        }
     }
     return drafts.map { d ->
-        val thumb = d.thumbVersionId?.let(thumbs::get)
-        if (thumb == null) d.entry else d.entry.copy(mediaMinithumb = thumb)
+        val versionId = d.thumbVersionId ?: return@map d.entry
+        val thumb = thumbs[versionId] ?: return@map d.entry
+        d.entry.copy(mediaMinithumb = thumb, mediaCopy = copies[versionId])
     }.toImmutableList()
+}
+
+/**
+ * The thumbnail-drawable copy of one version's media, from its stored media ref. Only TDLib
+ * versions reference copies (guest captures store none). Documents, audio and voice copies
+ * are not pictures, and an undecodable blob means no copy — the row keeps the minithumb.
+ */
+internal fun thumbnailCopyOf(contentKind: String, blob: ByteArray, path: String): ArchivedThumbnailCopy? {
+    if (contentKind != CONTENT_KIND_TDLIB) return null
+    val ref = runCatching { ContentBlobCodec.decode(blob).mediaRef }.getOrNull() ?: return null
+    val isVideoFrame = when (ref.type) {
+        "photo" -> false
+        "video", "videoNote" -> true
+        "animation" -> ref.mimeType?.startsWith("image/") != true
+        else -> return null
+    }
+    return ArchivedThumbnailCopy(path, isVideoFrame)
 }
 
 /**

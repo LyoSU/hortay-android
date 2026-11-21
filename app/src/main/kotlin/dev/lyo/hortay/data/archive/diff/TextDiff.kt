@@ -16,6 +16,14 @@ import com.github.difflib.DiffUtils
  * Tokens: runs of letters / digits, runs of whitespace, and runs of other symbols. Combining
  * marks, variation selectors and zero-width joiners stick to the token before them, and a
  * surrogate pair is never split — so an emoji or a ZWJ sequence is diffed as a whole.
+ *
+ * A number separator — `.`, `,`, `:`, or the Arabic decimal / thousands separators U+066B /
+ * U+066C — that sits directly between two digits belongs to the word around it, so
+ * `405,7K`, `12,345.67` and `21:49` are one token each and a changed counter reads as one
+ * replacement instead of "405 → 602, plain comma, 7K → 2K". The same character anywhere
+ * else (`end. Next`, `a,b`, `1, 2`, a trailing `5.`) stays a symbol token. Space-like group
+ * separators (`12 345`, U+00A0 / U+202F) are deliberately not joined: they are whitespace,
+ * and folding them into words would also glue ordinary space-separated numbers together.
  */
 object TextDiff {
 
@@ -85,7 +93,7 @@ object TextDiff {
         while (i < text.length) {
             val cp = text.codePointAt(i)
             val size = Character.charCount(cp)
-            val k = kindOf(cp)
+            val k = if (isNumberSeparatorBetweenDigits(text, i, cp)) Kind.Word else kindOf(cp)
             if (k != null && k != kind) {
                 if (kind != null) out += Token(text.substring(tokenStart, i), tokenStart)
                 tokenStart = i
@@ -99,6 +107,17 @@ object TextDiff {
         if (kind != null) out += Token(text.substring(tokenStart), tokenStart)
         return out
     }
+
+    /** [cp] at [i] is a number separator with a digit right before and right after it. */
+    private fun isNumberSeparatorBetweenDigits(text: String, i: Int, cp: Int): Boolean {
+        if (cp !in NUMBER_SEPARATORS || i == 0) return false
+        val next = i + Character.charCount(cp)
+        return next < text.length &&
+            Character.isDigit(text.codePointBefore(i)) &&
+            Character.isDigit(text.codePointAt(next))
+    }
+
+    private val NUMBER_SEPARATORS = setOf('.'.code, ','.code, ':'.code, 0x066B, 0x066C)
 
     /** Null = attaches to the current token (combining marks, VS16, ZWJ, other format chars). */
     private fun kindOf(cp: Int): Kind? = when {
