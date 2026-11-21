@@ -378,6 +378,7 @@
     <string name="settings_quick_reaction_title">Реакція подвійним тапом</string>
     <string name="settings_quick_reaction_subtitle">Подвійний тап по посту ставить обрану реакцію. Звичайний тап тоді відкриває пост на мить пізніше.</string>
     <string name="feed_also_forwarded_by">Також переслали %1$s</string>
+    <string name="feed_also_covered_by">Про це також пишуть %1$s</string>
     <string name="post_forwarded_by">Пересилає %1$s</string>
     <string name="feed_forwarded_by_many">Пересилають %1$s</string>
     <string name="feed_forwarders_two">%1$s і %2$s</string>

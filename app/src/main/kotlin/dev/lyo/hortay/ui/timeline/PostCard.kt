@@ -436,6 +436,13 @@ fun PostCard(
                     ForwardedByRow(alsoForwardedBy, label = R.string.feed_also_forwarded_by)
                     Spacer(Modifier.height(HortaySpacing.sm))
                 }
+                // Other channels that wrote about the same story in their own words
+                // ([withStoryCoverage] already left out anyone named in the line above).
+                val coveredBy = annotation?.coveredBy
+                if (!coveredBy.isNullOrEmpty()) {
+                    ForwardedByRow(coveredBy, label = R.string.feed_also_covered_by, glyph = "dynamic_feed")
+                    Spacer(Modifier.height(HortaySpacing.sm))
+                }
                 val onHeaderClick = if (source != null) onSourceClick ?: {} else onSenderClick
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Avatar(
@@ -680,12 +687,16 @@ private fun TimelinePost.asForwarderBadge() = ChannelBadge(
  * original into the feed. Either the post's own channel when the source heads the card,
  * the channels whose copies [clusterFeed] hid, or both. Up to three overlapping avatars.
  * [onClick] opens the first forwarder (the post's own channel).
+ *
+ * Also draws "Also covered by A, B and N more" ([FeedAnnotation.coveredBy]) with its own
+ * [glyph] — same quiet line, a different subject.
  */
 @Composable
 private fun ForwardedByRow(
     forwarders: kotlinx.collections.immutable.ImmutableList<ChannelBadge>,
     @androidx.annotation.StringRes label: Int,
     onClick: (() -> Unit)? = null,
+    glyph: String = "line_forward",
 ) {
     val names = when (forwarders.size) {
         0 -> ""
@@ -708,7 +719,7 @@ private fun ForwardedByRow(
         } else Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Symbol(name = "line_forward", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp)
+        Symbol(name = glyph, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp)
         Spacer(Modifier.width(6.dp))
         Box {
             forwarders.take(3).forEachIndexed { i, ch ->

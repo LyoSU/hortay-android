@@ -13,6 +13,7 @@
 - A search button next to the logo searches posts across all your channels, including ones that never reached your feed — tap a result to open the channel at that post.
 - A channel's info card lists similar channels Telegram recommends — subscribe in one tap or tap one to open it.
 - When several of your channels forward the same post, the feed shows it once with "Also forwarded by …" instead of repeating it.
+- When three or more of your channels write about the same story in their own words, each of those posts shows "Also covered by …" with the other channels.
 - A channel's burst of posts folds under its first one with "N more posts in this series" and a preview of the latest, so one busy channel no longer floods the feed — Settings → Feed can turn this off.
 - Posts carrying an official Telegram fact check now show it in a plate under the text.
 - After jumping to a pinned post or a reply inside a channel, a corner button takes you back one jump at a time, and otherwise scrolls to the newest posts.

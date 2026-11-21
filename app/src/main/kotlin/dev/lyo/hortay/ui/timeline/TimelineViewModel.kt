@@ -8,11 +8,19 @@ import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.data.TimelinePost
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
+import dev.lyo.hortay.data.PostContent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -255,6 +263,51 @@ class TimelineViewModel(
         _expandedSeries.update { it.addAll(memberKeys) }
     }
 
+    /**
+     * Whether [storyPeers] runs. Only the merged home feed with feed grouping on turns it on
+     * ([TimelineScreen]); the Saved view never writes it, so sharing this VM with it is safe.
+     */
+    private val storyCoverageEnabled = MutableStateFlow(false)
+
+    fun setStoryCoverageEnabled(enabled: Boolean) {
+        storyCoverageEnabled.value = enabled
+    }
+
+    /** Holds the per-post token cache; guarded by its own monitor (see [storyPeers]). */
+    private val storyClusterer = StoryClusterer()
+
+    /**
+     * "Also covered by": feed row key → other channels' posts about the same story
+     * ([StoryClusterer]). Off the main thread and conflated: a burst of live updates is
+     * debounced by [STORY_DEBOUNCE_MS], and the pass runs on [Dispatchers.Default] one at a
+     * time — `debounce` keeps only the newest feed while a pass is running, so passes never
+     * queue up. Each pass re-tokenises only new or edited posts (the clusterer's cache).
+     *
+     * Reads [posts], not the pending arrivals: a post behind the "new posts" pill is not on
+     * screen, so it neither gets nor lends an annotation until it is accepted.
+     */
+    @OptIn(FlowPreview::class)
+    val storyPeers: StateFlow<ImmutableMap<String, ImmutableList<StoryPeer>>> =
+        combine(posts, storyCoverageEnabled) { feed, enabled -> if (enabled) feed else null }
+            .debounce(STORY_DEBOUNCE_MS)
+            .map { feed -> if (feed == null) persistentMapOf() else computeStoryPeers(feed) }
+            .flowOn(Dispatchers.Default)
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentMapOf())
+
+    private fun computeStoryPeers(feed: List<TimelinePost>): ImmutableMap<String, ImmutableList<StoryPeer>> {
+        val input = feed.mapNotNull { p ->
+            if (p.parentId != null || p.isDeleted || p.content is PostContent.Service) return@mapNotNull null
+            val text = p.content.captionPlain
+            if (text.isBlank()) return@mapNotNull null
+            StoryPost(key = p.feedKey(), chatId = p.chatId, date = p.date, text = text, version = p.editDate)
+        }
+        // A cancelled pass (the flow restarting after WhileSubscribed) can still be running
+        // when the next one starts; the monitor keeps the clusterer's cache single-threaded.
+        val peers = synchronized(storyClusterer) { storyClusterer.cluster(input) }
+        return peers.mapValues { it.value.toImmutableList() }.toImmutableMap()
+    }
+
     init {
         // Bootstrap: first stable emission seeds [seenHighWater] for every chatId in
         // livePosts with that channel's max date, then flips [bootstrapped] true.
@@ -357,6 +410,7 @@ class TimelineViewModel(
         pinnedScrollSeedKeys.clear()
         feedScrollAnchors.clear()
         _expandedSeries.value = persistentSetOf()
+        synchronized(storyClusterer) { storyClusterer.clear() }
         launchBootstrap()
     }
 
@@ -442,6 +496,8 @@ class TimelineViewModel(
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
+        // Quiet period before an "also covered by" pass; a live burst lands as one pass.
+        const val STORY_DEBOUNCE_MS = 500L
         // Pending-pill freshness gate, in milliseconds (matches
         // [TimelinePost.date]). Posts whose `date` is older than this
         // window are sync catch-up, not genuine new arrivals — they go

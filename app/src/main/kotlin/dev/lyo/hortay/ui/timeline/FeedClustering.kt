@@ -44,6 +44,9 @@ data class FoldedPost(
  *   row unread until the series is expanded and they are read in place.
  * @property seriesLatest excerpt of the newest folded post, so the freshest update of a
  *   burst (an air-raid all-clear, a correction) is readable without expanding it.
+ * @property coveredBy other channels that wrote about the same story in their own words
+ *   ([StoryClusterer], merged in by [withStoryCoverage]). Display only: nothing is hidden,
+ *   so it plays no part in read state — [rowHasUnread] ignores it.
  */
 @Immutable
 data class FeedAnnotation(
@@ -54,6 +57,7 @@ data class FeedAnnotation(
     val seriesMemberKeys: ImmutableList<String> = persistentListOf(),
     val seriesFolded: ImmutableList<FoldedPost> = persistentListOf(),
     val seriesLatest: String? = null,
+    val coveredBy: ImmutableList<ChannelBadge> = persistentListOf(),
 )
 
 /**
@@ -216,6 +220,48 @@ internal fun clusterFeed(
         keptKeyOf = resolved.toPersistentMap(),
         ackCompanions = companions.toPersistentMap(),
     )
+}
+
+/**
+ * [annotations] with "also covered by" ([FeedAnnotation.coveredBy]) merged in from
+ * [storyPeers] (see [StoryClusterer]). Kept apart from [clusterFeed] on purpose: it never
+ * hides, adds or re-keys a row, so the rows, keys, unread counting and scroll anchoring
+ * that read [ClusteredFeed] stay exactly as [clusterFeed] made them — only the annotations
+ * PostCard draws gain the extra line.
+ *
+ * [posts] is the feed in the current scope (folder / archive / All, before [clusterFeed]
+ * hid anything): a peer counts only while one of its channel's posts is in it, so a folder
+ * tab does not name channels outside the folder, and the story must still reach
+ * [STORY_MIN_CHATS] channels inside the scope. Channels already named in the row's
+ * "forwarded by" line are left out, so no channel is listed twice; a row with nothing left
+ * to name gets no line. Each listed channel is drawn from its newest post in [posts].
+ */
+internal fun withStoryCoverage(
+    annotations: ImmutableMap<String, FeedAnnotation>,
+    storyPeers: Map<String, List<StoryPeer>>,
+    posts: List<TimelinePost>,
+    badgeFor: (TimelinePost) -> ChannelBadge,
+): ImmutableMap<String, FeedAnnotation> {
+    if (storyPeers.isEmpty()) return annotations
+    val newestOfChat = HashMap<Long, TimelinePost>()
+    for (p in posts) {
+        val held = newestOfChat[p.chatId]
+        if (held == null || p.date > held.date) newestOfChat[p.chatId] = p
+    }
+    val merged = HashMap<String, FeedAnnotation>(annotations)
+    for ((key, peers) in storyPeers) {
+        val inScope = peers.filter { it.chatId in newestOfChat }
+        if (inScope.size < STORY_MIN_CHATS - 1) continue
+        val existing = annotations[key]
+        val forwarders = existing?.forwardedBy?.mapTo(HashSet()) { it.chatId }.orEmpty()
+        val badges = inScope
+            .filter { it.chatId !in forwarders }
+            .map { badgeFor(newestOfChat.getValue(it.chatId)) }
+        if (badges.isNotEmpty()) {
+            merged[key] = (existing ?: FeedAnnotation()).copy(coveredBy = badges.toImmutableList())
+        }
+    }
+    return merged.toPersistentMap()
 }
 
 /**

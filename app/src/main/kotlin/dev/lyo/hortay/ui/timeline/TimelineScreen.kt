@@ -509,22 +509,25 @@ fun TimelineScreen(
     val expandedSeries by vm.expandedSeries.collectAsStateWithLifecycle()
     val clustered = remember(filteredPosts, groupFeed, showOnlyBookmarked, expandedSeries) {
         if (groupFeed && !showOnlyBookmarked) {
-            clusterFeed(filteredPosts, expandedSeries) { p ->
-                ChannelBadge(
-                    chatId = p.chatId,
-                    title = p.channelContext?.name ?: p.senderName,
-                    thumb = p.channelContext?.avatarThumb ?: p.avatarThumb,
-                    fileId = p.channelContext?.avatarFileId ?: p.avatarFileId,
-                    avatarUrl = p.avatarUrl,
-                    latestPostDate = p.date,
-                )
-            }
+            clusterFeed(filteredPosts, expandedSeries, ::feedChannelBadge)
         } else {
             ClusteredFeed(filteredPosts, kotlinx.collections.immutable.persistentMapOf())
         }
     }
-    val feedAnnotations = remember(clustered.annotations, vm) {
-        FeedAnnotations(clustered.annotations) { key ->
+    // "Also covered by" runs under the same Settings → Feed switch as the folding above, on
+    // the merged feed only. The Saved route shares this VM but never writes the flag.
+    val storyCoverageOn = groupFeed && !showOnlyBookmarked
+    if (!showOnlyBookmarked) {
+        LaunchedEffect(vm, groupFeed) { vm.setStoryCoverageEnabled(groupFeed) }
+    }
+    val storyPeers = if (storyCoverageOn) {
+        vm.storyPeers.collectAsStateWithLifecycle().value
+    } else {
+        kotlinx.collections.immutable.persistentMapOf()
+    }
+    val feedAnnotations = remember(clustered.annotations, storyPeers, filteredPosts, vm) {
+        val byKey = withStoryCoverage(clustered.annotations, storyPeers, filteredPosts, ::feedChannelBadge)
+        FeedAnnotations(byKey) { key ->
             // Record every member of the run, not just the kept row: the kept row moves
             // when older history joins the burst, and the series must stay open anyway.
             vm.expandSeries(clustered.annotations[key]?.seriesMemberKeys?.takeIf { it.isNotEmpty() } ?: listOf(key))
@@ -2463,3 +2466,12 @@ private const val PREFETCH_AHEAD = 2
  */
 private const val COMMENTS_PREFETCH_LIMIT = 1
 
+/** A merged-feed post's channel as the "forwarded by" / "covered by" lines draw it. */
+private fun feedChannelBadge(p: TimelinePost): ChannelBadge = ChannelBadge(
+    chatId = p.chatId,
+    title = p.channelContext?.name ?: p.senderName,
+    thumb = p.channelContext?.avatarThumb ?: p.avatarThumb,
+    fileId = p.channelContext?.avatarFileId ?: p.avatarFileId,
+    avatarUrl = p.avatarUrl,
+    latestPostDate = p.date,
+)

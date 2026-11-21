@@ -351,6 +351,7 @@
     <string name="settings_quick_reaction_title">Reaksi ketuk dua kali</string>
     <string name="settings_quick_reaction_subtitle">Ketuk postingan dua kali untuk bereaksi dengan emoji pilihan. Ketukan tunggal lalu membuka postingan sesaat lebih lambat.</string>
     <string name="feed_also_forwarded_by">Juga diteruskan oleh %1$s</string>
+    <string name="feed_also_covered_by">Juga diberitakan oleh %1$s</string>
     <string name="post_forwarded_by">Diteruskan oleh %1$s</string>
     <string name="feed_forwarded_by_many">Diteruskan oleh %1$s</string>
     <string name="feed_forwarders_two">%1$s dan %2$s</string>

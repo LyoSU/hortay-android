@@ -373,6 +373,7 @@
     <string name="settings_quick_reaction_title">Reação com toque duplo</string>
     <string name="settings_quick_reaction_subtitle">Toque duas vezes em uma publicação para reagir com o emoji escolhido. Um toque simples a abre um instante depois.</string>
     <string name="feed_also_forwarded_by">Também encaminhado por %1$s</string>
+    <string name="feed_also_covered_by">Também noticiado por %1$s</string>
     <string name="post_forwarded_by">Encaminhado por %1$s</string>
     <string name="feed_forwarded_by_many">Encaminhado por %1$s</string>
     <string name="feed_forwarders_two">%1$s e %2$s</string>
