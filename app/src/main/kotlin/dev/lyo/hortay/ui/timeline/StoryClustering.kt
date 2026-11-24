@@ -47,7 +47,10 @@ internal const val STORY_MIN_SHARED_WEIGHT = 12.0
  */
 internal const val STORY_MIN_TOKENS = 6
 
-/** Fewest distinct channels (the post's own included) that make a story. */
+/**
+ * Fewest distinct channels (the post's own included) that make a story, each with text of
+ * its own: forwards never reach the clusterer ([storyInputOf]).
+ */
 internal const val STORY_MIN_CHATS = 3
 
 /** Bound on [StoryClusterer]'s per-post token cache. */

@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.Reactions
@@ -210,7 +211,9 @@ class StoryClusteringTest {
     )
 
     private fun badge(p: TimelinePost) =
-        ChannelBadge(chatId = p.chatId, title = p.senderName, thumb = null, fileId = null, latestPostDate = p.date)
+        ChannelBadge(chatId = p.chatId, title = p.senderName, thumb = p.avatarThumb, fileId = null, latestPostDate = p.date)
+
+    private fun scope(vararg posts: TimelinePost) = storyScopeOf(posts.toList(), ::badge)
 
     @Test
     fun `coverage names the other channels and leaves existing annotations alone`() {
@@ -219,7 +222,7 @@ class StoryClusteringTest {
         val c = post(3, 12)
         val peers = mapOf(a.feedKey() to listOf(StoryPeer(b.feedKey(), 2), StoryPeer(c.feedKey(), 3)))
         val series = FeedAnnotation(seriesHidden = 3, seriesKey = a.feedKey())
-        val merged = withStoryCoverage(persistentMapOf(a.feedKey() to series), peers, listOf(a, b, c), ::badge)
+        val merged = withStoryCoverage(persistentMapOf(a.feedKey() to series), peers, scope(a, b, c))
         val annotation = merged.getValue(a.feedKey())
         assertEquals(listOf(2L, 3L), annotation.coveredBy.map { it.chatId })
         assertEquals(series, annotation.copy(coveredBy = persistentListOf()))
@@ -231,8 +234,8 @@ class StoryClusteringTest {
         val b = post(2, 11)
         val peers = mapOf(a.feedKey() to listOf(StoryPeer(b.feedKey(), 2), StoryPeer("gone", 3)))
         val annotations = persistentMapOf<String, FeedAnnotation>()
-        assertSame(annotations, withStoryCoverage(annotations, emptyMap(), listOf(a, b), ::badge))
-        assertTrue(withStoryCoverage(annotations, peers, listOf(a, b), ::badge).isEmpty())
+        assertSame(annotations, withStoryCoverage(annotations, emptyMap(), scope(a, b)))
+        assertTrue(withStoryCoverage(annotations, peers, scope(a, b)).isEmpty())
     }
 
     @Test
@@ -240,11 +243,93 @@ class StoryClusteringTest {
         val a = post(1, 10)
         val b = post(2, 11)
         val c = post(3, 12)
+        val d = post(4, 13)
+        val forwarded = FeedAnnotation(forwardedBy = persistentListOf(badge(b)))
+        val peers = mapOf(
+            a.feedKey() to listOf(StoryPeer(b.feedKey(), 2), StoryPeer(c.feedKey(), 3), StoryPeer(d.feedKey(), 4)),
+        )
+        val merged = withStoryCoverage(persistentMapOf(a.feedKey() to forwarded), peers, scope(a, b, c, d))
+        assertEquals(listOf(3L, 4L), merged.getValue(a.feedKey()).coveredBy.map { it.chatId })
+        assertEquals(listOf(2L), merged.getValue(a.feedKey()).forwardedBy.map { it.chatId })
+    }
+
+    @Test
+    fun `the three-channel minimum is checked after the forwarders are taken out`() {
+        val a = post(1, 10)
+        val b = post(2, 11)
+        val c = post(3, 12)
         val forwarded = FeedAnnotation(forwardedBy = persistentListOf(badge(b)))
         val peers = mapOf(a.feedKey() to listOf(StoryPeer(b.feedKey(), 2), StoryPeer(c.feedKey(), 3)))
-        val merged = withStoryCoverage(persistentMapOf(a.feedKey() to forwarded), peers, listOf(a, b, c), ::badge)
-        assertEquals(listOf(3L), merged.getValue(a.feedKey()).coveredBy.map { it.chatId })
-        assertEquals(listOf(2L), merged.getValue(a.feedKey()).forwardedBy.map { it.chatId })
+        val annotations = persistentMapOf(a.feedKey() to forwarded)
+        val merged = withStoryCoverage(annotations, peers, scope(a, b, c))
+        assertEquals(annotations, merged)
+        assertTrue(merged.getValue(a.feedKey()).coveredBy.isEmpty())
+    }
+
+    @Test
+    fun `a views or reactions tick leaves the scope and the coverage equal`() {
+        val a = post(1, 10).copy(avatarThumb = byteArrayOf(1, 2, 3))
+        val b = post(2, 11).copy(avatarThumb = byteArrayOf(4, 5))
+        val c = post(3, 12)
+        // The tick re-maps every post: new list, new thumb arrays with the same bytes, new counters.
+        val ticked = listOf(a, b, c).map {
+            it.copy(views = it.views + 7, forwardCount = 3, avatarThumb = it.avatarThumb?.copyOf())
+        }
+        val before = storyScopeOf(listOf(a, b, c), ::badge)
+        val after = storyScopeOf(ticked, ::badge)
+        assertEquals(before, after)
+        val peers = mapOf(a.feedKey() to listOf(StoryPeer(b.feedKey(), 2), StoryPeer(c.feedKey(), 3)))
+        val annotations = persistentMapOf<String, FeedAnnotation>()
+        assertEquals(withStoryCoverage(annotations, peers, before), withStoryCoverage(annotations, peers, after))
+        // A real change of what the line draws (a newer post of the channel) does not compare equal.
+        assertFalse(before == storyScopeOf(ticked + post(3, 99), ::badge))
+    }
+
+    @Test
+    fun `forwards of any origin are not clustering input`() {
+        val own = post(1, 10).copy(content = PostContent.Text(FormattedText.plain("own words")))
+        val origins = listOf(
+            ForwardOrigin.Channel("src", null, sourceChatId = 9, sourceHandle = null, sourceMessageId = 5),
+            ForwardOrigin.Chat("grp", null, sourceChatId = 8, sourceHandle = null),
+            ForwardOrigin.User("user", userId = 7),
+            ForwardOrigin.HiddenUser("hidden"),
+        )
+        val forwards = origins.mapIndexed { i, origin ->
+            post(2L + i, 20L + i).copy(
+                content = PostContent.Text(FormattedText.plain("forwarded words")),
+                forwardOrigin = origin,
+            )
+        }
+        assertEquals(listOf(own.feedKey()), storyInputOf(listOf(own) + forwards).map { it.key })
+    }
+
+    @Test
+    fun `an original and its forward do not make a three-channel story with one more channel`() {
+        fun text(t: String) = PostContent.Text(FormattedText.plain(t))
+        val original = post(1, 10).copy(date = 0L, content = text("$tankerStory ${word(70_001)}"))
+        val forward = post(2, 11).copy(
+            date = hour,
+            content = text("$tankerStory ${word(70_001)}"),
+            forwardOrigin = ForwardOrigin.Channel("ch1", null, sourceChatId = 1, sourceHandle = null, sourceMessageId = 10),
+        )
+        val independent = post(3, 12).copy(date = 2 * hour, content = text("$tankerStory ${word(70_002)}"))
+        val feed = listOf(original, forward, independent)
+        // Control: counted as its own channel, the forward would make this a story.
+        val withForward = feed.map { StoryPost(it.feedKey(), it.chatId, it.date, it.content.captionPlain) }
+        assertTrue(cluster(withForward + filler()).isNotEmpty())
+        // Only two channels wrote their own text: below the minimum, no story at all.
+        val input = storyInputOf(feed)
+        assertEquals(setOf(1L, 3L), input.map { it.chatId }.toSet())
+        assertTrue(cluster(input + filler()).isEmpty())
+    }
+
+    @Test
+    fun `the clustering input ignores views and reactions`() {
+        val a = post(1, 10).copy(content = PostContent.Text(FormattedText.plain("some words here")))
+        val ticked = a.copy(views = 500, forwardCount = 4, commentCount = 12)
+        assertEquals(storyInputOf(listOf(a)), storyInputOf(listOf(ticked)))
+        val edited = a.copy(editDate = 99L, content = PostContent.Text(FormattedText.plain("other words here")))
+        assertFalse(storyInputOf(listOf(a)) == storyInputOf(listOf(edited)))
     }
 
     @Test

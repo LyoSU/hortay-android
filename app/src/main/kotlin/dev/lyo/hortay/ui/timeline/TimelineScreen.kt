@@ -525,8 +525,20 @@ fun TimelineScreen(
     } else {
         kotlinx.collections.immutable.persistentMapOf()
     }
-    val feedAnnotations = remember(clustered.annotations, storyPeers, filteredPosts, vm) {
-        val byKey = withStoryCoverage(clustered.annotations, storyPeers, filteredPosts, ::feedChannelBadge)
+    // Keyed on the per-chat badges, NOT on filteredPosts: a view / reaction tick re-emits the
+    // post list (and an equal-but-new clustered.annotations) yet leaves this scope equal, so
+    // every remember key compares equal and FeedAnnotations stays the same instance. A new
+    // instance through the static LocalFeedAnnotations would invalidate the whole feed on
+    // every tick. See [storyScopeOf].
+    val storyScope = remember(filteredPosts, storyPeers) {
+        if (storyPeers.isEmpty()) {
+            kotlinx.collections.immutable.persistentMapOf()
+        } else {
+            storyScopeOf(filteredPosts, ::feedChannelBadge)
+        }
+    }
+    val feedAnnotations = remember(clustered.annotations, storyPeers, storyScope, vm) {
+        val byKey = withStoryCoverage(clustered.annotations, storyPeers, storyScope)
         FeedAnnotations(byKey) { key ->
             // Record every member of the run, not just the kept row: the kept row moves
             // when older history joins the burst, and the series must stay open anyway.

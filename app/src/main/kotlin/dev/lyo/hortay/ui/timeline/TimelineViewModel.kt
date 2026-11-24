@@ -18,7 +18,6 @@ import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
-import dev.lyo.hortay.data.PostContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
@@ -287,15 +286,22 @@ class TimelineViewModel(
 
     /**
      * "Also covered by": feed row key → other channels' posts about the same story
-     * ([StoryClusterer]). Off the main thread and conflated: a burst of live updates is
-     * debounced by [STORY_DEBOUNCE_MS], and the pass runs on [Dispatchers.Default] one at a
-     * time — `debounce` keeps only the newest feed while a pass is running, so passes never
-     * queue up. Each pass re-tokenises only new or edited posts (the clusterer's cache).
+     * ([StoryClusterer]). Off the main thread and conflated: the feed is first projected to
+     * the clustering input ([storyInputOf]) and repeats are dropped with
+     * `distinctUntilChanged`, so a view / reaction / comment-count tick — which re-emits
+     * [posts] without touching any input field — neither restarts the debounce nor re-runs a
+     * pass. Only a real input change (new, edited or removed post, scope switch) gets
+     * through; a burst of those is debounced by [STORY_DEBOUNCE_MS], and the pass runs on
+     * [Dispatchers.Default] one at a time — `debounce` keeps only the newest input while a
+     * pass is running, so passes never queue up. Each pass re-tokenises only new or edited
+     * posts (the clusterer's cache).
      *
-     * Session-safe: each pass carries the generation it was started under, and the last
-     * `combine` shows a result only while that generation is current. [resetSessionState]
-     * bumps the generation, so the exposed value drops to empty the moment the session ends,
-     * and a pass still running for the previous account is discarded, never published.
+     * Session-safe: the generation joins AFTER the dedup, so a reset re-emits even when the
+     * input is unchanged. Each pass carries the generation it was started under, and the
+     * last `combine` shows a result only while that generation is current.
+     * [resetSessionState] bumps the generation, so the exposed value drops to empty the
+     * moment the session ends, and a pass still running for the previous account is
+     * discarded, never published.
      *
      * Reads [posts], not the pending arrivals: a post behind the "new posts" pill is not on
      * screen, so it neither gets nor lends an annotation until it is accepted.
@@ -303,12 +309,12 @@ class TimelineViewModel(
     @OptIn(FlowPreview::class)
     val storyPeers: StateFlow<ImmutableMap<String, ImmutableList<StoryPeer>>> =
         combine(
-            combine(posts, storyCoverageEnabled, storyGeneration) { feed, enabled, generation ->
-                (if (enabled) feed else null) to generation
-            }
+            combine(posts, storyCoverageEnabled) { feed, enabled -> if (enabled) storyInputOf(feed) else null }
+                .distinctUntilChanged()
+                .combine(storyGeneration) { input, generation -> input to generation }
                 .debounce(STORY_DEBOUNCE_MS)
-                .map { (feed, generation) ->
-                    StoryResult(generation, if (feed == null) persistentMapOf() else computeStoryPeers(feed, generation))
+                .map { (input, generation) ->
+                    StoryResult(generation, if (input == null) persistentMapOf() else computeStoryPeers(input, generation))
                 }
                 .flowOn(Dispatchers.Default),
             storyGeneration,
@@ -317,15 +323,9 @@ class TimelineViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentMapOf())
 
     private fun computeStoryPeers(
-        feed: List<TimelinePost>,
+        input: List<StoryPost>,
         generation: Long,
     ): ImmutableMap<String, ImmutableList<StoryPeer>> {
-        val input = feed.mapNotNull { p ->
-            if (p.parentId != null || p.isDeleted || p.content is PostContent.Service) return@mapNotNull null
-            val text = p.content.captionPlain
-            if (text.isBlank()) return@mapNotNull null
-            StoryPost(key = p.feedKey(), chatId = p.chatId, date = p.date, text = text, version = p.editDate)
-        }
         // A cancelled pass (the flow restarting after WhileSubscribed) can still be running
         // when the next one starts; the clusterer's monitor keeps its cache single-threaded.
         // Null: the session ended during the pass, so its peers are dropped.
@@ -535,6 +535,15 @@ class TimelineViewModel(
     }
 }
 
+/**
+ * A channel as the new-posts pill and the "forwarded by" / "covered by" lines draw it.
+ *
+ * Equality is structural, [thumb] bytes included (a data class alone compares a
+ * `ByteArray` by reference). The feed annotations are keyed on badges
+ * ([storyScopeOf], [FeedAnnotation]); a post re-mapped from TDLib carries a fresh thumb
+ * array with the same bytes, and reference equality would make every such re-map look like
+ * a change and rebuild the annotations the whole feed reads.
+ */
 @Immutable
 data class ChannelBadge(
     val chatId: Long,
@@ -549,7 +558,28 @@ data class ChannelBadge(
      */
     val avatarUrl: String? = null,
     val latestPostDate: Long,
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ChannelBadge) return false
+        return chatId == other.chatId &&
+            title == other.title &&
+            fileId == other.fileId &&
+            avatarUrl == other.avatarUrl &&
+            latestPostDate == other.latestPostDate &&
+            (thumb === other.thumb || (thumb != null && other.thumb != null && thumb.contentEquals(other.thumb)))
+    }
+
+    override fun hashCode(): Int {
+        var result = chatId.hashCode()
+        result = 31 * result + title.hashCode()
+        result = 31 * result + (fileId ?: 0)
+        result = 31 * result + (avatarUrl?.hashCode() ?: 0)
+        result = 31 * result + latestPostDate.hashCode()
+        result = 31 * result + (thumb?.contentHashCode() ?: 0)
+        return result
+    }
+}
 
 /**
  * Leave-position scroll anchor: the first visible [FeedItem.key] + its pixel

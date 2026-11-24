@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.timeline
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import dev.lyo.hortay.data.ForwardOrigin
+import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.isUnreadAt
 import kotlinx.collections.immutable.ImmutableList
@@ -223,43 +224,80 @@ internal fun clusterFeed(
 }
 
 /**
+ * The feed as [StoryClusterer] reads it: top-level, live, non-service posts with text.
+ *
+ * Forwards of ANY origin (channel, chat, user, hidden user) are left out. A story needs
+ * [STORY_MIN_CHATS] channels that each wrote their own text; a forward is someone else's
+ * text, so counting it let an original in A, its forward in B and one independent post in
+ * C pass as three channels when only two wrote anything. The same rule keeps every story
+ * peer an independently written post, so a peer can never be a forward copy that
+ * [clusterFeed] hid.
+ *
+ * The result has structural equality ([StoryPost] is a data class), and none of the fields
+ * move on a view / reaction / comment-count tick, so a caller can drop such ticks with
+ * `distinctUntilChanged` before doing any clustering work.
+ */
+internal fun storyInputOf(feed: List<TimelinePost>): List<StoryPost> = feed.mapNotNull { p ->
+    if (p.parentId != null || p.isDeleted || p.forwardOrigin != null) return@mapNotNull null
+    if (p.content is PostContent.Service) return@mapNotNull null
+    val text = p.content.captionPlain
+    if (text.isBlank()) return@mapNotNull null
+    StoryPost(key = p.feedKey(), chatId = p.chatId, date = p.date, text = text, version = p.editDate)
+}
+
+/**
+ * Everything [withStoryCoverage] reads from the feed: per chat present in [posts], the badge
+ * of its newest post there. The chat set is the scope (folder / archive / All), the badge is
+ * how a listed channel is drawn.
+ *
+ * Exists so the screen can key the annotations on THIS rather than on the post list: a
+ * view / reaction tick re-emits the list but leaves every badge equal ([ChannelBadge] has
+ * structural equality, avatar bytes included), so the provided [FeedAnnotations] stays the
+ * same instance and the `staticCompositionLocalOf` it rides in does not invalidate the whole
+ * feed on every tick.
+ */
+internal fun storyScopeOf(
+    posts: List<TimelinePost>,
+    badgeFor: (TimelinePost) -> ChannelBadge,
+): ImmutableMap<Long, ChannelBadge> {
+    val newestOfChat = HashMap<Long, TimelinePost>()
+    for (p in posts) {
+        val held = newestOfChat[p.chatId]
+        if (held == null || p.date > held.date) newestOfChat[p.chatId] = p
+    }
+    return newestOfChat.mapValues { badgeFor(it.value) }.toPersistentMap()
+}
+
+/**
  * [annotations] with "also covered by" ([FeedAnnotation.coveredBy]) merged in from
  * [storyPeers] (see [StoryClusterer]). Kept apart from [clusterFeed] on purpose: it never
  * hides, adds or re-keys a row, so the rows, keys, unread counting and scroll anchoring
  * that read [ClusteredFeed] stay exactly as [clusterFeed] made them — only the annotations
  * PostCard draws gain the extra line.
  *
- * [posts] is the feed in the current scope (folder / archive / All, before [clusterFeed]
- * hid anything): a peer counts only while one of its channel's posts is in it, so a folder
- * tab does not name channels outside the folder, and the story must still reach
- * [STORY_MIN_CHATS] channels inside the scope. Channels already named in the row's
- * "forwarded by" line are left out, so no channel is listed twice; a row with nothing left
- * to name gets no line. Each listed channel is drawn from its newest post in [posts].
+ * [scope] is [storyScopeOf] over the feed in the current scope (folder / archive / All,
+ * before [clusterFeed] hid anything): a peer counts only while its channel is in it, so a
+ * folder tab does not name channels outside the folder. Channels already named in the row's
+ * "forwarded by" line are left out, so no channel is listed twice — and the story must still
+ * reach [STORY_MIN_CHATS] channels AFTER that: a forwarder is not independent coverage, so
+ * a row whose remaining peers fall short gets no line at all rather than a one-channel
+ * "also covered by". Each listed channel is drawn from [scope].
  */
 internal fun withStoryCoverage(
     annotations: ImmutableMap<String, FeedAnnotation>,
     storyPeers: Map<String, List<StoryPeer>>,
-    posts: List<TimelinePost>,
-    badgeFor: (TimelinePost) -> ChannelBadge,
+    scope: Map<Long, ChannelBadge>,
 ): ImmutableMap<String, FeedAnnotation> {
     if (storyPeers.isEmpty()) return annotations
-    val newestOfChat = HashMap<Long, TimelinePost>()
-    for (p in posts) {
-        val held = newestOfChat[p.chatId]
-        if (held == null || p.date > held.date) newestOfChat[p.chatId] = p
-    }
     val merged = HashMap<String, FeedAnnotation>(annotations)
     for ((key, peers) in storyPeers) {
-        val inScope = peers.filter { it.chatId in newestOfChat }
-        if (inScope.size < STORY_MIN_CHATS - 1) continue
         val existing = annotations[key]
         val forwarders = existing?.forwardedBy?.mapTo(HashSet()) { it.chatId }.orEmpty()
-        val badges = inScope
-            .filter { it.chatId !in forwarders }
-            .map { badgeFor(newestOfChat.getValue(it.chatId)) }
-        if (badges.isNotEmpty()) {
-            merged[key] = (existing ?: FeedAnnotation()).copy(coveredBy = badges.toImmutableList())
+        val badges = peers.mapNotNull { peer ->
+            if (peer.chatId in forwarders) null else scope[peer.chatId]
         }
+        if (badges.size < STORY_MIN_CHATS - 1) continue
+        merged[key] = (existing ?: FeedAnnotation()).copy(coveredBy = badges.toImmutableList())
     }
     return merged.toPersistentMap()
 }
