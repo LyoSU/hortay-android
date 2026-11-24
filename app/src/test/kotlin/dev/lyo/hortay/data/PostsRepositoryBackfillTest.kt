@@ -215,6 +215,50 @@ class PostsRepositoryBackfillTest {
     }
 
     @Test
+    fun `a send timeout stops the loop and leaves the flag unset`() = runTest {
+        // Offline: each remaining channel would wait out its own 60 s send timeout.
+        val harness = PostsRepositoryTestHarness(this)
+        repeat(3) { i ->
+            val chat = harness.fakeChannel(
+                id = -9200L - i,
+                lastMessage = harness.fakeChannelMessage(-9200L - i, 920L + i),
+                mainListOrder = 100L - i,
+            )
+            harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        }
+        harness.advanceUntilIdle()
+
+        var callCount = 0
+        harness.td.onAny("GetChatHistory") { _ ->
+            callCount++
+            if (callCount == 1) TdApi.Messages(0, emptyArray())
+            else TdApi.Error(TdClient.SEND_TIMEOUT_CODE, "SEND_TIMEOUT GetChatHistory")
+        }
+
+        harness.repo.runFirstSignInBackfill()
+        harness.advanceUntilIdle()
+
+        assertEquals(2, callCount, "the loop must stop at the first send timeout")
+        assertFalse(harness.coldStartBackfill.done,
+            "a timed-out backfill must not mark the flag done — a later Ready edge retries")
+    }
+
+    @Test
+    fun `subscribedChannelsByRank orders by live rank desc, then id`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        listOf(-13_001L to 50L, -13_002L to 300L, -13_003L to 50L, -13_004L to 175L).forEach { (id, order) ->
+            harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(
+                id = id,
+                lastMessage = harness.fakeChannelMessage(id, 1300L - id),
+                mainListOrder = order,
+            )))
+        }
+        harness.advanceUntilIdle()
+
+        assertEquals(listOf(-13_002L, -13_004L, -13_003L, -13_001L), harness.repo.subscribedChannelsByRank())
+    }
+
+    @Test
     fun `FLOOD_WAIT 420 is recognised as well`() = runTest {
         // Same as the 429 test but exercises the legacy MTProto code path.
         // [TdClient.isFloodWaitCode] folds both — verifying the backfill

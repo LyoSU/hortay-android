@@ -678,6 +678,7 @@ class AppGraph(context: Context) {
             subscribedChannels = { postsRepository.subscribedChannelsByRank() },
             hiddenChannels = { ignoredChannels.ignored.first() },
             startupPhase = startupCoordinator.phase,
+            chatListLoaded = postsRepository.initialSyncDone,
             sessionScope = { session.scope },
         ).also { repo -> session.onEnd("recommendedChannels") { repo.clear() } }
 

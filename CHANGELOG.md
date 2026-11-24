@@ -203,6 +203,8 @@
 - A deleted post kept by the archive shows its channel's photo instead of a blurred placeholder.
 - The "Pure black" switch appears only while the app is in a dark theme, instead of doing nothing in a light one.
 - Buttons in the fullscreen viewer stay readable over bright photos.
+- Channel suggestions no longer stall after the device clock is set back, and a slow suggestion lookup no longer holds up opening a suggested channel.
+- The first fill-in of recent posts gives up after one timeout while offline instead of waiting on every channel in turn.
 
 ### Performance
 - Idle video players are released when the app goes to the background.

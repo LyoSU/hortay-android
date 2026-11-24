@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Throttling: [SearchPublicChat]/[SearchPublicChats] hit the server when the chat
  * isn't already cached. Curated hydration fans out across ~20 handles on sheet
- * open, so resolves are serialized behind [throttle] at ~1/sec — the same ceiling
+ * open, so resolves are paced by [throttled] to start at most ~1/sec — the same ceiling
  * the guest→TDLib subscription migration uses (tdlib/td#743 flood-control). Already
  * resolved handles short-circuit from [resolveCache] with no RPC, so a re-opened
  * sheet paints instantly.
@@ -29,14 +29,17 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class ChannelDiscoveryRepository(
     private val td: TdSender,
+    /** Monotonic milliseconds for the [throttled] spacing; immune to the user changing the clock. */
+    private val elapsedMs: () -> Long = { System.nanoTime() / NANOS_PER_MS },
     private val backgroundScope: () -> CoroutineScope,
 ) {
     private val resolveCache = ConcurrentHashMap<String, DiscoverChannel>()
     private val similarCache = ConcurrentHashMap<Long, List<DiscoverChannel>>()
     private val throttle = Mutex()
 
+    /** [elapsedMs] when the last paced call started; null before the first one. Written under [throttle]. */
     @Volatile
-    private var lastCallAt = 0L
+    private var lastCallAt: Long? = null
 
     /** Resolve a public `@handle` (no leading @) to a live card, or null if it can't. */
     suspend fun resolve(username: String): DiscoverChannel? {
@@ -174,20 +177,39 @@ class ChannelDiscoveryRepository(
         )
     }
 
-    private suspend fun <T> throttled(block: suspend () -> T): T = throttle.withLock {
-        val now = System.currentTimeMillis()
-        val wait = THROTTLE_MS - (now - lastCallAt)
-        if (wait > 0) delay(wait)
-        try {
-            block()
-        } finally {
-            lastCallAt = System.currentTimeMillis()
+    /**
+     * Space call STARTS at least [THROTTLE_MS] apart, then run [block] with the lock released.
+     *
+     * The ceiling the KDoc above promises is a start rate (~1/s): the server's flood buckets
+     * count requests per window, and start-to-start spacing bounds that count on its own.
+     * The lock used to be held across [block] and the spacing measured from the END of the
+     * previous call, so one slow call — an offline `GetChatSimilarChats` from the
+     * recommendations scan runs up to [dev.lyo.hortay.data.TdClient]'s 60 s send timeout —
+     * queued every curated resolve, including the one a user tap waits on, behind it.
+     * Overlapping calls are fine here: nothing in this class depends on two of them never
+     * being in flight together, only on how often they start.
+     *
+     * The spacing uses [elapsedMs] (monotonic) and is clamped to `0..THROTTLE_MS`: on the
+     * wall clock a backward jump turned the wait into hours and stalled every discovery call.
+     */
+    private suspend fun <T> throttled(block: suspend () -> T): T {
+        throttle.withLock {
+            val last = lastCallAt
+            if (last != null) {
+                val wait = (THROTTLE_MS - (elapsedMs() - last)).coerceIn(0L, THROTTLE_MS)
+                if (wait > 0) delay(wait)
+            }
+            lastCallAt = elapsedMs()
         }
+        return block()
     }
 
     companion object {
         private const val TAG = "ChannelDiscovery"
-        private const val THROTTLE_MS = 1_000L
+        private const val NANOS_PER_MS = 1_000_000L
+
+        /** Least time between two paced call starts. */
+        internal const val THROTTLE_MS = 1_000L
     }
 }
 

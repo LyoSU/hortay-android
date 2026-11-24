@@ -971,7 +971,9 @@ class PostsRepository(
      * server's retry-after window — including user-driven RPCs (open chat,
      * load older). Continuing the backfill would extend the user-visible
      * stall for no UX gain. Next sign-in (or next launch after this one, if
-     * we never marked done) retries.
+     * we never marked done) retries. A send timeout ([TdClient.SEND_TIMEOUT_CODE])
+     * breaks the loop the same way: offline, every remaining channel would
+     * otherwise wait out its own 60 s timeout.
      *
      * **Done only on evidence.** The flag is marked only when at least one
      * channel's `GetChatHistory` succeeded, or when top-K is empty after a
@@ -1019,11 +1021,14 @@ class PostsRepository(
         // Ranked by [backfillRank] (live order from UpdateChatPosition & co., with a
         // last-message-date fallback) — NOT the cached POJO's `positions`, which are
         // usually empty at first auth and never updated in place.
+        // Each rank is snapshotted once before the sort (see [subscribedChannelsByRank]).
         val topK = _mainChatIds.value.asSequence()
             .mapNotNull { registry.cachedChat(it) }
             .filter { it.isChannel() }
-            .sortedByDescending { chat -> backfillRank(chat.id) }
+            .map { chat -> chat to backfillRank(chat.id) }
+            .sortedByDescending { it.second }
             .take(BACKFILL_TOP_K)
+            .map { it.first }
             .toList()
         if (topK.isEmpty()) {
             // No subscribed channels — nothing to backfill but also nothing to
@@ -1064,6 +1069,16 @@ class PostsRepository(
                         "First-sign-in backfill hit FLOOD_WAIT (code=${err.code}) at chat=${chat.id}; " +
                             "circuit-break, retry next session"
                     )
+                }
+                return
+            }
+            if (err is TdClient.TdException && err.code == TdClient.SEND_TIMEOUT_CODE) {
+                // A 60 s send timeout means the connection is gone, not this chat: walking
+                // on would spend up to a minute on each of the remaining top-K channels.
+                // Same exit as the flood case — the flag stays unset and a later Ready edge
+                // retries the whole backfill.
+                runCatching {
+                    Log.w(TAG, "First-sign-in backfill timed out at chat=${chat.id}; stop, retry next session")
                 }
                 return
             }
@@ -2703,7 +2718,12 @@ class PostsRepository(
      * sources in this order so a partial scan covers the channels the user reads most.
      */
     fun subscribedChannelsByRank(): List<Long> =
-        subscribedChatIds().sortedWith(compareByDescending<Long> { backfillRank(it) }.thenBy { it })
+        // Each rank is read ONCE before sorting: [backfillRank] reads maps TDLib updates
+        // mutate concurrently, and a key whose rank changes mid-sort breaks the comparator's
+        // consistency — TimSort may throw "Comparison method violates its general contract".
+        subscribedChatIds().map { it to backfillRank(it) }
+            .sortedWith(compareByDescending<Pair<Long, Long>> { it.second }.thenBy { it.first })
+            .map { it.first }
 
     /**
      * Wipe every piece of per-account in-memory state held by this repo.

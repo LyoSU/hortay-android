@@ -83,11 +83,14 @@ data class RecommendedState(
  *    [MAX_FLOOD_COOLDOWN_MS]) during which [requestScan] is a no-op, so re-entering the
  *    sheet's empty state cannot restart the scan the moment the gate opens. After it the
  *    next demand resumes from the next unscanned source. No snackbar — this is background
- *    work the user didn't ask for. Any other error records an empty entry so that source is
- *    not retried until TTL.
+ *    work the user didn't ask for. An error that is permanent for that chat (400 / 403 /
+ *    404) records an empty entry so the source is not retried until TTL; any other error
+ *    (5xx, internal) skips the source without recording anything, and
+ *    [MAX_CONSECUTIVE_TRANSIENT_FAILURES] of those in a row end the scan.
  *  - **Persisted** in [SimilarChatsStore] with a [TTL_MS] lifetime: fresh entries are never
- *    refetched, entries of channels the user left are pruned, and a reopened sheet paints
- *    from disk with zero network.
+ *    refetched, entries of channels the user left are pruned (only once the chat list has
+ *    fully loaded — [chatListLoaded]), and a reopened sheet paints from disk with zero
+ *    network.
  *
  * Card data comes from local calls only ([ChannelDiscoveryRepository.offlineCard]); the
  * scan publishes after every source so the section fills in progressively. Channels hidden
@@ -106,6 +109,11 @@ class RecommendedChannelsRepository(
     /** Channels hidden from the feed right now (permanent + live snoozes). */
     private val hiddenChannels: suspend () -> Set<Long>,
     private val startupPhase: StateFlow<StartupCoordinator.Phase>,
+    /**
+     * True once this session's chat-list drain (LoadChats Main + Archive) has completed, so
+     * [subscribedChannels] is the whole list — the only time stored entries may be pruned.
+     */
+    private val chatListLoaded: StateFlow<Boolean>,
     /** Current session scope, read at launch time (replaced on logout). */
     private val sessionScope: () -> CoroutineScope,
     /** Wall clock: entry freshness ([TTL_MS]) and the flood cooldown. */
@@ -207,6 +215,8 @@ class RecommendedChannelsRepository(
     private suspend fun scan() {
         val gen = generation.get()
         startupPhase.first { it == StartupCoordinator.Phase.Active }
+        // Read BEFORE the list: once the drain has completed, the list read after it is whole.
+        val listComplete = chatListLoaded.value
         val ranked = subscribedChannels()
         val subscribed = ranked.toSet()
         val hidden = hiddenChannels()
@@ -214,24 +224,27 @@ class RecommendedChannelsRepository(
         val stale = lock.withLock {
             if (gen != generation.get()) return
             val map = entries ?: store.load().toMutableMap().also { entries = it }
-            // Only once the subscription list is known: an empty list before the chat list
-            // loaded would otherwise wipe every entry.
-            if (subscribed.isNotEmpty() && map.keys.retainAll(subscribed)) store.retain(subscribed)
+            // Prune only from a complete list. Startup turns Active while LoadChats (Main +
+            // Archive) can still be draining, and pruning from that partial list deleted the
+            // cached entries of every channel that had not arrived yet. Scanning the partial
+            // list is fine — it only fetches what it already knows — so the scan does not
+            // wait for the drain, which never completes offline; a later scan prunes.
+            if (listComplete && map.keys.retainAll(subscribed)) store.retain(subscribed)
             sources.filter { !isFresh(map[it]) }.take(MAX_CALLS_PER_SCAN)
         }
         publish(gen, sources, subscribed, hidden, scanning = stale.isNotEmpty())
         try {
+            var transientFailures = 0
             for (source in stale) {
-                val similar = fetch(gen, source) ?: break
-                val entry = SimilarEntry(similar, clock())
-                val written = lock.withLock {
-                    if (gen != generation.get()) return@withLock false
-                    store.put(source, entry)
-                    entries?.put(source, entry)
-                    true
+                val result = fetch(gen, source)
+                transientFailures = if (result == Fetched.Skip) transientFailures + 1 else 0
+                val goOn = when (result) {
+                    is Fetched.Similar -> record(gen, source, result.ids)
+                    Fetched.Skip -> transientFailures < MAX_CONSECUTIVE_TRANSIENT_FAILURES
+                    Fetched.Stop -> false
                 }
-                if (!written) return
-                publish(gen, sources, subscribed, hidden, scanning = true)
+                if (!goOn) break
+                if (result is Fetched.Similar) publish(gen, sources, subscribed, hidden, scanning = true)
             }
         } finally {
             if (gen == generation.get()) _state.update { it.copy(scanning = false) }
@@ -239,14 +252,38 @@ class RecommendedChannelsRepository(
         publish(gen, sources, subscribed, hidden, scanning = false)
     }
 
-    /** Similar ids of [source]; empty on a per-source error; null means "stop the scan". */
-    private suspend fun fetch(gen: Long, source: Long): List<Long>? {
+    /** Persist [source]'s similar list; false once the session that started the scan has ended. */
+    private suspend fun record(gen: Long, source: Long, similar: List<Long>): Boolean {
+        val entry = SimilarEntry(similar, clock())
+        return lock.withLock {
+            if (gen != generation.get()) return@withLock false
+            store.put(source, entry)
+            entries?.put(source, entry)
+            true
+        }
+    }
+
+    /** What one similar-chats call means for the scan. */
+    private sealed interface Fetched {
+        /** Persist [ids] (empty for an error that is permanent for this source). */
+        class Similar(val ids: List<Long>) : Fetched
+
+        /** A transient failure: skip the source without persisting; the next scan retries it. */
+        data object Skip : Fetched
+
+        /** Flood, send timeout or unexpected error: end the scan. */
+        data object Stop : Fetched
+    }
+
+    private suspend fun fetch(gen: Long, source: Long): Fetched {
         awaitCallSpacing()
         return try {
-            discovery.paced {
-                lastSimilarCallAt = elapsedMs()
-                td.send(TdApi.GetChatSimilarChats(source))
-            }.chatIds.toList()
+            Fetched.Similar(
+                discovery.paced {
+                    lastSimilarCallAt = elapsedMs()
+                    td.send(TdApi.GetChatSimilarChats(source))
+                }.chatIds.toList(),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: TdClient.TdException) {
@@ -257,16 +294,29 @@ class RecommendedChannelsRepository(
                 lock.withLock {
                     if (gen == generation.get()) cooldown.set(Cooldown(clock(), lengthMs))
                 }
-                null
+                Fetched.Stop
+            } else if (isPermanentForChat(e.code)) {
+                Log.w(TAG, "similar($source) failed for good: ${e.message}")
+                Fetched.Similar(emptyList())
             } else {
-                Log.w(TAG, "similar($source) failed: ${e.message}")
-                emptyList()
+                Log.w(TAG, "similar($source) failed, will retry: ${e.message}")
+                Fetched.Skip
             }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             Log.w(TAG, "scan stopped at $source", e)
-            null
+            Fetched.Stop
         }
     }
+
+    /**
+     * Whether a `getChatSimilarChats` error code is an answer about THIS chat that will not
+     * change by asking again: 400 (invalid chat / not a channel), 403 (no access), 404 (not
+     * found). Such a source is recorded as empty for [TTL_MS]. Everything else — 5xx and
+     * TDLib's internal errors, 401, 406, unknown codes — says nothing about the chat, so
+     * persisting an empty list would hide the source's votes for three days over a hiccup.
+     */
+    private fun isPermanentForChat(code: Int): Boolean =
+        code == CODE_BAD_REQUEST || code == CODE_FORBIDDEN || code == CODE_NOT_FOUND
 
     /** Sleep until [SIMILAR_CALL_SPACING_MS] has passed since the last call, holding no lock. */
     private suspend fun awaitCallSpacing() {
@@ -289,16 +339,31 @@ class RecommendedChannelsRepository(
         val map = entries ?: return@withLock
         val similar = LinkedHashMap<Long, List<Long>>()
         for (s in sources) map[s]?.let { similar[s] = it.similar }
-        val preliminary = rankRecommendations(similar, subscribed, hidden, limit = Int.MAX_VALUE)
-        for (c in preliminary) loadCard(c.chatId)
+        // The vote bar follows every voting source the user has, not how many are scanned.
+        val votingSources = sources.size
+        val preliminary = rankRecommendations(similar, subscribed, hidden, votingSources, limit = Int.MAX_VALUE)
+        // Cards are loaded a whole vote tier at a time (votes desc) and only until the tiers
+        // loaded so far hold RECOMMENDED_LIMIT usable cards: within a tier the order needs
+        // every member's subscriber count, and no candidate of a lower tier can outrank a
+        // full set above it, so the result is the same as loading every candidate.
         val subscribers = HashMap<Long, Int>()
         val excluded = HashSet<Long>()
+        var usable = 0
+        var tierVotes = -1
         for (c in preliminary) {
+            if (c.votes != tierVotes) {
+                if (usable >= RECOMMENDED_LIMIT) {
+                    excluded += c.chatId
+                    continue
+                }
+                tierVotes = c.votes
+            }
+            loadCard(c.chatId)
             val card = cards[c.chatId]
-            if (card == null || card.isMember) excluded += c.chatId
+            if (card == null || card.isMember) excluded += c.chatId else usable++
             card?.subscribers?.let { subscribers[c.chatId] = it }
         }
-        val items = rankRecommendations(similar, subscribed, hidden, subscribers, excluded)
+        val items = rankRecommendations(similar, subscribed, hidden, votingSources, subscribers, excluded)
             .mapNotNull { c ->
                 val card = cards[c.chatId] ?: return@mapNotNull null
                 RecommendedChannel(card, c.voters.toImmutableList(), title(c.voters.first()))
@@ -333,6 +398,16 @@ class RecommendedChannelsRepository(
         private const val TAG = "RecommendedChannels"
         private const val NANOS_PER_MS = 1_000_000L
         private const val MS_PER_SECOND = 1_000L
+        private const val CODE_BAD_REQUEST = 400
+        private const val CODE_FORBIDDEN = 403
+        private const val CODE_NOT_FOUND = 404
+
+        /**
+         * Transient failures in a row after which a scan gives up: the connection or the
+         * server is having a bad moment, and walking on would only spend the call budget on
+         * more of the same. Nothing is persisted for them, so the next demand retries.
+         */
+        const val MAX_CONSECUTIVE_TRANSIENT_FAILURES = 3
 
         /**
          * Similar-chats calls one scan may spend; the rest resume on the next demand. Safe on

@@ -32,9 +32,13 @@ class RecommendedChannelsRepositoryTest {
     }
 
     /** Chat ids are negative; the supergroup id is the absolute value. */
-    private fun FakeTdSender.channels(similar: (Long) -> TdApi.Object) {
+    private fun FakeTdSender.channels(
+        cardLookups: MutableList<Long>? = null,
+        similar: (Long) -> TdApi.Object,
+    ) {
         onAny("GetChat") { req ->
             val id = (req as TdApi.GetChat).chatId
+            cardLookups?.add(id)
             TdApi.Chat().apply {
                 this.id = id
                 title = "Channel $id"
@@ -61,6 +65,7 @@ class RecommendedChannelsRepositoryTest {
         sources: List<Long>,
         hidden: Set<Long> = emptySet(),
         now: () -> Long = { NOW },
+        chatListLoaded: MutableStateFlow<Boolean> = MutableStateFlow(true),
     ) = RecommendedChannelsRepository(
         td = td,
         discovery = ChannelDiscoveryRepository(td) { this },
@@ -68,6 +73,7 @@ class RecommendedChannelsRepositoryTest {
         subscribedChannels = { sources },
         hiddenChannels = { hidden },
         startupPhase = MutableStateFlow(StartupCoordinator.Phase.Active),
+        chatListLoaded = chatListLoaded,
         sessionScope = { this },
         clock = now,
         elapsedMs = { testScheduler.currentTime },
@@ -128,6 +134,132 @@ class RecommendedChannelsRepositoryTest {
         repo(td, store, sources = listOf(-1L)).requestScan()
         advanceUntilIdle()
         assertFalse(-9L in store.map)
+    }
+
+    @Test
+    fun `a partial chat list does not prune entries of channels that have not arrived yet`() = runTest {
+        val td = FakeTdSender().apply { channels { chats() } }
+        val store = MemoryStore().apply { map[-9L] = SimilarEntry(listOf(-100L), NOW) }
+        val loaded = MutableStateFlow(false)
+        var sources = listOf(-1L)
+        val repo = RecommendedChannelsRepository(
+            td = td,
+            discovery = ChannelDiscoveryRepository(td) { this },
+            store = store,
+            subscribedChannels = { sources },
+            hiddenChannels = { emptySet() },
+            startupPhase = MutableStateFlow(StartupCoordinator.Phase.Active),
+            chatListLoaded = loaded,
+            sessionScope = { this },
+            clock = { NOW },
+            elapsedMs = { testScheduler.currentTime },
+        )
+        // Startup is Active but LoadChats is still draining: -9 is not in the list yet.
+        repo.requestScan()
+        advanceUntilIdle()
+        assertTrue(-9L in store.map, "a partial list must not prune")
+        assertEquals(1, td.rpcCount("GetChatSimilarChats"), "the partial list is still scanned")
+
+        // The drain finished and -9 arrived: its cached entry is used, not refetched.
+        loaded.value = true
+        sources = listOf(-1L, -9L)
+        repo.requestScan()
+        advanceUntilIdle()
+        assertTrue(-9L in store.map)
+        assertEquals(1, td.rpcCount("GetChatSimilarChats"))
+        assertEquals(listOf(-100L), repo.state.value.items.map { it.channel.chatId })
+
+        // A complete list without -9 (the user left it) prunes it.
+        sources = listOf(-1L)
+        repo.requestScan()
+        advanceUntilIdle()
+        assertFalse(-9L in store.map)
+    }
+
+    @Test
+    fun `rows do not vanish when the tenth source is scanned`() = runTest {
+        // Source -1 alone vouches for -200; every source vouches for -100.
+        val td = FakeTdSender().apply {
+            channels { source -> if (source == -1L) chats(-100L, -200L) else chats(-100L) }
+        }
+        val sources = (1L..12L).map { -it }
+        val repo = repo(td, MemoryStore(), sources = sources)
+        val seen = mutableListOf<List<Long>>()
+        backgroundScope.launch { repo.state.collect { s -> seen += s.items.map { it.channel.chatId } } }
+        repo.requestScan()
+        advanceUntilIdle()
+
+        assertTrue(seen.none { -200L in it }, "a single vote among 12 sources never shows: $seen")
+        assertEquals(listOf(-100L), repo.state.value.items.map { it.channel.chatId })
+        assertTrue(repo.state.value.complete)
+    }
+
+    @Test
+    fun `a transient error skips the source without persisting, a permanent one is recorded`() = runTest {
+        var serverDown = true
+        val td = FakeTdSender().apply {
+            channels { source ->
+                when {
+                    source == -1L && serverDown -> TdApi.Error(500, "Internal Server Error")
+                    source == -2L -> TdApi.Error(400, "CHANNEL_INVALID")
+                    else -> chats(-100L)
+                }
+            }
+        }
+        val store = MemoryStore()
+        val repo = repo(td, store, sources = listOf(-1L, -2L, -3L))
+        repo.requestScan()
+        advanceUntilIdle()
+
+        assertEquals(setOf(-2L, -3L), store.map.keys, "the 5xx source is not written")
+        assertEquals(emptyList<Long>(), store.map.getValue(-2L).similar)
+        assertFalse(repo.state.value.complete)
+        assertFalse(repo.state.value.scanning)
+
+        // The next demand retries only the source that failed transiently.
+        serverDown = false
+        repo.requestScan()
+        advanceUntilIdle()
+        assertEquals(4, td.rpcCount("GetChatSimilarChats"))
+        assertTrue(-1L in store.map)
+        assertTrue(repo.state.value.complete)
+    }
+
+    @Test
+    fun `consecutive transient failures end the scan`() = runTest {
+        val td = FakeTdSender().apply { channels { TdApi.Error(500, "Internal Server Error") } }
+        val store = MemoryStore()
+        val repo = repo(td, store, sources = (1L..6L).map { -it })
+        repo.requestScan()
+        advanceUntilIdle()
+        assertEquals(
+            RecommendedChannelsRepository.MAX_CONSECUTIVE_TRANSIENT_FAILURES,
+            td.rpcCount("GetChatSimilarChats"),
+        )
+        assertTrue(store.map.isEmpty())
+        assertFalse(repo.state.value.scanning)
+    }
+
+    @Test
+    fun `cards load only for vote tiers that can reach the list`() = runTest {
+        // 35 two-vote candidates fill the list; 5 single-vote ones below can never reach it.
+        val twoVotes = (1000L until 1035L).map { -it }
+        val oneVote = (1035L until 1040L).map { -it }
+        val lookups = mutableListOf<Long>()
+        val td = FakeTdSender().apply { channels(cardLookups = lookups) { chats() } }
+        // Both sources already stored, so the one publish sees the final votes (mid-scan, with
+        // only -1 in, every candidate is legitimately a one-vote row and gets a card).
+        val store = MemoryStore().apply {
+            map[-1L] = SimilarEntry(twoVotes + oneVote, NOW)
+            map[-2L] = SimilarEntry(twoVotes, NOW)
+        }
+        val repo = repo(td, store, sources = listOf(-1L, -2L))
+        repo.requestScan()
+        advanceUntilIdle()
+
+        assertEquals(RECOMMENDED_LIMIT, repo.state.value.items.size)
+        assertTrue(repo.state.value.items.all { it.votes == 2 })
+        assertTrue(lookups.none { it in oneVote }, "single-vote cards were loaded: ${lookups.filter { it in oneVote }}")
     }
 
     @Test
@@ -233,6 +365,7 @@ class RecommendedChannelsRepositoryTest {
             subscribedChannels = { listOf(-1L, -2L, -3L) },
             hiddenChannels = { emptySet() },
             startupPhase = MutableStateFlow(StartupCoordinator.Phase.Active),
+            chatListLoaded = MutableStateFlow(true),
             sessionScope = { this },
             clock = { NOW },
             elapsedMs = { testScheduler.currentTime },

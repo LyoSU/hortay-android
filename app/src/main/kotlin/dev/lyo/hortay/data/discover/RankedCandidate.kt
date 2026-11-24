@@ -32,8 +32,12 @@ const val RECOMMENDED_LIMIT = 30
  *  - A candidate in [joined] is dropped (the server already excludes most, not all), as is
  *    one in [excluded] (no usable card, or the card says the user is a member) and a
  *    candidate that is itself a source.
- *  - With [MANY_SOURCES_THRESHOLD] or more voting sources a single vote is noise (one
- *    channel's list), so a candidate needs [MIN_VOTES_MANY_SOURCES]; below that, 1 is enough.
+ *  - [votingSources] is how many voting (subscribed, not hidden) sources the user has in
+ *    all — NOT how many are in [similarBySource]. With [MANY_SOURCES_THRESHOLD] or more a
+ *    single vote is noise (one channel's list), so a candidate needs
+ *    [MIN_VOTES_MANY_SOURCES]; below that, 1 is enough. A scan fills [similarBySource] one
+ *    source at a time; deriving the bar from its size made a 50-channel user see single-vote
+ *    rows for the first nine sources, then watch them all vanish at the tenth.
  *  - Order: votes desc, then [subscribers] desc where known (unknown sorts after known),
  *    then chat id asc for a stable order. Capped at [limit].
  */
@@ -41,12 +45,13 @@ fun rankRecommendations(
     similarBySource: Map<Long, List<Long>>,
     joined: Set<Long>,
     hidden: Set<Long>,
+    votingSources: Int,
     subscribers: Map<Long, Int> = emptyMap(),
     excluded: Set<Long> = emptySet(),
     limit: Int = RECOMMENDED_LIMIT,
 ): List<RankedCandidate> {
     val voting = similarBySource.filterKeys { it !in hidden }
-    val minVotes = if (voting.size >= MANY_SOURCES_THRESHOLD) MIN_VOTES_MANY_SOURCES else 1
+    val minVotes = minVotesFor(votingSources)
     val voters = LinkedHashMap<Long, MutableList<Long>>()
     for ((source, similar) in voting) {
         for (id in similar.distinct()) {
@@ -65,3 +70,7 @@ fun rankRecommendations(
         .take(limit)
         .toList()
 }
+
+/** Votes a candidate needs when the user has [votingSources] voting sources in all. */
+private fun minVotesFor(votingSources: Int): Int =
+    if (votingSources >= MANY_SOURCES_THRESHOLD) MIN_VOTES_MANY_SOURCES else 1
