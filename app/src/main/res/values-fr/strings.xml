@@ -374,6 +374,8 @@
     <string name="settings_quick_reaction_subtitle">Appuyez deux fois sur une publication pour réagir avec l\'emoji choisi. Un appui simple l\'ouvre alors un instant plus tard.</string>
     <string name="feed_also_forwarded_by">Aussi partagé par %1$s</string>
     <string name="feed_also_covered_by">Également couvert par %1$s</string>
+    <string name="feed_also_covered_title">Ils en parlent aussi</string>
+    <string name="feed_also_covered_show">Voir ces publications</string>
     <string name="post_forwarded_by">Partagé par %1$s</string>
     <string name="feed_forwarded_by_many">Partagé par %1$s</string>
     <string name="feed_forwarders_two">%1$s et %2$s</string>

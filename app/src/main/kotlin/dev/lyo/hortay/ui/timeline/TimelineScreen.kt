@@ -537,13 +537,20 @@ fun TimelineScreen(
             storyScopeOf(filteredPosts, ::feedChannelBadge)
         }
     }
+    // Row key whose "Also covered by" sheet is open. The State object is remembered once, so
+    // the setter below is a stable reference and adds nothing to the FeedAnnotations keys.
+    val coverageSheetKey = remember { mutableStateOf<String?>(null) }
     val feedAnnotations = remember(clustered.annotations, storyPeers, storyScope, vm) {
         val byKey = withStoryCoverage(clustered.annotations, storyPeers, storyScope)
-        FeedAnnotations(byKey) { key ->
-            // Record every member of the run, not just the kept row: the kept row moves
-            // when older history joins the burst, and the series must stay open anyway.
-            vm.expandSeries(clustered.annotations[key]?.seriesMemberKeys?.takeIf { it.isNotEmpty() } ?: listOf(key))
-        }
+        FeedAnnotations(
+            byKey = byKey,
+            onExpandSeries = { key ->
+                // Record every member of the run, not just the kept row: the kept row moves
+                // when older history joins the burst, and the series must stay open anyway.
+                vm.expandSeries(clustered.annotations[key]?.seriesMemberKeys?.takeIf { it.isNotEmpty() } ?: listOf(key))
+            },
+            onOpenCoverage = { key -> coverageSheetKey.value = key },
+        )
     }
     // Read through State by the long-lived effects and click handlers below (dwell,
     // arrivals tap, next-unread tap) so they always see the current clustering.
@@ -1471,6 +1478,26 @@ fun TimelineScreen(
                 }
             },
         )
+    }
+    // Resolved while the sheet is open from the same inputs as the line it was opened from
+    // (see [storyCoverageItems]). When the row loses its line or every listed post leaves the
+    // feed (story recomputed, scope switched, coverage turned off, logout), the sheet closes.
+    coverageSheetKey.value?.let { rowKey ->
+        val coverageItems = remember(rowKey, storyPeers, clustered.annotations, storyScope, filteredPosts) {
+            storyCoverageItems(rowKey, storyPeers, clustered.annotations[rowKey], storyScope, filteredPosts)
+        }
+        if (coverageItems.isEmpty()) {
+            LaunchedEffect(rowKey) { coverageSheetKey.value = null }
+        } else {
+            StoryCoverageSheet(
+                items = coverageItems,
+                onDismiss = { coverageSheetKey.value = null },
+                onOpen = { item ->
+                    coverageSheetKey.value = null
+                    onChannelOpenState.value(item.chatId, item.messageId)
+                },
+            )
+        }
     }
     val interactions = remember(
         ignoredChannels,

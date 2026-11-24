@@ -162,6 +162,11 @@ fun PostCard(
     annotation: FeedAnnotation? = null,
     onExpandSeries: () -> Unit = {},
     /**
+     * Opens the posts behind this row's "Also covered by" line ([FeedAnnotation.coveredBy]).
+     * Null on surfaces without that sheet; the line is then not tappable.
+     */
+    onOpenCoverage: (() -> Unit)? = null,
+    /**
      * Whether a personal-author post names its host channel ("in <Channel>" + avatar badge).
      * The channel screen passes `false`: every post there has the same host, already named
      * in the screen's own header.
@@ -440,7 +445,14 @@ fun PostCard(
                 // ([withStoryCoverage] already left out anyone named in the line above).
                 val coveredBy = annotation?.coveredBy
                 if (!coveredBy.isNullOrEmpty()) {
-                    ForwardedByRow(coveredBy, label = R.string.feed_also_covered_by, glyph = "dynamic_feed")
+                    ForwardedByRow(
+                        forwarders = coveredBy,
+                        label = R.string.feed_also_covered_by,
+                        onClick = onOpenCoverage,
+                        onClickLabel = R.string.feed_also_covered_show,
+                        glyph = "dynamic_feed",
+                        touchSlop = COVERAGE_LINE_TOUCH_SLOP,
+                    )
                     Spacer(Modifier.height(HortaySpacing.sm))
                 }
                 val onHeaderClick = if (source != null) onSourceClick ?: {} else onSenderClick
@@ -689,15 +701,24 @@ private fun TimelinePost.asForwarderBadge() = ChannelBadge(
  * [onClick] opens the first forwarder (the post's own channel).
  *
  * Also draws "Also covered by A, B and N more" ([FeedAnnotation.coveredBy]) with its own
- * [glyph] — same quiet line, a different subject.
+ * [glyph] — same quiet line, a different subject; there [onClick] opens the sheet listing
+ * those posts.
+ *
+ * [onClickLabel] is what a screen reader announces as the tap action. [touchSlop] grows the
+ * tappable area by that much above and below the line without moving anything: the slack is
+ * laid out but not reported ([overhangVertical]), so it overlaps the spacing around the line
+ * instead of adding to the card height.
  */
 @Composable
 private fun ForwardedByRow(
     forwarders: kotlinx.collections.immutable.ImmutableList<ChannelBadge>,
     @androidx.annotation.StringRes label: Int,
     onClick: (() -> Unit)? = null,
+    @androidx.annotation.StringRes onClickLabel: Int? = null,
     glyph: String = "line_forward",
+    touchSlop: Dp = 0.dp,
 ) {
+    val clickLabel = onClickLabel?.let { stringResource(it) }
     val names = when (forwarders.size) {
         0 -> ""
         1 -> forwarders[0].title
@@ -715,7 +736,11 @@ private fun ForwardedByRow(
     }
     Row(
         modifier = if (onClick != null) {
-            Modifier.clip(InlineChipCorner).clickable(role = Role.Button, onClick = onClick)
+            Modifier
+                .overhangVertical(touchSlop)
+                .clip(InlineChipCorner)
+                .clickable(onClickLabel = clickLabel, role = Role.Button, onClick = onClick)
+                .padding(vertical = touchSlop)
         } else Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1774,6 +1799,30 @@ private fun Modifier.trimBottom(trim: Dp): Modifier = layout { measurable, const
         placeable.placeRelative(0, 0)
     }
 }
+
+/**
+ * Lays the content out at full height but reports [overhang] less at the top and at the
+ * bottom, centring it on the reported box: content padded by [overhang] vertically keeps its
+ * visible position while that padding (invisible touch-target slack) overlaps the spacing
+ * above and below. Nothing is clipped — the slack must land on spacing, not a neighbour.
+ */
+private fun Modifier.overhangVertical(overhang: Dp): Modifier = layout { measurable, constraints ->
+    val overhangPx = overhang.roundToPx()
+    val widened = if (constraints.hasBoundedHeight) {
+        constraints.copy(maxHeight = constraints.maxHeight + overhangPx * 2)
+    } else constraints
+    val placeable = measurable.measure(widened)
+    val trimPx = (overhangPx * 2).coerceAtMost(placeable.height)
+    layout(placeable.width, placeable.height - trimPx) {
+        placeable.placeRelative(0, -trimPx / 2)
+    }
+}
+
+/**
+ * Touch slack above and below the "Also covered by" line: its 20 dp avatars grow to a 32 dp
+ * target, which still fits inside the card's top padding and the 8 dp spacer under the line.
+ */
+private val COVERAGE_LINE_TOUCH_SLOP = 6.dp
 
 /**
  * One item of the post's action line: a [ACTION_ICON_SIZE] line glyph with an optional count

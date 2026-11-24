@@ -333,6 +333,59 @@ class StoryClusteringTest {
     }
 
     @Test
+    fun `coverage peers drop forwarders and out-of-scope chats and keep clusterer order`() {
+        val a = post(1, 10)
+        val b = post(2, 11)
+        val c = post(3, 12)
+        val d = post(4, 13)
+        val peers = listOf(
+            StoryPeer(d.feedKey(), 4),
+            StoryPeer(b.feedKey(), 2),
+            StoryPeer("out-of-scope", 9),
+            StoryPeer(c.feedKey(), 3),
+        )
+        val listed = coveragePeersOf(peers, listOf(badge(b)), scope(a, b, c, d))
+        assertEquals(listOf(4L, 3L), listed.map { it.first.chatId })
+        assertEquals(listOf(4L, 3L), listed.map { it.second.chatId })
+        // Below the minimum once the forwarder is out: nothing.
+        assertTrue(coveragePeersOf(peers.take(2), listOf(badge(b)), scope(a, b, c, d)).isEmpty())
+    }
+
+    @Test
+    fun `the coverage sheet lists exactly the channels the line names`() {
+        val a = post(1, 10)
+        val b = post(2, 11)
+        val c = post(3, 12).copy(content = PostContent.Text(FormattedText.plain("  the tanker story  ")))
+        val d = post(4, 13)
+        val forwarded = FeedAnnotation(forwardedBy = persistentListOf(badge(b)))
+        val peers = mapOf(
+            a.feedKey() to listOf(StoryPeer(b.feedKey(), 2), StoryPeer(c.feedKey(), 3), StoryPeer(d.feedKey(), 4)),
+        )
+        val feed = listOf(a, b, c, d)
+        val line = withStoryCoverage(persistentMapOf(a.feedKey() to forwarded), peers, scope(a, b, c, d))
+        val items = storyCoverageItems(a.feedKey(), peers, forwarded, scope(a, b, c, d), feed)
+        assertEquals(line.getValue(a.feedKey()).coveredBy.map { it.chatId }, items.map { it.chatId })
+        assertEquals(listOf(12L, 13L), items.map { it.messageId })
+        assertEquals("the tanker story", items.first().excerpt)
+        assertEquals(c.date, items.first().date)
+    }
+
+    @Test
+    fun `the coverage sheet skips posts that left the feed and is empty without a line`() {
+        val a = post(1, 10)
+        val b = post(2, 11)
+        val c = post(3, 12)
+        val peers = mapOf(a.feedKey() to listOf(StoryPeer(b.feedKey(), 2), StoryPeer(c.feedKey(), 3)))
+        val scope = scope(a, b, c)
+        // c's post is gone from the feed (deleted) while the scope still names its chat.
+        val items = storyCoverageItems(a.feedKey(), peers, null, scope, listOf(a, b))
+        assertEquals(listOf(2L), items.map { it.chatId })
+        // Unknown row, or a row whose line vanished: nothing to list, no crash.
+        assertTrue(storyCoverageItems("missing", peers, null, scope, listOf(a, b, c)).isEmpty())
+        assertTrue(storyCoverageItems(a.feedKey(), peers, null, scope(a, b), listOf(a, b, c)).isEmpty())
+    }
+
+    @Test
     fun `coverage does not change read state`() {
         val a = post(1, 10)
         val covered = FeedAnnotation(coveredBy = persistentListOf(badge(post(2, 11)), badge(post(3, 12))))

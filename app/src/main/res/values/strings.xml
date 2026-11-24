@@ -365,6 +365,8 @@
     <string name="settings_quick_reaction_subtitle">Double-tap a post to react with the chosen emoji. A single tap then opens the post a moment later.</string>
     <string name="feed_also_forwarded_by">Also forwarded by %1$s</string>
     <string name="feed_also_covered_by">Also covered by %1$s</string>
+    <string name="feed_also_covered_title">Also covering this story</string>
+    <string name="feed_also_covered_show">Show these posts</string>
     <string name="post_forwarded_by">Forwarded by %1$s</string>
     <string name="feed_forwarded_by_many">Forwarded by %1$s</string>
     <string name="feed_forwarders_two">%1$s and %2$s</string>

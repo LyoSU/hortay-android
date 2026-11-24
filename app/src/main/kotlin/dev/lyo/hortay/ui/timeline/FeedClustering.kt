@@ -82,11 +82,17 @@ data class ClusteredFeed(
     fun resolveKey(key: String): String = keptKeyOf[key] ?: key
 }
 
-/** Annotations for the visible rows plus the "expand this series" action, for PostCard. */
+/**
+ * Annotations for the visible rows plus the row actions, for PostCard: "expand this series"
+ * and "show the posts behind the also-covered-by line" ([onOpenCoverage], null where the
+ * screen offers no such sheet). Both take the row key and must be stable references — a new
+ * instance invalidates the whole feed through [LocalFeedAnnotations].
+ */
 @Immutable
 class FeedAnnotations(
     val byKey: ImmutableMap<String, FeedAnnotation>,
     val onExpandSeries: (String) -> Unit,
+    val onOpenCoverage: ((String) -> Unit)? = null,
 )
 
 val LocalFeedAnnotations = staticCompositionLocalOf<FeedAnnotations?> { null }
@@ -292,14 +298,85 @@ internal fun withStoryCoverage(
     val merged = HashMap<String, FeedAnnotation>(annotations)
     for ((key, peers) in storyPeers) {
         val existing = annotations[key]
-        val forwarders = existing?.forwardedBy?.mapTo(HashSet()) { it.chatId }.orEmpty()
-        val badges = peers.mapNotNull { peer ->
-            if (peer.chatId in forwarders) null else scope[peer.chatId]
-        }
-        if (badges.size < STORY_MIN_CHATS - 1) continue
-        merged[key] = (existing ?: FeedAnnotation()).copy(coveredBy = badges.toImmutableList())
+        val listed = coveragePeersOf(peers, existing?.forwardedBy.orEmpty(), scope)
+        if (listed.isEmpty()) continue
+        merged[key] = (existing ?: FeedAnnotation()).copy(coveredBy = listed.map { it.second }.toImmutableList())
     }
     return merged.toPersistentMap()
+}
+
+/**
+ * The story peers a row's "also covered by" line names, each with the badge it is drawn
+ * with, in [peers] order (oldest first, as [StoryClusterer] returns them). Peers whose chat
+ * is in [forwardedBy] (already named in the line above) or outside [scope] are left out, and
+ * the result is empty when fewer than [STORY_MIN_CHATS] - 1 remain — the row then gets no
+ * line at all.
+ *
+ * The one place this rule lives: [withStoryCoverage] draws the line from it and
+ * [storyCoverageItems] lists the sheet behind the line from it, so the two never disagree on
+ * which channels covered a story.
+ */
+internal fun coveragePeersOf(
+    peers: List<StoryPeer>,
+    forwardedBy: List<ChannelBadge>,
+    scope: Map<Long, ChannelBadge>,
+): List<Pair<StoryPeer, ChannelBadge>> {
+    val forwarders = forwardedBy.mapTo(HashSet()) { it.chatId }
+    val listed = peers.mapNotNull { peer ->
+        if (peer.chatId in forwarders) null else scope[peer.chatId]?.let { peer to it }
+    }
+    return if (listed.size < STORY_MIN_CHATS - 1) emptyList() else listed
+}
+
+/**
+ * One other channel's post about a story, as the "also covered by" sheet lists it.
+ *
+ * @property key the post's feed key ([feedKey]); stable item key for the sheet's list.
+ * @property excerpt the post's plain text, as [storyInputOf] reads it.
+ */
+@Immutable
+data class StoryCoverageItem(
+    val key: String,
+    val chatId: Long,
+    val messageId: Long,
+    val badge: ChannelBadge,
+    val date: Long,
+    val excerpt: String,
+)
+
+/**
+ * The posts behind the "also covered by" line of the row [rowKey], resolved from the same
+ * inputs as the line ([storyPeers], the row's clustering [annotation], [scope]) through
+ * [coveragePeersOf], each looked up in [posts] (the scoped feed). A peer whose post is no
+ * longer there (deleted, scope switched, story recomputed) is skipped; empty when the row has
+ * no line any more.
+ */
+internal fun storyCoverageItems(
+    rowKey: String,
+    storyPeers: Map<String, List<StoryPeer>>,
+    annotation: FeedAnnotation?,
+    scope: Map<Long, ChannelBadge>,
+    posts: List<TimelinePost>,
+): ImmutableList<StoryCoverageItem> {
+    val listed = coveragePeersOf(storyPeers[rowKey].orEmpty(), annotation?.forwardedBy.orEmpty(), scope)
+    if (listed.isEmpty()) return persistentListOf()
+    val wanted = listed.mapTo(HashSet()) { it.first.key }
+    val byKey = HashMap<String, TimelinePost>(wanted.size)
+    for (p in posts) {
+        val key = p.feedKey()
+        if (key in wanted) byKey[key] = p
+    }
+    return listed.mapNotNull { (peer, badge) ->
+        val post = byKey[peer.key] ?: return@mapNotNull null
+        StoryCoverageItem(
+            key = peer.key,
+            chatId = post.chatId,
+            messageId = post.id,
+            badge = badge,
+            date = post.date,
+            excerpt = post.content.captionPlain.trim(),
+        )
+    }.toImmutableList()
 }
 
 /**

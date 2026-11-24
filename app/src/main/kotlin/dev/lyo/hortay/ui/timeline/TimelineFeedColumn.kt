@@ -211,12 +211,16 @@ internal fun TimelineFeedColumn(
                                 val onExpandSeries = remember(annotations, itemKey) {
                                     { annotations?.onExpandSeries?.invoke(itemKey); Unit }
                                 }
+                                val onOpenCoverage = remember(annotations, itemKey) {
+                                    annotations?.onOpenCoverage?.let { open -> { open(itemKey) } }
+                                }
                                 PostCard(
                                     post = post,
                                     interactions = itemInteractions,
                                     onTapRevisions = onTapRevisions,
                                     annotation = annotations?.byKey?.get(itemKey),
                                     onExpandSeries = onExpandSeries,
+                                    onOpenCoverage = onOpenCoverage,
                                 )
                             }
                         }

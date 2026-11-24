@@ -364,6 +364,8 @@
     <string name="settings_quick_reaction_subtitle">Seçilen emojiyle tepki vermek için gönderiye iki kez dokun. Tek dokunuş gönderiyi o zaman bir an sonra açar.</string>
     <string name="feed_also_forwarded_by">Ayrıca iletenler: %1$s</string>
     <string name="feed_also_covered_by">Aynı haberi verenler: %1$s</string>
+    <string name="feed_also_covered_title">Aynı haberi verenler</string>
+    <string name="feed_also_covered_show">Bu gönderileri göster</string>
     <string name="post_forwarded_by">İleten: %1$s</string>
     <string name="feed_forwarded_by_many">İletenler: %1$s</string>
     <string name="feed_forwarders_two">%1$s ve %2$s</string>
