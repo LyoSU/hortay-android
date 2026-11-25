@@ -675,7 +675,7 @@ fun PostCard(
             onDismiss = { sheetOpen = false },
         )
     }
-    if (selectTextOpen) {
+    if (selectTextOpen && !post.protectedContent) {
         SelectTextSheet(post = post, onDismiss = { selectTextOpen = false })
     }
     if (summaryOpen && summarizer != null) {
@@ -2298,16 +2298,19 @@ private fun PostContextMenu(
                 val hasText = post.content.captionPlain.isNotBlank()
                 if (hasText || onSummarize != null) ContextMenuDivider()
                 if (hasText) {
-                    ContextMenuItem(
-                        symbol = "content_copy",
-                        label = stringResource(R.string.post_copy_text),
-                        onClick = { close { interactions.onCopyClick(post) } },
-                    )
-                    ContextMenuItem(
-                        symbol = "description",
-                        label = stringResource(R.string.post_select_text),
-                        onClick = { close { onSelectText() } },
-                    )
+                    // A protected chat forbids copying the text: hide both ways to copy it.
+                    if (!post.protectedContent) {
+                        ContextMenuItem(
+                            symbol = "content_copy",
+                            label = stringResource(R.string.post_copy_text),
+                            onClick = { close { interactions.onCopyClick(post) } },
+                        )
+                        ContextMenuItem(
+                            symbol = "description",
+                            label = stringResource(R.string.post_select_text),
+                            onClick = { close { onSelectText() } },
+                        )
+                    }
                     if (interactions.translateEnabled) {
                         val translated = interactions.isTranslated(post)
                         ContextMenuItem(

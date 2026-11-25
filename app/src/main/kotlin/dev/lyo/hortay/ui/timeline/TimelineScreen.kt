@@ -1561,7 +1561,7 @@ fun TimelineScreen(
                 if (items.getOrNull(idx)?.isUnplayableVideo == true) {
                     scope.launch { dev.lyo.hortay.ui.actions.PostActions.openInTelegram(context, channels, post) }
                 } else {
-                    viewer.openFor(post.content, idx)
+                    viewer.openFor(post.content, idx, protectedContent = post.protectedContent)
                 }
             },
             // Tapping a feed post's channel name/avatar drills into that channel

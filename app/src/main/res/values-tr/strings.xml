@@ -311,6 +311,8 @@
     <string name="channel_media_empty">Henüz fotoğraf veya video yok</string>
     <string name="channel_media_error">Fotoğraflar ve videolar yüklenemedi</string>
     <string name="channel_media_retry">Tekrar dene</string>
+    <string name="channel_media_none_so_far">Şimdiye kadar fotoğraf veya video bulunamadı</string>
+    <string name="channel_media_keep_looking">Aramaya devam et</string>
     <string name="channels_loading">Yükleniyor…</string>
     <string name="channels_subscribers">Abone: %1$s</string>
     <string name="channels_unmute">Bildirimleri aç</string>

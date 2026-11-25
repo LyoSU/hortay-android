@@ -309,6 +309,8 @@
     <string name="channel_media_empty">هنوز عکس یا ویدیویی نیست</string>
     <string name="channel_media_error">عکس‌ها و ویدیوها بارگیری نشدند</string>
     <string name="channel_media_retry">تلاش دوباره</string>
+    <string name="channel_media_none_so_far">تا اینجا عکس یا ویدیویی پیدا نشد</string>
+    <string name="channel_media_keep_looking">ادامهٔ جستجو</string>
     <string name="channels_loading">در حال بارگذاری…</string>
     <string name="channels_subscribers">مشترکان: %1$s</string>
     <string name="channels_unmute">روشن کردن اعلان‌ها</string>

@@ -329,6 +329,8 @@
     <string name="channel_media_empty">Здесь пока нет фото и видео</string>
     <string name="channel_media_error">Не удалось загрузить фото и видео</string>
     <string name="channel_media_retry">Повторить</string>
+    <string name="channel_media_none_so_far">Пока не нашлось ни одного фото или видео</string>
+    <string name="channel_media_keep_looking">Искать дальше</string>
     <string name="channels_loading">Загружаем…</string>
     <string name="channels_subscribers">Подписчики: %1$s</string>
     <string name="channels_unmute">Включить уведомления</string>

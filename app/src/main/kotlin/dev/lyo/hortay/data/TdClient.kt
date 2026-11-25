@@ -820,6 +820,8 @@ class TdClient private constructor(
          *    whole wait — and a proxy switch is often exactly what clears the network
          *    condition. None of them is a content RPC that counts toward the flood bucket.
          *    [TdApi.GetMessage] is deliberately NOT here: it can fall through to the server.
+         *    [TdApi.GetMessageLink] IS here: td_api.tl documents it as "an offline method", and
+         *    gating it made Share / Copy link / Open in Telegram hang for the whole wait.
          */
         internal fun isOfflineRequest(query: TdApi.Function<*>): Boolean = when (query) {
             is TdApi.GetChat,
@@ -827,6 +829,7 @@ class TdClient private constructor(
             is TdApi.GetSupergroup,
             is TdApi.GetBasicGroup,
             is TdApi.GetMessageLocally,
+            is TdApi.GetMessageLink,
             is TdApi.GetFile,
             is TdApi.GetRemoteFile,
             is TdApi.GetOption,

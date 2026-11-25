@@ -319,6 +319,8 @@
     <string name="channel_media_empty">Ancora nessuna foto o video</string>
     <string name="channel_media_error">Impossibile caricare foto e video</string>
     <string name="channel_media_retry">Riprova</string>
+    <string name="channel_media_none_so_far">Finora nessuna foto o video trovato</string>
+    <string name="channel_media_keep_looking">Continua a cercare</string>
     <string name="channels_loading">Caricamento…</string>
     <string name="channels_subscribers">Iscritti: %1$s</string>
     <string name="channels_unmute">Riattiva notifiche</string>

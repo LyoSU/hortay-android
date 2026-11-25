@@ -236,6 +236,8 @@
 - Round video messages show the right play or pause state.
 - Switching the app language back to the system default works on Android 12 and older.
 - Sharing a photo or video no longer fails on phones that hide the list of installed apps.
+- Channels that forbid saving their content no longer offer to save, share or copy their photos, videos and text — sharing a link to the post still works.
+- Share, Copy link and Open in Telegram no longer wait while Telegram temporarily rate-limits the app.
 
 ### Performance
 - Idle video players are released when the app goes to the background.

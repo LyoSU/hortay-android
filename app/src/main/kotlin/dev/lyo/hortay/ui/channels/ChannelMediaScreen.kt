@@ -140,15 +140,15 @@ fun ChannelMediaScreen(
                 .consumeWindowInsets(padding),
         ) {
             val s = state
-            when {
-                s.items.isNotEmpty() -> MediaGrid(
+            when (s.view) {
+                ChannelMediaState.View.Grid -> MediaGrid(
                     state = s,
                     gridState = gridState,
                     contentPadding = gridPadding,
                     onLoadMore = viewModel::loadMore,
                     onRetry = viewModel::retry,
                 )
-                s.status == ChannelMediaState.Status.Loading -> {
+                ChannelMediaState.View.Loading -> {
                     val showLoading = rememberDeferredLoading(
                         pending = true,
                         key = Unit,
@@ -160,14 +160,24 @@ fun ChannelMediaScreen(
                         }
                     }
                 }
-                s.status == ChannelMediaState.Status.Error -> CenteredMessage(
+                ChannelMediaState.View.Error -> CenteredMessage(
                     text = stringResource(R.string.channel_media_error),
-                    onRetry = viewModel::retry,
+                    actionLabel = stringResource(R.string.channel_media_retry),
+                    onAction = viewModel::retry,
                     modifier = Modifier.padding(gridPadding),
                 )
-                else -> CenteredMessage(
+                // Each tap walks one more bounded stretch (see ChannelMediaViewModel.fetch),
+                // so no request loop runs without the user asking for it.
+                ChannelMediaState.View.KeepLooking -> CenteredMessage(
+                    text = stringResource(R.string.channel_media_none_so_far),
+                    actionLabel = stringResource(R.string.channel_media_keep_looking),
+                    onAction = viewModel::loadMore,
+                    modifier = Modifier.padding(gridPadding),
+                )
+                ChannelMediaState.View.Empty -> CenteredMessage(
                     text = stringResource(R.string.channel_media_empty),
-                    onRetry = null,
+                    actionLabel = null,
+                    onAction = null,
                     modifier = Modifier.padding(gridPadding),
                 )
             }
@@ -227,7 +237,15 @@ private fun MediaGrid(
         { messageId ->
             val items = currentItems
             val index = items.indexOfFirst { it.messageId == messageId }
-            if (index >= 0) viewer.open(items.map { it.viewerItem }, index)
+            // Protection is chat-wide in practice (`has_protected_content`), so one protected
+            // item hides Save / Share / Copy for the whole swipeable set.
+            if (index >= 0) {
+                viewer.open(
+                    items.map { it.viewerItem },
+                    index,
+                    protectedContent = items.any { it.protectedContent },
+                )
+            }
         }
     }
 
@@ -337,7 +355,12 @@ private fun BoxScope.HiddenThumb(item: ChannelMediaItem) {
 }
 
 @Composable
-private fun CenteredMessage(text: String, onRetry: (() -> Unit)?, modifier: Modifier = Modifier) {
+private fun CenteredMessage(
+    text: String,
+    actionLabel: String?,
+    onAction: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier.fillMaxSize().padding(horizontal = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
@@ -349,9 +372,9 @@ private fun CenteredMessage(text: String, onRetry: (() -> Unit)?, modifier: Modi
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-        if (onRetry != null) {
-            FilledTonalButton(onClick = onRetry, shapes = ButtonDefaults.shapes()) {
-                Text(stringResource(R.string.channel_media_retry))
+        if (actionLabel != null && onAction != null) {
+            FilledTonalButton(onClick = onAction, shapes = ButtonDefaults.shapes()) {
+                Text(actionLabel)
             }
         }
     }

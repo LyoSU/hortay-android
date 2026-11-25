@@ -88,6 +88,8 @@ object PostActions {
      * clipboard writes, so we suppress ours there to avoid the double-toast smell.
      */
     fun copyText(context: Context, post: TimelinePost) {
+        // The menus hide Copy text for protected content; this guards any other caller.
+        if (post.protectedContent) return
         val text = post.content.captionPlain
         if (text.isBlank()) return
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
@@ -123,8 +125,12 @@ object PostActions {
         context.startActivity(Intent.createChooser(intent, null))
     }
 
-    private fun buildShareText(post: TimelinePost, url: String): String {
-        val excerpt = post.content.captionPlain.take(200)
+    /**
+     * Excerpt + attribution + link. A protected post ([TimelinePost.protectedContent]) shares
+     * only the attribution and link — its text must not leave the app, the link may.
+     */
+    internal fun buildShareText(post: TimelinePost, url: String): String {
+        val excerpt = if (post.protectedContent) "" else post.content.captionPlain.take(200)
         return buildString {
             if (excerpt.isNotBlank()) {
                 append(excerpt)

@@ -621,7 +621,7 @@ fun ChannelScreen(
                 if (items.getOrNull(idx)?.isUnplayableVideo == true) {
                     scope.launch { PostActions.openInTelegram(context, channels, post) }
                 } else {
-                    viewer.openFor(post.content, idx)
+                    viewer.openFor(post.content, idx, protectedContent = post.protectedContent)
                 }
             },
             onChannelClick = { post ->

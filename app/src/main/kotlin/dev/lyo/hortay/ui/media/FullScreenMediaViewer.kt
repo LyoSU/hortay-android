@@ -109,6 +109,8 @@ fun FullScreenMediaViewer(
     items: ImmutableList<AlbumItem>,
     initialIndex: Int,
     onDismiss: () -> Unit,
+    /** Saving is forbidden by the chat: Save, Share and Copy are hidden, not disabled. */
+    protectedContent: Boolean = false,
 ) {
     if (items.isEmpty()) return
     val startPage = initialIndex.coerceIn(0, items.lastIndex)
@@ -527,8 +529,8 @@ fun FullScreenMediaViewer(
             // Speed applies to real videos only: GIF-style animations loop silently and
             // photos don't play, so neither gets the chip.
             val showSpeed = activeItem is AlbumItem.Video
-            val persistableItem = activeItem.takeIf { readyPath != null }
-            val shareCapable = readyPath != null || !webShareUrl.isNullOrBlank()
+            val persistableItem = activeItem.takeIf { readyPath != null && !protectedContent }
+            val shareCapable = !protectedContent && (readyPath != null || !webShareUrl.isNullOrBlank())
 
             if (showQuality || showSpeed || persistableItem != null || shareCapable) {
                 Column(

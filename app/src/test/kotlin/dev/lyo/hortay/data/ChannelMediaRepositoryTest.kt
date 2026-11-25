@@ -140,6 +140,25 @@ class ChannelMediaRepositoryTest {
     }
 
     @Test
+    fun `no cells with more history offers to keep looking, not the empty state`() {
+        val unshowable = ChannelMediaState().appended(page(emptyList(), next = 40L, raw = 60), requestedFrom = 0L)
+        assertEquals(ChannelMediaState.View.KeepLooking, unshowable.view)
+        assertEquals(ChannelMediaState.View.Loading, unshowable.loading().view)
+
+        val exhausted = unshowable.appended(page(emptyList(), next = 0L, raw = 0), requestedFrom = 40L)
+        assertEquals(ChannelMediaState.View.Empty, exhausted.view)
+    }
+
+    @Test
+    fun `the screen view follows items first, then the paging status`() {
+        assertEquals(ChannelMediaState.View.Loading, ChannelMediaState().view)
+        assertEquals(ChannelMediaState.View.Error, ChannelMediaState().failed().view)
+        val loaded = ChannelMediaState().appended(page(listOf(30L), next = 0L), requestedFrom = 0L)
+        assertEquals(ChannelMediaState.View.Grid, loaded.view)
+        assertEquals(ChannelMediaState.View.Grid, loaded.loading().failed().view)
+    }
+
+    @Test
     fun `a failure keeps loaded items and the cursor for retry`() {
         val loaded = ChannelMediaState().appended(page(listOf(30L), next = 30L), requestedFrom = 0L)
         val failed = loaded.loading().failed()

@@ -33,6 +33,11 @@ class FloodGateBypassTest {
     }
 
     @Test
+    fun `message link is an offline method and skips the flood gate`() {
+        assertTrue(TdClient.isOfflineRequest(TdApi.GetMessageLink(1, 1, 0, 0, "", false, false)))
+    }
+
+    @Test
     fun `server message fetch still waits on the flood gate`() {
         assertFalse(TdClient.isOfflineRequest(TdApi.GetMessage()))
     }

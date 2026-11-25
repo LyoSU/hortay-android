@@ -320,6 +320,8 @@
     <string name="channel_media_empty">Pas encore de photos ni de vidéos</string>
     <string name="channel_media_error">Impossible de charger les photos et les vidéos</string>
     <string name="channel_media_retry">Réessayer</string>
+    <string name="channel_media_none_so_far">Aucune photo ni vidéo trouvée pour l\'instant</string>
+    <string name="channel_media_keep_looking">Continuer à chercher</string>
     <string name="channels_loading">Chargement…</string>
     <string name="channels_subscribers">Abonnés : %1$s</string>
     <string name="channels_unmute">Réactiver les notifications</string>

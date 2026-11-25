@@ -327,6 +327,8 @@
     <string name="channel_media_empty">Nie ma jeszcze zdjęć ani wideo</string>
     <string name="channel_media_error">Nie udało się wczytać zdjęć i wideo</string>
     <string name="channel_media_retry">Spróbuj ponownie</string>
+    <string name="channel_media_none_so_far">Na razie nie znaleziono zdjęć ani wideo</string>
+    <string name="channel_media_keep_looking">Szukaj dalej</string>
     <string name="channels_loading">Ładowanie…</string>
     <string name="channels_subscribers">Subskrybenci: %1$s</string>
     <string name="channels_unmute">Włącz powiadomienia</string>

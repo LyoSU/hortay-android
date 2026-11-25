@@ -38,16 +38,21 @@ val LocalMediaViewer = staticCompositionLocalOf<MediaViewerController> {
 }
 
 class MediaViewerController internal constructor(
-    private val opener: (List<AlbumItem>, Int) -> Unit,
+    private val opener: (List<AlbumItem>, Int, Boolean) -> Unit,
 ) {
-    fun open(items: List<AlbumItem>, index: Int = 0) {
+    /**
+     * [protectedContent]: the media comes from a message whose chat forbids saving
+     * ([dev.lyo.hortay.data.TimelinePost.protectedContent]); the viewer then hides Save,
+     * Share and Copy.
+     */
+    fun open(items: List<AlbumItem>, index: Int = 0, protectedContent: Boolean = false) {
         if (items.isEmpty()) return
-        opener(items, index)
+        opener(items, index, protectedContent)
     }
 
     /** Convenience: project [PostContent] and open if it has any viewable media. */
-    fun openFor(content: PostContent, index: Int = 0) {
-        content.toAlbumItems()?.let { open(it, index) }
+    fun openFor(content: PostContent, index: Int = 0, protectedContent: Boolean = false) {
+        content.toAlbumItems()?.let { open(it, index, protectedContent) }
     }
 }
 
@@ -55,7 +60,7 @@ class MediaViewerController internal constructor(
 fun MediaViewerHost(content: @Composable () -> Unit) {
     var state by remember { mutableStateOf<ViewerState?>(null) }
     val controller = remember {
-        MediaViewerController { items, idx -> state = ViewerState(items, idx) }
+        MediaViewerController { items, idx, protectedContent -> state = ViewerState(items, idx, protectedContent) }
     }
     CompositionLocalProvider(LocalMediaViewer provides controller) {
         content()
@@ -67,6 +72,7 @@ fun MediaViewerHost(content: @Composable () -> Unit) {
             // Compose-stable ImmutableList param.
             items = vs.items.toImmutableList(),
             initialIndex = vs.index,
+            protectedContent = vs.protectedContent,
             onDismiss = { state = null },
         )
     }
@@ -75,6 +81,7 @@ fun MediaViewerHost(content: @Composable () -> Unit) {
 private data class ViewerState(
     val items: List<AlbumItem>,
     val index: Int,
+    val protectedContent: Boolean,
 )
 
 /**

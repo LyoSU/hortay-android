@@ -75,7 +75,9 @@ class ChannelMediaViewModel(
                 _state.update { it.loading() }
             }
             // Bounded walk ran out without a visible cell: settle as Idle, which re-arms the
-            // grid's near-end trigger (it keys on `canLoadMore`) for the next stretch.
+            // grid's near-end trigger (it keys on `canLoadMore`) for the next stretch. With no
+            // cells at all there is no grid to trigger it; the screen shows "keep looking"
+            // ([ChannelMediaState.View.KeepLooking]) and the next stretch waits for that tap.
             _state.update { s ->
                 if (s.status == ChannelMediaState.Status.Loading) s.copy(status = ChannelMediaState.Status.Idle) else s
             }

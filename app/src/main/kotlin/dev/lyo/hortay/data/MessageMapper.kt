@@ -137,6 +137,7 @@ class MessageMapper(
             canReportChat = chat.canBeReported,
             factCheck = message.factCheck?.text?.text?.takeIf { it.isNotBlank() },
             canSummarize = !message.summaryLanguageCode.isNullOrEmpty(),
+            protectedContent = !message.canBeSaved,
         )
     }
 
@@ -182,6 +183,7 @@ class MessageMapper(
             senderChatId = (message.senderId as? TdApi.MessageSenderChat)?.chatId,
             isSenderPremium = sender.isPremium,
             senderEmojiStatusId = sender.emojiStatusId,
+            protectedContent = !message.canBeSaved,
         )
     }
 

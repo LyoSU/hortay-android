@@ -148,6 +148,16 @@ data class TimelinePost(
      * gates the "Summarize" action. Always false in web mode.
      */
     val canSummarize: Boolean = false,
+    /**
+     * The chat forbids saving, forwarding and copying this message's content
+     * (`!Message.can_be_saved`, which TDLib derives from `Chat.has_protected_content` and
+     * self-destruct state). Read from the message itself, so it costs no extra request.
+     * Hides Save / Share file / Copy image in the fullscreen viewer and Copy text / Select
+     * text in the post and comment menus, and drops the text excerpt from Share; sharing,
+     * copying and opening the post's link stay available, as in Telegram's own clients.
+     * Always false in guest mode (t.me/s/ exposes no such flag).
+     */
+    val protectedContent: Boolean = false,
 )
 
 /**

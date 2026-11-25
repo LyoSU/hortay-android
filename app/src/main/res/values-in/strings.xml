@@ -300,6 +300,8 @@
     <string name="channel_media_empty">Belum ada foto atau video</string>
     <string name="channel_media_error">Tidak dapat memuat foto dan video</string>
     <string name="channel_media_retry">Coba lagi</string>
+    <string name="channel_media_none_so_far">Belum ditemukan foto atau video</string>
+    <string name="channel_media_keep_looking">Terus cari</string>
     <string name="channels_loading">Memuat…</string>
     <string name="channels_subscribers">Pelanggan: %1$s</string>
     <string name="channels_unmute">Aktifkan notifikasi</string>

@@ -402,7 +402,7 @@ fun CommentsScreen(
                 if (items.getOrNull(idx)?.isUnplayableVideo == true) {
                     actionScope.launch { PostActions.openInTelegram(context, channels, p) }
                 } else {
-                    viewer.openFor(p.content, idx)
+                    viewer.openFor(p.content, idx, protectedContent = p.protectedContent)
                 }
             },
             onChannelClick = onChannelClick,
@@ -901,7 +901,9 @@ fun CommentsScreen(
                                 // nothing on screen can match, so stay put rather than jumping
                                 // to the post and lighting a highlight that can't land.
                             },
-                            onMediaClick = { items, idx -> viewer.open(items, idx) },
+                            onMediaClick = { items, idx ->
+                                viewer.open(items, idx, protectedContent = row.message.protectedContent)
+                            },
                             onReactionTap = { item ->
                                 onReactionToggle(
                                     s.threadChatId,
@@ -922,7 +924,8 @@ fun CommentsScreen(
                             CommentContextMenu(
                                 anchor = menuAnchor,
                                 currentReactions = row.message.reactions,
-                                commentText = row.message.content.captionPlain,
+                                // A protected chat forbids copying: no text, no Copy row.
+                                commentText = if (row.message.protectedContent) "" else row.message.content.captionPlain,
                                 fetchAvailableReactions = { fetchAvailableReactions(s.threadChatId, row.message.id) },
                                 onPick = { kind, alreadyChosen ->
                                     if (!alreadyChosen) reactionEffect.request(kind)

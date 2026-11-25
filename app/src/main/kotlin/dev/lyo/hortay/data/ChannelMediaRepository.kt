@@ -66,6 +66,8 @@ const val CHANNEL_MEDIA_PAGE_SIZE = 60
 data class ChannelMediaItem(
     val messageId: Long,
     val viewerItem: AlbumItem,
+    /** `!Message.can_be_saved`: the viewer hides Save / Share / Copy (see [TimelinePost.protectedContent]). */
+    val protectedContent: Boolean = false,
 ) {
     val thumb: TdMedia get() = viewerItem.media
 
@@ -121,7 +123,7 @@ internal fun TdApi.Message.toChannelMediaItem(): ChannelMediaItem? {
         }
         else -> return null
     }
-    return ChannelMediaItem(messageId = id, viewerItem = item)
+    return ChannelMediaItem(messageId = id, viewerItem = item, protectedContent = !canBeSaved)
 }
 
 /**
@@ -150,6 +152,24 @@ data class ChannelMediaState(
     }
 
     val canLoadMore: Boolean get() = status == Status.Idle
+
+    /**
+     * What the grid screen shows. With no cells yet, only an exhausted history ([Status.End])
+     * reads as "no photos or videos": an [Status.Idle] state with no cells means the bounded
+     * walk of one request found nothing showable but TDLib has more, and the grid (whose
+     * near-end trigger would resume paging) isn't mounted — so the screen offers to keep
+     * looking instead of claiming the channel is empty.
+     */
+    val view: View
+        get() = when {
+            items.isNotEmpty() -> View.Grid
+            status == Status.Loading -> View.Loading
+            status == Status.Error -> View.Error
+            status == Status.Idle -> View.KeepLooking
+            else -> View.Empty
+        }
+
+    enum class View { Grid, Loading, Error, KeepLooking, Empty }
 }
 
 internal fun ChannelMediaState.loading(): ChannelMediaState = copy(status = ChannelMediaState.Status.Loading)

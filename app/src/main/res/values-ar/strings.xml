@@ -345,6 +345,8 @@
     <string name="channel_media_empty">لا توجد صور أو مقاطع فيديو بعد</string>
     <string name="channel_media_error">تعذّر تحميل الصور ومقاطع الفيديو</string>
     <string name="channel_media_retry">إعادة المحاولة</string>
+    <string name="channel_media_none_so_far">لم يُعثر على صور أو مقاطع فيديو حتى الآن</string>
+    <string name="channel_media_keep_looking">متابعة البحث</string>
     <string name="channels_loading">جارٍ التحميل…</string>
     <string name="channels_subscribers">المشتركون: %1$s</string>
     <string name="channels_unmute">تفعيل الإشعارات</string>
