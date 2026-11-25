@@ -14,12 +14,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.EmojiStyle
 import dev.lyo.hortay.data.LocaleStore
+import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.ui.auth.AuthScreen
 import dev.lyo.hortay.ui.main.MainScaffold
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
@@ -113,6 +115,29 @@ class MainActivity : ComponentActivity() {
                         val isGuest by graph.guestMode.isGuest.collectAsStateWithLifecycle(
                             initialValue = false,
                         )
+                        // Leaving guest mode for sign-in drops the guest detail stack. The
+                        // back stack is shared by both scaffolds, and CommentsKey is a key
+                        // both modes push: a guest post's comments screen left on top would
+                        // be rendered for real by MainScaffold once auth reaches Ready — with
+                        // a synthetic web chatId TDLib has never heard of. The key can't tell
+                        // a guest anchor apart (synthetic ids overlap real supergroup ids, see
+                        // PostActions), so MainScaffold can't self-heal it; the mode flip is
+                        // the one seam every sign-in path crosses (comments hero, Settings,
+                        // Add channel, the snackbar "Sign in" action). Only a guest → non-guest
+                        // edge counts: the remembered flag starts false, so recreation (which
+                        // keeps the graph-scoped stack across rotation) never resets.
+                        val wasGuest = remember { booleanArrayOf(false) }
+                        LaunchedEffect(isGuest) {
+                            if (wasGuest[0] && !isGuest) {
+                                Snapshot.withMutableSnapshot {
+                                    graph.backStack.apply {
+                                        clear()
+                                        add(HomeKey)
+                                    }
+                                }
+                            }
+                            wasGuest[0] = isGuest
+                        }
                         // Routing precedence:
                         //   1. Authenticated (auth.Ready) → full TDLib UI. The user signed
                         //      in; show them everything regardless of any earlier guest
@@ -160,7 +185,10 @@ class MainActivity : ComponentActivity() {
                                 MigrationProposalSheet(
                                     coordinator = graph.migrationCoordinator,
                                     candidates = candidates,
-                                    onDismiss = { /* coordinator clears pendingProposal */ },
+                                    // No host-side state to reset: every close path inside the
+                                    // sheet (confirm, Skip, swipe, scrim, Back) goes through the
+                                    // coordinator, which clears pendingProposal and unmounts it.
+                                    onDismiss = {},
                                 )
                             }
                         }

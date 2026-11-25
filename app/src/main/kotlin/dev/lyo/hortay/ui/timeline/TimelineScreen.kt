@@ -1061,8 +1061,20 @@ fun TimelineScreen(
         //     not what the user expects from a Home tap.
         // Re-tap when already at the target = refresh (Twitter / TG idiom).
         val target = homeScrollIndexState.intValue
-        val atTarget = listState.firstVisibleItemIndex == target &&
-            listState.firstVisibleItemScrollOffset == 0
+        // reverseLayout + target > 0 lands via [scrollToBoundary], which top-aligns the
+        // row; there `firstVisibleItemIndex` is the visual-BOTTOM row, so the index check
+        // would never match and the refresh tap would re-jump forever. Ask the measured
+        // geometry instead (same math as the jump). Forward layout and the newest-edge
+        // target (index 0) keep the plain index check.
+        val atTarget = if (target > 0 && listState.layoutInfo.reverseLayout) {
+            listState.isRowTopAligned(
+                itemIndex = target,
+                tolerancePx = with(density) { HOME_TAP_AT_TARGET_TOLERANCE.roundToPx() },
+            )
+        } else {
+            listState.firstVisibleItemIndex == target &&
+                listState.firstVisibleItemScrollOffset == 0
+        }
         if (atTarget) {
             vm.refresh()
         } else {
@@ -2466,6 +2478,14 @@ private const val FOCUS_DWELL_MS = 600L
  * scrolling away. Matches the ~2 s glow Telegram-iOS paints on the linked-to bubble.
  */
 private const val HIGHLIGHT_DURATION_MS = 2200L
+
+/**
+ * Slack for the home re-tap "already at the target" check ([isRowTopAligned]). A
+ * top-aligning scrollBy can land a pixel or two off the exact edge (rounding of the
+ * float delta, padding that changed since the jump), and an exact-equality test would
+ * then turn the refresh tap into yet another jump.
+ */
+private val HOME_TAP_AT_TARGET_TOLERANCE = 4.dp
 
 /**
  * How many posts ahead of the first visible item to eagerly prefetch posters for.

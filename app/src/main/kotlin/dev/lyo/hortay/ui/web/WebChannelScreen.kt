@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,6 +47,11 @@ import dev.lyo.hortay.ui.timeline.ChannelTopBarColumn
 import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
+import dev.lyo.hortay.ui.timeline.FeedItem
+import dev.lyo.hortay.ui.timeline.openForwardSource
+import dev.lyo.hortay.ui.timeline.rememberReadAckDwell
+import dev.lyo.hortay.ui.actions.PostActions
+import dev.lyo.hortay.data.isUnplayableVideo
 
 /**
  * Guest-mode single-channel view. Mirrors the TDLib-mode
@@ -99,6 +105,17 @@ fun WebChannelScreen(
      * boundary so the channel opens "where you left off".
      */
     feedOrder: FeedOrder = FeedOrder.OldestUnreadFirst,
+    /**
+     * Opens another channel (forward source, cross-channel reply quote). Same contract as
+     * the guest feed's `onChannelOpen`: [WebModeScaffold] drills into a followed channel
+     * and falls back to the public t.me page for one the user doesn't follow.
+     */
+    onChannelOpen: (chatId: Long, messageId: Long?) -> Unit = { _, _ -> },
+    /**
+     * "Report" from the post menu — [WebModeScaffold] routes it through the same
+     * [dev.lyo.hortay.ui.report.GuestReportDelegator] path the guest feed uses.
+     */
+    onReportClick: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
 ) {
     val bookmarks = graph.bookmarkStore
     val perChannelPosts by remember(username) {
@@ -174,12 +191,62 @@ fun WebChannelScreen(
     }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val onPostClickState = rememberUpdatedState(onPostClick)
+    val onChannelOpenState = rememberUpdatedState(onChannelOpen)
+    val onReportClickState = rememberUpdatedState(onReportClick)
+    val context = LocalContext.current
+
+    // Rows wrapped as [FeedItem.Post] so the shared [rememberReadAckDwell] can match
+    // LazyColumn keys against them — the LazyColumn below keys on [FeedItem.key] too.
+    // Guest posts never carry a media-album id ([WebPostAdapter] sets 0), so the key
+    // is the per-post `post_<chatId>_<id>` form and stays unique.
+    val feedItems = remember(orderedPosts) { orderedPosts.map { FeedItem.Post(it) } }
+
+    // Read-ack dwell, shared with the guest feed and the TDLib channel screen: same
+    // visibility gates (60 % on screen, list idle, lifecycle RESUMED) and dwell. A
+    // guest read is a local cursor bump — [WebRepository.markChannelRead] MAX-clamps
+    // the channel's row to the highest seq seen, which clears the unread strip via
+    // [LocalReadCursors]. Every post here belongs to [username], so the batch maps to
+    // one cursor write.
+    val markAsRead: suspend (List<dev.lyo.hortay.data.TimelinePost>) -> Unit =
+        remember(graph.webRepository, username) {
+            { batch ->
+                if (batch.isNotEmpty()) {
+                    graph.webRepository.markChannelRead(username.lowercase(), batch.maxOf { it.id })
+                }
+            }
+        }
+    val ackedRead = rememberReadAckDwell(
+        listState = listState,
+        displayedItems = feedItems,
+        ackKey = chatId,
+        markAsRead = markAsRead,
+        scope = scope,
+    )
+    // Explicit-tap ack (media, open in Telegram, post body) — same as the feed: an
+    // action on a post is an unambiguous "I read this", and it suppresses the next
+    // dwell pass for that post through the shared dedup set.
+    val markPostReadState = rememberUpdatedState({ post: dev.lyo.hortay.data.TimelinePost ->
+        if (ackedRead.add(post.chatId to post.id)) {
+            scope.launch { markAsRead(listOf(post)) }
+        }
+    })
 
     val guestReactionNudge = rememberGuestReactionNudge()
-    val interactions = remember(viewer, bookmarks, chatId, uriHandler, guestReactionNudge) {
+    val interactions = remember(viewer, bookmarks, chatId, uriHandler, guestReactionNudge, context) {
         PostInteractions(
             onReactionToggle = { _, _ -> guestReactionNudge() },
-            onMediaClick = { post, idx -> viewer.openFor(post.content, idx) },
+            onMediaClick = { post, idx ->
+                markPostReadState.value(post)
+                // Unplayable videos ("Media is too big" posts where t.me drops the
+                // <video src>) go straight to Telegram, as in the guest feed — the
+                // viewer would otherwise open on an empty URL and spin forever.
+                val items = (post.content as? dev.lyo.hortay.data.PostContent.PhotoAlbum)?.items.orEmpty()
+                if (items.getOrNull(idx)?.isUnplayableVideo == true) {
+                    scope.launch { PostActions.openInTelegram(context, null, post) }
+                } else {
+                    viewer.openFor(post.content, idx)
+                }
+            },
             // Same-channel header tap inside a post is a no-op — we're already
             // here. Cross-channel jumps in guest mode go through the URI handler
             // (no in-app channel-screen drill for arbitrary handles yet).
@@ -191,12 +258,49 @@ fun WebChannelScreen(
                     }
                 }
             },
+            onForwardSourceClick = { post ->
+                openForwardSource(
+                    post,
+                    openChannel = { id, at -> onChannelOpenState.value(id, at) },
+                    openUri = uriHandler::openUri,
+                )
+            },
+            onQuotedSourceClick = { post ->
+                post.reply?.let { r ->
+                    if (r.replyToChatId == chatId) {
+                        // Same channel: scroll to the replied-to post when it is in the
+                        // local slice; otherwise open it on t.me, since the guest slice
+                        // only holds what the web preview has served.
+                        val target = orderedPostsState.value.indexOfFirst { it.id == r.replyToMessageId }
+                        if (target >= 0) {
+                            scope.launch { listState.animateScrollToItem(target) }
+                        } else {
+                            uriHandler.openUri("https://t.me/$username/${r.replyToMessageId}")
+                        }
+                    } else {
+                        onChannelOpenState.value(r.replyToChatId, r.replyToMessageId)
+                    }
+                }
+            },
             onBookmarkClick = { post -> scope.launch { bookmarks.toggle(post) } },
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
+            // Guest mode has no ChannelDirectory: PostActions builds the t.me link by hand.
+            onShareClick = { post -> scope.launch { PostActions.share(context, null, post) } },
+            onCopyClick = { post -> PostActions.copyText(context, post) },
+            onOpenClick = { post ->
+                markPostReadState.value(post)
+                scope.launch { PostActions.openInTelegram(context, null, post) }
+            },
+            onReportClick = { post -> onReportClickState.value(post) },
+            // Guest delegation (Telegram app or t.me) is always available.
+            canReport = { true },
             // Wire post-body tap through to the scaffold so it can show the
             // "коментарі недоступні" snackbar. Without this, tapping the body
             // is silently dead (the default no-op).
-            onPostClick = { post -> onPostClickState.value(post) },
+            onPostClick = { post ->
+                markPostReadState.value(post)
+                onPostClickState.value(post)
+            },
         )
     }
 
@@ -242,8 +346,9 @@ fun WebChannelScreen(
             contentPadding = mergedPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(items = orderedPosts, key = { it.id }) { post ->
-                PostCard(post = post, interactions = interactions)
+            // Keyed on [FeedItem.key] so the read-ack dwell above can match visible rows.
+            items(items = feedItems, key = { it.key }) { item ->
+                PostCard(post = item.post, interactions = interactions)
             }
         }
     }

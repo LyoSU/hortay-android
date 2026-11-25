@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,7 +33,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,15 +77,36 @@ fun MigrationProposalSheet(
     val selected = remember(candidates) {
         mutableStateOf(candidates.toSet())
     }
-    var inFlight by rememberSaveable { mutableStateOf(false) }
+    // Plain `remember`, NOT `rememberSaveable`: the confirm run lives in this
+    // composition's [scope], so an Activity recreation cancels it. A saved `true`
+    // would come back with no job behind it and lock every control for good. Reset
+    // in `finally` so a cancelled or failed run can never leave it stuck either.
+    var inFlight by remember { mutableStateOf(false) }
+
+    // Skip, swipe-down, scrim tap and Back all mean "not now" — persist it through
+    // [MigrationCoordinator.dismiss], which clears `pendingProposal` so the host stops
+    // composing this sheet. Hiding the sheet alone used to leave the proposal pending
+    // and an invisible modal window mounted over the app.
+    fun skip() {
+        scope.launch {
+            coordinator.dismiss()
+            onDismiss()
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = {
             // Block dismiss while migration is running — losing the sheet
-            // mid-run hides progress feedback and could orphan the user.
-            if (!inFlight) onDismiss()
+            // mid-run hides progress feedback and could orphan the user. The
+            // gestures / Back / outside-tap are already disabled below while in
+            // flight; if a dismiss still slips through, bring the sheet back
+            // rather than leaving a hidden sheet mounted.
+            if (!inFlight) skip() else scope.launch { sheetState.show() }
         },
         sheetState = sheetState,
+        sheetGesturesEnabled = !inFlight,
+        // Both flags track !inFlight: no Back or outside-tap dismiss mid-run.
+        properties = ModalBottomSheetProperties(!inFlight, !inFlight),
     ) {
         Column(
             modifier = Modifier
@@ -228,8 +249,11 @@ fun MigrationProposalSheet(
                     onClick = {
                         inFlight = true
                         scope.launch {
-                            coordinator.confirm(selected.value.toList())
-                            inFlight = false
+                            try {
+                                coordinator.confirm(selected.value.toList())
+                            } finally {
+                                inFlight = false
+                            }
                             onDismiss()
                         }
                     },
@@ -246,12 +270,7 @@ fun MigrationProposalSheet(
                     )
                 }
                 OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            coordinator.dismiss()
-                            onDismiss()
-                        }
-                    },
+                    onClick = { skip() },
                     shapes = ButtonDefaults.shapes(),
                     enabled = !inFlight,
                     modifier = Modifier.fillMaxWidth(),

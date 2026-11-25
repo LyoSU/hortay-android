@@ -184,6 +184,13 @@ fun ChannelScreen(
      * would otherwise bypass that budget. Null = unguarded (guest mode / tests).
      */
     startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
+    /**
+     * Post archive. When non-null, the "edited" chip and a deleted post's tap open
+     * [PostRevisionSheet] — same wiring as [TimelineScreen]. Null leaves both inert.
+     */
+    archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
+    /** Companion to [archiveRepository]: renders archived media sharp in the revision sheet. */
+    archiveMediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver? = null,
 ) {
     // Per-channel VM. viewModel() keys the instance by (class, key), so each chatId
     // gets its own VM rather than sharing the all-feed TimelineViewModel. The factory is
@@ -235,6 +242,13 @@ fun ChannelScreen(
 
     // Info sheet: hoisted local state, dismissed by setting false.
     var infoSheetVisible by remember { mutableStateOf(false) }
+
+    // Revision sheet target: the post whose "edited" chip (or tombstone body) was tapped.
+    // Same shape as [TimelineScreen]'s `revisionsForPost`; rendered at the end of this body.
+    var revisionsForPost by remember(chatId) { mutableStateOf<TimelinePost?>(null) }
+    val onTapRevisions: (TimelinePost) -> Unit = remember(archiveRepository) {
+        { post -> if (archiveRepository != null) revisionsForPost = post }
+    }
 
     // Search-mode back-handler. When search is active, system back / predictive-back
     // should collapse the search overlay back to the channel's normal Medium top bar
@@ -494,7 +508,12 @@ fun ChannelScreen(
     // (The previous per-order branch with `first <= threshold` for OldestUnreadFirst
     // was an ascending-layout artifact; see git history for the runaway-pagination
     // bug it caused.)
-    LaunchedEffect(listState, chatId, feedOrder) {
+    //
+    // Off while search is active: the list then shows [searchResults], whose high-index
+    // end is the last search hit, not the oldest loaded post — paging the channel history
+    // in under a search would fetch pages the user can't see.
+    LaunchedEffect(listState, chatId, feedOrder, searchActive) {
+        if (searchActive) return@LaunchedEffect
         androidx.compose.runtime.snapshotFlow {
             val info = listState.layoutInfo
             val total = info.totalItemsCount
@@ -519,21 +538,29 @@ fun ChannelScreen(
     // [rememberReadAckDwell] — shared with [TimelineScreen]. Scoped to chatId. The
     // returned set is the same one [markPostReadState] below extends with
     // explicit-tap acks.
+    //
+    // Disabled (null) while search is active. Search hits are scattered across the
+    // channel's history, and the read cursor is a max watermark: TDLib's ViewMessages
+    // advances lastReadInboxMessageId to the highest acked id, so dwelling on one recent
+    // hit would mark every older unread post read on the server. Null (rather than a
+    // no-op callback) also keeps the hits out of the dedup set, so they still get acked
+    // by the normal dwell once search closes and they're actually read in place.
+    val dwellMarkAsRead: suspend (List<TimelinePost>) -> Unit = { fresh ->
+        fresh.groupBy { it.chatId }.forEach { (cid, group) ->
+            // Expand albums to every member id so TDLib's
+            // lastReadInboxMessageId advances past the highest member,
+            // matching the explicit-tap path below ([markPostReadState]).
+            val ids = group.flatMap { post ->
+                post.albumMessageIds.ifEmpty { listOf(post.id) }
+            }.distinct()
+            vm.viewMessages(cid, ids)
+        }
+    }
     val ackedRead = rememberReadAckDwell(
         listState = listState,
         displayedItems = displayedItems,
         ackKey = chatId,
-        markAsRead = { fresh ->
-            fresh.groupBy { it.chatId }.forEach { (cid, group) ->
-                // Expand albums to every member id so TDLib's
-                // lastReadInboxMessageId advances past the highest member,
-                // matching the explicit-tap path below ([markPostReadState]).
-                val ids = group.flatMap { post ->
-                    post.albumMessageIds.ifEmpty { listOf(post.id) }
-                }.distinct()
-                vm.viewMessages(cid, ids)
-            }
-        },
+        markAsRead = dwellMarkAsRead.takeUnless { searchActive },
         scope = scope,
         dwellMs = CHANNEL_READ_DWELL_MS,
     )
@@ -557,10 +584,13 @@ fun ChannelScreen(
     val onChannelOpenState = rememberUpdatedState(onChannelOpen)
     val onOpenCommentsState = rememberUpdatedState(onOpenComments)
     val onShowFullState = rememberUpdatedState(onShowFullPost)
+    val searchActiveState = rememberUpdatedState(searchActive)
     val markPostReadState = rememberUpdatedState({ post: TimelinePost ->
+        // Same watermark leak as the dwell above: opening a search hit (comments, media,
+        // full post) must not ack it, or every older unread post in the channel goes read.
         val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
         val unacked = ids.filter { (post.chatId to it) !in ackedRead }
-        if (unacked.isNotEmpty()) {
+        if (!searchActiveState.value && unacked.isNotEmpty()) {
             unacked.forEach { ackedRead.add(post.chatId to it) }
             scope.launch { vm.viewMessages(post.chatId, unacked) }
         }
@@ -970,7 +1000,12 @@ fun ChannelScreen(
                                                 LocalShowFullPost provides showFull,
                                             ) {
                                                 Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
-                                                    PostCard(post = post, interactions = itemInteractions, showHostChannel = false)
+                                                    PostCard(
+                                                        post = post,
+                                                        interactions = itemInteractions,
+                                                        onTapRevisions = onTapRevisions,
+                                                        showHostChannel = false,
+                                                    )
                                                 }
                                             }
                                         }
@@ -1040,6 +1075,30 @@ fun ChannelScreen(
             ignoredChannels = ignoredChannels,
             discovery = discovery,
             onOpenChannel = { id -> onChannelOpen(id, null) },
+        )
+    }
+
+    // Revision sheet — mirrors [TimelineScreen]'s block, including the remembered Flow:
+    // observeRevisions builds a fresh SQLDelight Flow per call and collectAsState keys on
+    // the instance, so an un-remembered call resets the sheet to empty on every recomposition.
+    val currentRevisionPost = revisionsForPost
+    if (currentRevisionPost != null && archiveRepository != null) {
+        val revisionsFlow = remember(currentRevisionPost.chatId, currentRevisionPost.id) {
+            archiveRepository.observeRevisions(
+                dev.lyo.hortay.data.archive.ChatRef.tdlib(currentRevisionPost.chatId),
+                currentRevisionPost.id.toString(),
+            )
+        }
+        val revisions by revisionsFlow.collectAsStateWithLifecycle(
+            initialValue = null as kotlinx.collections.immutable.ImmutableList<dev.lyo.hortay.data.archive.PostSnapshot>?,
+        )
+        dev.lyo.hortay.ui.archive.PostRevisionSheet(
+            revisions = revisions,
+            onDismiss = { revisionsForPost = null },
+            onOpenInTelegram = {
+                scope.launch { PostActions.openInTelegram(context, channels, currentRevisionPost) }
+            },
+            mediaResolver = archiveMediaResolver,
         )
     }
 }

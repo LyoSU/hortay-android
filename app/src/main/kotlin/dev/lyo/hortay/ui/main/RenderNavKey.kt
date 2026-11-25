@@ -4,6 +4,7 @@ package dev.lyo.hortay.ui.main
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.lyo.hortay.AppGraph
@@ -22,6 +23,7 @@ import dev.lyo.hortay.ui.archive.ArchiveScreen
 import dev.lyo.hortay.ui.archive.ArchiveSettingsScreen
 import dev.lyo.hortay.ui.archive.ArchiveSettingsViewModel
 import dev.lyo.hortay.ui.archive.ArchiveViewModel
+import dev.lyo.hortay.ui.archive.openArchiveEntryInTelegram
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.timeline.ChannelScreen
 import dev.lyo.hortay.ui.timeline.openForwardSource
@@ -58,6 +60,7 @@ internal fun RenderNavKey(
     onLinkNotFound: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     when (key) {
         is ChannelKey -> ChannelScreen(
             chatId = key.chatId,
@@ -82,6 +85,8 @@ internal fun RenderNavKey(
             onReportChannel = { onOpenReport(key.chatId, null) },
             feedOrder = feedOrder,
             startupPhase = graph.startupCoordinator.phase,
+            archiveRepository = graph.archiveRepository,
+            archiveMediaResolver = graph.archivedMediaResolver,
         )
 
         is CommentsKey -> CommentsScreen(
@@ -154,6 +159,7 @@ internal fun RenderNavKey(
                     if (stack.getOrNull(stack.lastIndex - 1) == ArchiveSettingsKey) onPopNav()
                     else stack.add(ArchiveSettingsKey)
                 },
+                onOpenInTelegram = { entry -> openArchiveEntryInTelegram(context, entry) },
                 mediaResolver = graph.archivedMediaResolver,
             )
         }

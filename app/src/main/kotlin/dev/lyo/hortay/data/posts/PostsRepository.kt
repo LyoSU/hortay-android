@@ -2052,11 +2052,18 @@ class PostsRepository(
         // so the final successful retry's value wins (earlier retries may
         // overwrite — correct, because we want the addition computed against
         // the state that actually got written).
+        //
+        // addedMemberIds is the archive's notion of "new to the feed": every message id
+        // newly covered, album members expanded. addedForEmit carries only anchors, so
+        // keying the baseline on it skipped members 2..n of a new album and the members
+        // a degraded card gained here — and the recorder drops unedited non-new messages.
         var addedForEmit: List<TimelinePost> = emptyList()
+        var addedMemberIds: Set<Long> = emptySet()
         _posts.update { current ->
             val before = current.mapTo(HashSet()) { it.chatId to it.id }
             val next = foldRawIntoCurrent(current, newPosts)
             addedForEmit = next.filter { (it.chatId to it.id) !in before }
+            addedMemberIds = newlyAddedMemberIds(current, next, chat.id)
             next
         }
         // Emit AFTER the state write so any listener sees a consistent feed.
@@ -2091,10 +2098,9 @@ class PostsRepository(
         // archive account B is about to reuse.
         val recorder = archiveRecorder
         if (recorder != null && recorder.capturesEditsFor(chat.id) && sessionEpoch.get() == epoch) {
-            val addedIds = addedForEmit.mapTo(HashSet()) { it.id }
             val channelMeta = newPosts.firstOrNull()?.archiveChannelMeta()
             for (raw in full) {
-                recorder.recordIngest(raw, newToFeed = raw.id in addedIds, channel = channelMeta)
+                recorder.recordIngest(raw, newToFeed = raw.id in addedMemberIds, channel = channelMeta)
             }
         }
     }

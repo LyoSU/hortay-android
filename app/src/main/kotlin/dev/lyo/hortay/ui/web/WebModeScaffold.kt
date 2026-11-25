@@ -374,6 +374,20 @@ fun WebModeScaffold(graph: AppGraph) {
             }
         }
     }
+    // Guest-mode "Report": delegate to the Telegram app or t.me, then show how to finish
+    // the report there. One stable lambda shared by the feed, Saved and the channel drill.
+    val onGuestReport: (TimelinePost) -> Unit = remember(graph) {
+        { post ->
+            val outcome = graph.guestReportDelegator.report(
+                channelUsername = post.senderHandle?.removePrefix("@"),
+                postId = if (post.id != 0L) post.id else null,
+            )
+            if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
+                outcome == GuestReportDelegator.Outcome.OpenedWeb) {
+                showReportInstruction = true
+            }
+        }
+    }
     // Reported by [TdMediaImage] when a guest-mode image fails with an expired-CDN-URL
     // code (401/403/410); routes to the channel re-fetch. Stable lambda over the
     // process-singleton feed source so [LocalWebStaleMedia] readers never invalidate.
@@ -591,16 +605,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                         homeTapTrigger = homeTapTrigger,
                                                         onBrandTap = { homeTapTrigger = System.nanoTime() },
                                                         onSearchClick = { searchOpen = true },
-                                                        onReportClick = { post ->
-                                                            val outcome = graph.guestReportDelegator.report(
-                                                                channelUsername = post.senderHandle?.removePrefix("@"),
-                                                                postId = if (post.id != 0L) post.id else null,
-                                                            )
-                                                            if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
-                                                                outcome == GuestReportDelegator.Outcome.OpenedWeb) {
-                                                                showReportInstruction = true
-                                                            }
-                                                        },
+                                                        onReportClick = onGuestReport,
                                                         canReport = { true },
                                                         markAsRead = webMarkAsRead,
                                                         ignoredChannels = graph.ignoredChannels,
@@ -631,16 +636,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                 showOnlyBookmarked = true,
                                                 onChannelOpen = onFeedChannelOpen,
                                                 onOpenComments = onGuestPostClick,
-                                                onReportClick = { post ->
-                                                    val outcome = graph.guestReportDelegator.report(
-                                                        channelUsername = post.senderHandle?.removePrefix("@"),
-                                                        postId = if (post.id != 0L) post.id else null,
-                                                    )
-                                                    if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
-                                                        outcome == GuestReportDelegator.Outcome.OpenedWeb) {
-                                                        showReportInstruction = true
-                                                    }
-                                                },
+                                                onReportClick = onGuestReport,
                                                 canReport = { true },
                                                 markAsRead = webMarkAsRead,
                                                 feedOrder = feedOrder,
@@ -703,6 +699,8 @@ fun WebModeScaffold(graph: AppGraph) {
                                 onBack = { popNav() },
                                 onPostClick = onGuestPostClick,
                                 feedOrder = feedOrder,
+                                onChannelOpen = onFeedChannelOpen,
+                                onReportClick = onGuestReport,
                             )
                         }
 

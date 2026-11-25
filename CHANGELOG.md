@@ -205,6 +205,16 @@
 - Buttons in the fullscreen viewer stay readable over bright photos.
 - Channel suggestions no longer stall after the device clock is set back, and a slow suggestion lookup no longer holds up opening a suggested channel.
 - The first fill-in of recent posts gives up after one timeout while offline instead of waiting on every channel in turn.
+- Searching inside a channel no longer marks its older unread posts as read.
+- The post archive keeps every photo of an album, not only the first one.
+- A photo album no longer shows some of its photos twice after the app restarts.
+- Tapping a deleted post kept by the archive opens its saved versions instead of an empty comments screen, and the "edited" mark inside a channel opens the edit history.
+- "Open in Telegram" in the post archive opens the post, and is hidden where no link to it exists.
+- Tapping the Feed tab a second time refreshes the feed in "Newest at the bottom" when there are unread posts.
+- Inside a guest-mode channel, Share, Copy, Open in Telegram, Report and taps on a forwarded source or a quoted reply now work, and posts you read lose their unread strip.
+- Guest-mode search opens again after you leave it with the system Back gesture.
+- Swiping away the offer to move guest-mode channels to your account closes it for good instead of leaving the screen unresponsive.
+- Signing in from a guest-mode post lands on your feed instead of a broken comments screen.
 
 ### Performance
 - Idle video players are released when the app goes to the background.

@@ -357,7 +357,16 @@ fun PostCard(
                     interactionSource = cardInteractionSource,
                     indication = LocalIndication.current,
                     enabled = clickable || actionsEnabled,
-                    onClick = { if (clickable) interactions.onPostClick(post) },
+                    // A tombstone's message no longer exists on Telegram, so its comments
+                    // screen would open on nothing; its tap opens the archived revision
+                    // history instead (the contract PostsRepository's tombstone KDoc states).
+                    onClick = {
+                        when {
+                            !clickable -> Unit
+                            post.isDeleted -> onTapRevisions(post)
+                            else -> interactions.onPostClick(post)
+                        }
+                    },
                     onDoubleClick = onQuickReact,
                     onLongClickLabel = if (actionsEnabled) stringResource(R.string.post_more_actions) else null,
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,

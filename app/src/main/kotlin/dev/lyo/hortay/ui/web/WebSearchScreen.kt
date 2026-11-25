@@ -25,10 +25,12 @@ import androidx.compose.material3.SearchBarValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,14 +116,43 @@ fun WebSearchScreen(
         derivedStateOf { textFieldState.text.toString().trim() }
     }
 
-    // System back closes the overlay. We don't wire predictive-back here
-    // (unlike CommentsScreen) — this is a modal-style overlay mounted from
-    // WebModeScaffold via `searchOpen`. The SearchBar's own collapse runs
-    // briefly before the parent unmount tears down the Dialog.
+    // One-shot dismiss: the collapse observer below and the explicit paths (toolbar
+    // back arrow, Activity-level Back) can both fire for one close, and the parent's
+    // `searchOpen = false` must happen exactly once.
+    val onDismissState = rememberUpdatedState(onDismiss)
+    val dismissed = remember { booleanArrayOf(false) }
+    val dismissOnce: () -> Unit = remember {
+        {
+            if (!dismissed[0]) {
+                dismissed[0] = true
+                onDismissState.value()
+            }
+        }
+    }
+
+    // [ExpandedFullScreenSearchBar] lives in its own dialog window, and that window
+    // handles system Back itself by collapsing [searchBarState] — the Activity-level
+    // BackHandler below never sees that press. Without this observer the bar collapsed
+    // but the parent's `searchOpen` stayed true: search couldn't be reopened and the
+    // next Back was swallowed by the invisible overlay. So the bar's own collapse IS
+    // the dismiss signal. Gated on having been expanded first, so a collapsed first
+    // frame (before any expand animation starts) never closes the overlay it belongs to.
+    LaunchedEffect(searchBarState) {
+        var seenExpanded = false
+        snapshotFlow { searchBarState.progress to searchBarState.isAnimating }
+            .collect { (progress, animating) ->
+                if (progress > 0f) seenExpanded = true
+                if (seenExpanded && progress == 0f && !animating) dismissOnce()
+            }
+    }
+
+    // Fallback for a Back that reaches the Activity (e.g. the dialog isn't focused).
+    // No predictive-back here (unlike CommentsScreen) — this is a modal-style overlay
+    // mounted from WebModeScaffold via `searchOpen`.
     BackHandler {
         scope.launch {
             runCatching { searchBarState.animateToCollapsed() }
-            onDismiss()
+            dismissOnce()
         }
     }
 
@@ -177,7 +208,7 @@ fun WebSearchScreen(
                     IconButton(onClick = {
                         scope.launch {
                             runCatching { searchBarState.animateToCollapsed() }
-                            onDismiss()
+                            dismissOnce()
                         }
                     }) {
                         Symbol(

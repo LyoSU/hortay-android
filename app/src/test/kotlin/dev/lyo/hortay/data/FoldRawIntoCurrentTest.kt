@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.data.posts.foldRawIntoCurrent
+import dev.lyo.hortay.data.posts.newlyAddedMemberIds
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -132,6 +133,112 @@ class FoldRawIntoCurrentTest {
         assertNotNull(mergedSurvivor)
         val items = (mergedSurvivor!!.content as PostContent.PhotoAlbum).items
         assertEquals(3, items.size)
+    }
+
+    @Test
+    fun `snapshot restore with a merged live card does not duplicate album items`() {
+        // mergeSnapshotIntoFeed folds the LIVE feed in as raw: raw holds an already
+        // merged card, current holds the snapshot's unmerged per-message members.
+        // Keying fresh ids on the anchor alone kept M2..M5 and produced 5 + 4 = 9 items.
+        val chatId = -1001L
+        val albumId = 42L
+        val ids = listOf(10L, 11L, 12L, 13L, 14L)
+        val snapshotMembers = ids.map { rawAlbumMember(chatId, albumId, id = it) }.toPersistentList()
+        val liveMerged = mergedAlbum(chatId, albumId, ids = ids)
+
+        val result = foldRawIntoCurrent(current = snapshotMembers, raw = listOf(liveMerged))
+
+        assertEquals(1, result.size)
+        val card = result.single()
+        val items = (card.content as PostContent.PhotoAlbum).items
+        assertEquals(5, items.size, "merged live card + snapshot members must stay 5 photos")
+        assertEquals(ids.map { it.toInt() }, items.map { (it as AlbumItem.Photo).media.fileId })
+        assertEquals(ids, card.albumMessageIds)
+    }
+
+    @Test
+    fun `snapshot restore over a merged snapshot card keeps the complete live card`() {
+        // A merged raw card counts as albumMessageIds.size members for the partial
+        // guard, so a complete live card is not mistaken for a 1-member fragment.
+        val chatId = -1001L
+        val albumId = 42L
+        val ids = listOf(10L, 11L, 12L, 13L, 14L)
+        val snapshotMerged = mergedAlbum(chatId, albumId, ids = ids).copy(views = 1)
+        val liveMerged = mergedAlbum(chatId, albumId, ids = ids).copy(views = 500)
+
+        val result = foldRawIntoCurrent(persistentListOf(snapshotMerged), listOf(liveMerged))
+
+        val card = result.single()
+        assertEquals(500, card.views, "the fresher live card must win")
+        assertEquals(5, (card.content as PostContent.PhotoAlbum).items.size)
+    }
+
+    @Test
+    fun `snapshot restore completes a degraded live stub from snapshot members`() {
+        // Cold start: the live feed holds only chat.lastMessage (one album member,
+        // albumMessageIds empty); the snapshot carries every member.
+        val chatId = -1001L
+        val albumId = 42L
+        val ids = listOf(10L, 11L, 12L, 13L, 14L)
+        val snapshotMembers = ids.map { rawAlbumMember(chatId, albumId, id = it) }.toPersistentList()
+        val liveStub = rawAlbumMember(chatId, albumId, id = 14L)
+
+        val result = foldRawIntoCurrent(current = snapshotMembers, raw = listOf(liveStub))
+
+        assertEquals(1, result.size)
+        val card = result.single()
+        assertEquals(5, (card.content as PostContent.PhotoAlbum).items.size)
+        assertEquals(ids, card.albumMessageIds)
+    }
+
+    @Test
+    fun `snapshot restore completes a degraded live stub carrying its own id`() {
+        val chatId = -1001L
+        val albumId = 42L
+        val ids = listOf(10L, 11L, 12L, 13L, 14L)
+        val snapshotMembers = ids.map { rawAlbumMember(chatId, albumId, id = it) }.toPersistentList()
+        val liveStub = rawAlbumMember(chatId, albumId, id = 10L).copy(albumMessageIds = listOf(10L))
+
+        val result = foldRawIntoCurrent(current = snapshotMembers, raw = listOf(liveStub))
+
+        val card = result.single()
+        assertEquals(5, (card.content as PostContent.PhotoAlbum).items.size)
+        assertEquals(ids, card.albumMessageIds)
+    }
+
+    @Test
+    fun `newly added member ids expand a new album card`() {
+        val chatId = -1001L
+        val before = persistentListOf(textPost(chatId, id = 5L, views = 0))
+        val raw = (10L..12L).map { rawAlbumMember(chatId, 42L, id = it) }
+
+        val after = foldRawIntoCurrent(before, raw)
+
+        assertEquals(setOf(10L, 11L, 12L), newlyAddedMemberIds(before, after, chatId))
+    }
+
+    @Test
+    fun `newly added member ids cover siblings a degraded card gains`() {
+        val chatId = -1001L
+        val albumId = 42L
+        val stub = rawAlbumMember(chatId, albumId, id = 10L)
+        val before = persistentListOf(stub)
+        val raw = (10L..14L).map { rawAlbumMember(chatId, albumId, id = it) }
+
+        val after = foldRawIntoCurrent(before, raw)
+
+        assertEquals(setOf(11L, 12L, 13L, 14L), newlyAddedMemberIds(before, after, chatId))
+    }
+
+    @Test
+    fun `newly added member ids ignore re-ingested posts and other chats`() {
+        val chatId = -1001L
+        val merged = mergedAlbum(chatId, 42L, ids = listOf(10L, 11L, 12L))
+        val other = textPost(-2002L, id = 99L, views = 0)
+        val before = persistentListOf(merged)
+        val after = foldRawIntoCurrent(before, (10L..12L).map { rawAlbumMember(chatId, 42L, id = it) }) + other
+
+        assertEquals(emptySet<Long>(), newlyAddedMemberIds(before, after, chatId))
     }
 
     private fun mergedAlbum(chatId: Long, albumId: Long, ids: List<Long>): TimelinePost {

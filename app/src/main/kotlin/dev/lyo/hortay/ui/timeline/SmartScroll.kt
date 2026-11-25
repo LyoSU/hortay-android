@@ -277,6 +277,41 @@ internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
 }
 
 /**
+ * True when the row at [itemIndex] already sits where [scrollToBoundary] /
+ * [scrollToTopAligned] would land it: its TOP edge on the viewport's visible top,
+ * within [tolerancePx]. Reads the same measured geometry as [scrollToTopOfRow] via
+ * [topAlignDelta], so "already there" and "go there" can never disagree.
+ *
+ * Index-based checks (`firstVisibleItemIndex == i && firstVisibleItemScrollOffset == 0`)
+ * don't work under reverseLayout: there `firstVisibleItemIndex` is the visual-BOTTOM row,
+ * so a top-aligned row with index > 0 is almost never the "first visible" one. A row
+ * taller than the viewport counts as aligned too — its top is on the visible top and
+ * its tail simply overflows.
+ *
+ * At the edge of the content the list may not be able to scroll far enough to close the
+ * gap (e.g. the oldest row in reverseLayout); a remaining delta in a direction the list
+ * can no longer scroll also counts as aligned, since another jump would land in the same
+ * spot.
+ */
+internal fun LazyListState.isRowTopAligned(itemIndex: Int, tolerancePx: Int): Boolean {
+    val info = layoutInfo
+    val row = info.visibleItemsInfo.firstOrNull { it.index == itemIndex } ?: return false
+    val delta = topAlignDelta(
+        rowOffset = row.offset,
+        rowSize = row.size,
+        viewportStartOffset = info.viewportStartOffset,
+        viewportEndOffset = info.viewportEndOffset,
+        beforeContentPadding = info.beforeContentPadding,
+        afterContentPadding = info.afterContentPadding,
+        reverseLayout = info.reverseLayout,
+    )
+    // Positive scrollBy moves toward higher indices in both layouts (see [topAlignDelta]).
+    return abs(delta) <= tolerancePx ||
+        (delta > 0f && !canScrollForward) ||
+        (delta < 0f && !canScrollBackward)
+}
+
+/**
  * Shared implementation for [scrollToBoundary] and [scrollToTopAligned]. Lands the row
  * at [itemIndex] with its TOP edge on the viewport's visible top in both forward and
  * reverseLayout modes, via the "measure reality, nudge by the difference" pattern: bring

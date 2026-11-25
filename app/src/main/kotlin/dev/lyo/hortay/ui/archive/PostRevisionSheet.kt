@@ -65,13 +65,15 @@ import kotlinx.collections.immutable.ImmutableList
  * row the sheet is in deleted mode: deleted title, no "Go to current".
  *
  * @param revisions null while the archive query is still loading.
+ * @param onOpenInTelegram null hides the "Open in Telegram" action — for callers that
+ *   can't build a link to the message (see [ArchiveScreen]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostRevisionSheet(
     revisions: ImmutableList<PostSnapshot>?,
     onDismiss: () -> Unit,
-    onOpenInTelegram: () -> Unit,
+    onOpenInTelegram: (() -> Unit)?,
     onGoToCurrent: (() -> Unit)? = null,
     mediaResolver: ArchivedMediaResolver? = null,
 ) {
@@ -114,7 +116,7 @@ fun PostRevisionSheet(
 private fun RevisionSheetContent(
     entries: ImmutableList<RevisionEntry>,
     isDeleted: Boolean,
-    onOpenInTelegram: () -> Unit,
+    onOpenInTelegram: (() -> Unit)?,
     onGoToCurrent: (() -> Unit)?,
     mediaResolver: ArchivedMediaResolver?,
 ) {
@@ -177,8 +179,10 @@ private fun RevisionSheetContent(
             } else {
                 Spacer(Modifier)
             }
-            TextButton(onClick = onOpenInTelegram) {
-                Text(stringResource(R.string.revision_open_in_telegram))
+            if (onOpenInTelegram != null) {
+                TextButton(onClick = onOpenInTelegram) {
+                    Text(stringResource(R.string.revision_open_in_telegram))
+                }
             }
         }
         Spacer(Modifier.height(12.dp))

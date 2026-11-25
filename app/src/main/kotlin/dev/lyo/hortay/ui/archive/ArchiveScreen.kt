@@ -2,6 +2,9 @@
 
 package dev.lyo.hortay.ui.archive
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +61,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS
@@ -67,6 +71,7 @@ import dev.lyo.hortay.data.archive.ArchiveScope
 import dev.lyo.hortay.data.archive.ArchivedMediaResolver
 import dev.lyo.hortay.data.archive.ChatRef
 import dev.lyo.hortay.data.archive.PostSnapshot
+import dev.lyo.hortay.data.archive.SourceKind
 import dev.lyo.hortay.ui.archive.components.ArchiveDayHeader
 import dev.lyo.hortay.ui.archive.components.ArchiveEntryRow
 import dev.lyo.hortay.ui.components.HortaySnackbarHost
@@ -103,7 +108,12 @@ fun ArchiveScreen(
     viewModel: ArchiveViewModel,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenInTelegram: (ArchiveEntry) -> Unit = {},
+    /**
+     * Opens the entry's message in Telegram — [openArchiveEntryInTelegram] in the app.
+     * Null, or an entry [archiveEntryTelegramUri] can't build a link for, hides the
+     * sheet's "Open in Telegram" action instead of showing a button that does nothing.
+     */
+    onOpenInTelegram: ((ArchiveEntry) -> Unit)? = null,
     mediaResolver: ArchivedMediaResolver? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -198,10 +208,51 @@ fun ArchiveScreen(
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { openEntry = null },
-            onOpenInTelegram = { onOpenInTelegram(current) },
+            onOpenInTelegram = onOpenInTelegram
+                ?.takeIf { archiveEntryTelegramUri(current) != null }
+                ?.let { open -> { open(current) } },
             mediaResolver = mediaResolver,
         )
     }
+}
+
+/**
+ * `https://t.me/...` link to an archived message, or null when none can be built.
+ *
+ * Hand-rolled because the entry carries only the archive's own identity ([ChatRef] +
+ * message key), not a feed post: [dev.lyo.hortay.ui.actions.PostActions.openInTelegram]
+ * needs a [dev.lyo.hortay.data.TimelinePost], and TDLib's `GetMessageLink` can't link a
+ * deleted message anyway. Same formats as that helper's fallback:
+ *   - guest mode ([SourceKind.WEB]): the chat key is the public username and the message
+ *     key is the raw `t.me/<username>/<seq>` number.
+ *   - TDLib channel posts: `t.me/c/<rawChannelId>/<serverId>`; the message key is TDLib's
+ *     packed id (`serverId shl 20`). Resolves for members, which a followed channel's reader is.
+ *   - TDLib comments: null — the chat is the discussion group, which the reader usually
+ *     isn't a member of, so a `t.me/c/` link there would only open an error.
+ */
+internal fun archiveEntryTelegramUri(entry: ArchiveEntry): Uri? {
+    val messageId = entry.messageKey.toLongOrNull()?.takeIf { it > 0 } ?: return null
+    return when (entry.chat.kind) {
+        SourceKind.WEB -> entry.chat.key.takeIf { it.isNotBlank() }
+            ?.let { username -> "https://t.me/$username/$messageId".toUri() }
+        SourceKind.TDLIB -> {
+            if (entry.isComment) return null
+            val rawChannelId = entry.chat.key.removePrefix("-100").takeIf { it.isNotBlank() } ?: return null
+            val serverId = (messageId ushr 20).takeIf { it > 0 } ?: return null
+            "https://t.me/c/$rawChannelId/$serverId".toUri()
+        }
+    }
+}
+
+/**
+ * Opens [archiveEntryTelegramUri] the way [dev.lyo.hortay.ui.actions.PostActions.openInTelegram]
+ * opens a post: an `https://t.me` VIEW intent the Telegram client claims (the OS chooser
+ * steps in when none is installed), failures swallowed.
+ */
+internal fun openArchiveEntryInTelegram(context: Context, entry: ArchiveEntry) {
+    val uri = archiveEntryTelegramUri(entry) ?: return
+    val intent = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
 }
 
 @Composable

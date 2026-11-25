@@ -70,7 +70,12 @@ internal fun foldRawIntoCurrent(
     val partialAlbumKeys = rawByAlbum.entries
         .mapNotNullTo(HashSet()) { (key, members) ->
             val knownSize = knownAlbumSizes[key]
-            if (knownSize != null && members.size < knownSize) key else null
+            // Count member ids, not raw entries: on the snapshot-restore path raw
+            // is the live feed, where a merged card is ONE entry standing for
+            // albumMessageIds.size members. Counting entries would flag a complete
+            // live card as "partial" against a merged current copy and drop it.
+            val rawMemberCount = members.flatMapTo(HashSet()) { it.memberIds() }.size
+            if (knownSize != null && rawMemberCount < knownSize) key else null
         }
     if (partialAlbumKeys.isNotEmpty()) {
         // Surface this — partial coverage is the symptom of an album that's
@@ -87,7 +92,15 @@ internal fun foldRawIntoCurrent(
     val rawSafe = if (partialAlbumKeys.isEmpty()) raw
         else raw.filterNot { (it.chatId to it.mediaAlbumId) in partialAlbumKeys }
 
-    val freshKeys = rawSafe.mapTo(HashSet()) { it.chatId to it.id }
+    // Every member id of a raw entry counts as fresh, not just its anchor id. Raw
+    // is usually per-message, but [PostsRepository.mergeSnapshotIntoFeed] folds the
+    // LIVE feed in as raw, and that holds already-merged album cards. Keying on the
+    // anchor alone let the snapshot's unmerged M2..Mn survive `keptOld`, and
+    // mergeAlbumMembers flat-mapped the merged card's n items plus n-1 fragments
+    // again (5-photo album → 9 photos). A degraded live stub (one member,
+    // albumMessageIds empty or [id]) still covers only its own id, so the snapshot's
+    // other members survive and complete the album.
+    val freshKeys = rawSafe.flatMapTo(HashSet()) { post -> post.memberIds().map { post.chatId to it } }
     val keptOld = current.filterNot { post ->
         // Match against EVERY member id, not just the anchor — otherwise a raw
         // batch that contains the album's non-anchor members slips past the
@@ -116,4 +129,30 @@ internal fun foldRawIntoCurrent(
         )
     }
     return PostFilterStrategy.apply(rawMerged + keptOld).toPersistentList()
+}
+
+/** Every message id a feed entry stands for: all album members of a merged card, else its own id. */
+private fun TimelinePost.memberIds(): List<Long> = albumMessageIds.ifEmpty { listOf(id) }
+
+/**
+ * Message ids of [chatId] that a fold made newly present in the feed: every member
+ * id (album members expanded via [TimelinePost.albumMessageIds]) in [after] that no
+ * entry of [before] covered. Unlike an anchor-id diff this includes album members
+ * 2..n of a freshly merged card, and the members a degraded album card gains when its
+ * siblings arrive later — the archive baseline in [PostsRepository] keys on it.
+ * Pure: safe to call inside a StateFlow `update` lambda.
+ */
+internal fun newlyAddedMemberIds(
+    before: List<TimelinePost>,
+    after: List<TimelinePost>,
+    chatId: Long,
+): Set<Long> {
+    val known = HashSet<Long>()
+    for (post in before) if (post.chatId == chatId) known.addAll(post.memberIds())
+    val added = HashSet<Long>()
+    for (post in after) {
+        if (post.chatId != chatId) continue
+        for (id in post.memberIds()) if (id !in known) added.add(id)
+    }
+    return added
 }
