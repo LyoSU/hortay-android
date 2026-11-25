@@ -1591,6 +1591,7 @@ fun TimelineScreen(
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> scope.launch { PostActions.share(context, channels, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
+            onCopyLinkClick = { post -> scope.launch { PostActions.copyLink(context, channels, post) } },
             onOpenClick = { post ->
                 markPostReadState.value(post)
                 scope.launch { PostActions.openInTelegram(context, channels, post) }

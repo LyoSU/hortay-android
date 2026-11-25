@@ -7,6 +7,9 @@
 ## [0.13.0] — 2026-11-20
 
 ### Added
+- A channel's info card has a Media button that opens a grid of the channel's photos and videos — tap one to view it fullscreen.
+- A post's ⋯ menu and a public channel's info card can copy a link to the post or the channel.
+- Fullscreen videos have a speed button: 0.5×, 1×, 1.5× or 2×.
 - Tapping a quoted fragment in a post or a comment jumps to the original and briefly highlights the quoted words.
 - Long posts that Telegram can summarize offer “Summarize” in their ⋯ menu, with the summary in your app language.
 - The Channels tab has quick filters — Unread, Today and Hidden — with a count on each.

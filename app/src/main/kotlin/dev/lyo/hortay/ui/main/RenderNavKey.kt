@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.nav.AppNavKey
 import dev.lyo.hortay.data.nav.ArchiveKey
 import dev.lyo.hortay.data.nav.ArchiveSettingsKey
+import dev.lyo.hortay.data.nav.ChannelMediaKey
 import dev.lyo.hortay.data.nav.ChannelKey
 import dev.lyo.hortay.data.nav.CommentsKey
 import dev.lyo.hortay.data.nav.HomeKey
@@ -24,6 +25,8 @@ import dev.lyo.hortay.ui.archive.ArchiveSettingsScreen
 import dev.lyo.hortay.ui.archive.ArchiveSettingsViewModel
 import dev.lyo.hortay.ui.archive.ArchiveViewModel
 import dev.lyo.hortay.ui.archive.openArchiveEntryInTelegram
+import dev.lyo.hortay.ui.channels.ChannelMediaScreen
+import dev.lyo.hortay.ui.channels.ChannelMediaViewModel
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.timeline.ChannelScreen
 import dev.lyo.hortay.ui.timeline.openForwardSource
@@ -83,6 +86,12 @@ internal fun RenderNavKey(
             onReportClick = onPostReportClick,
             canReport = canReportPost,
             onReportChannel = { onOpenReport(key.chatId, null) },
+            onOpenMedia = {
+                // A repeated tap while this channel's grid is already on top is a no-op.
+                val stack = graph.backStack
+                val mediaKey = ChannelMediaKey(key.chatId)
+                if (stack.lastOrNull() != mediaKey) stack.add(mediaKey)
+            },
             feedOrder = feedOrder,
             startupPhase = graph.startupCoordinator.phase,
             archiveRepository = graph.archiveRepository,
@@ -178,6 +187,19 @@ internal fun RenderNavKey(
                 viewModel = vm,
                 onBack = onPopNav,
                 onOpenArchive = { graph.backStack.add(ArchiveKey) },
+            )
+        }
+
+        is ChannelMediaKey -> {
+            // Per-entry ViewModelStore (NavDisplay decorator): one VM per pushed grid,
+            // cleared on pop.
+            val vm = viewModel {
+                ChannelMediaViewModel(graph.channelMedia, key.chatId, graph.channelDirectory::chatTitle)
+            }
+            ChannelMediaScreen(
+                viewModel = vm,
+                contentPadding = padding,
+                onBack = onPopNav,
             )
         }
 

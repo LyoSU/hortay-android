@@ -287,6 +287,7 @@ fun WebChannelScreen(
             // Guest mode has no ChannelDirectory: PostActions builds the t.me link by hand.
             onShareClick = { post -> scope.launch { PostActions.share(context, null, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
+            onCopyLinkClick = { post -> scope.launch { PostActions.copyLink(context, null, post) } },
             onOpenClick = { post ->
                 markPostReadState.value(post)
                 scope.launch { PostActions.openInTelegram(context, null, post) }

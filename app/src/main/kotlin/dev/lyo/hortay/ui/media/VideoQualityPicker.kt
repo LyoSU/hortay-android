@@ -30,6 +30,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -63,26 +67,12 @@ fun QualityChip(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
-    val chipShape = HortayExpressive.Pill.asComposeShape()
-    val qualityLabel = stringResource(R.string.media_video_quality)
-    // The visible pill stays ~28 dp tall; minimumInteractiveComponentSize reserves a 48 dp
-    // touch target around it. Clip before clickable so the ripple follows the pill.
-    Row(
-        modifier = modifier
-            .minimumInteractiveComponentSize()
-            .clip(chipShape)
-            .background(Color.Black.copy(alpha = 0.45f), chipShape)
-            .clickable(role = Role.Button, onClickLabel = qualityLabel) { open = true }
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = current.label,
-            color = Color.White,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
+    ViewerPillChip(
+        text = current.label,
+        onClickLabel = stringResource(R.string.media_video_quality),
+        onClick = { open = true },
+        modifier = modifier,
+    )
     if (open) {
         VideoQualityPickerSheet(
             qualities = qualities,
@@ -97,6 +87,52 @@ fun QualityChip(
 }
 
 /**
+ * The translucent `Pill` label shared by the viewer's playback-setting chips ([QualityChip],
+ * [SpeedChip]). The visible pill stays ~28 dp tall; minimumInteractiveComponentSize reserves
+ * a 48 dp touch target around it, and the pill grows with the font scale instead of clipping.
+ * Clip before clickable so the ripple follows the pill. The plate uses the viewer-wide
+ * [CHROME_BACKDROP_ALPHA] (was 45 %): the chip carries small text, which needs ~4.5:1 over
+ * a white frame, not the 3:1 an icon gets away with. [contentDescription], when set,
+ * replaces the visible text for screen readers (e.g. "Playback speed 1.5×" over "1.5×").
+ */
+@Composable
+internal fun ViewerPillChip(
+    text: String,
+    onClickLabel: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val chipShape = HortayExpressive.Pill.asComposeShape()
+    Row(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clip(chipShape)
+            .background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), chipShape)
+            .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
+            .then(
+                if (contentDescription != null) {
+                    Modifier.semantics { this.contentDescription = contentDescription }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            // With a description the visible text is redundant for TalkBack ("1.5×").
+            modifier = if (contentDescription != null) Modifier.clearAndSetSemantics {} else Modifier,
+        )
+    }
+}
+
+/**
  * Material3 modal bottom sheet listing all available qualities. Highlights the
  * current pick with a leading checkmark. Tapping a row commits the choice and
  * dismisses.
@@ -106,13 +142,43 @@ fun QualityChip(
  * Telegram-style (over-photo translucent pills), but a true bottom sheet
  * deserves the platform's standard list semantics.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VideoQualityPickerSheet(
     qualities: VideoQualities,
     current: VideoQuality,
     onPick: (VideoQuality) -> Unit,
     onDismiss: () -> Unit,
+) {
+    val units = stringArrayResource(R.array.size_units)
+    ViewerPickerSheet(
+        title = stringResource(R.string.media_video_quality),
+        onDismiss = onDismiss,
+    ) {
+        qualities.all.forEach { quality ->
+            val subtitle = buildString {
+                append("${quality.width}×${quality.height}")
+                if (quality.sizeBytes > 0) append("  ·  ${formatByteSize(quality.sizeBytes, units)}")
+            }
+            ViewerPickerRow(
+                label = quality.label,
+                subtitle = subtitle,
+                selected = quality.fileId == current.fileId,
+                onClick = { onPick(quality) },
+            )
+        }
+    }
+}
+
+/**
+ * Modal bottom sheet frame shared by the viewer's pickers: a title over a
+ * [selectableGroup] of [ViewerPickerRow]s, so TalkBack announces position and count.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ViewerPickerSheet(
+    title: String,
+    onDismiss: () -> Unit,
+    rows: @Composable () -> Unit,
 ) {
     val sheetState = rememberExpandedSheetState()
     ModalBottomSheet(
@@ -122,33 +188,30 @@ private fun VideoQualityPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Groups the Role.RadioButton rows so TalkBack announces position and count.
                 .selectableGroup()
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             Text(
-                text = stringResource(R.string.media_video_quality),
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+                modifier = Modifier
+                    .semantics { heading() }
+                    .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
             )
-            qualities.all.forEach { quality ->
-                QualityRow(
-                    quality = quality,
-                    selected = quality.fileId == current.fileId,
-                    onClick = { onPick(quality) },
-                )
-            }
+            rows()
         }
     }
 }
 
+/** One radio row of a [ViewerPickerSheet]; the current pick carries a leading check. */
 @Composable
-private fun QualityRow(
-    quality: VideoQuality,
+internal fun ViewerPickerRow(
+    label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    subtitle: String? = null,
 ) {
     Row(
         modifier = Modifier
@@ -171,21 +234,17 @@ private fun QualityRow(
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = quality.label,
+                text = label,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             )
-            val units = stringArrayResource(R.array.size_units)
-            val subtitle = buildString {
-                append("${quality.width}×${quality.height}")
-                if (quality.sizeBytes > 0) append("  ·  ${formatByteSize(quality.sizeBytes, units)}")
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
-

@@ -2282,6 +2282,14 @@ private fun PostContextMenu(
                     label = stringResource(R.string.post_share),
                     onClick = { close { interactions.onShareClick(post) } },
                 )
+                val onCopyLink = interactions.onCopyLinkClick
+                if (onCopyLink != null) {
+                    ContextMenuItem(
+                        symbol = "link",
+                        label = stringResource(R.string.link_action_copy),
+                        onClick = { close { onCopyLink(post) } },
+                    )
+                }
                 ContextMenuItem(
                     symbol = "open_in_new",
                     label = stringResource(R.string.post_open_telegram),

@@ -315,6 +315,10 @@
 
     <!-- Canali -->
     <string name="channels_title">Canali</string>
+    <string name="channels_media">Media</string>
+    <string name="channel_media_empty">Ancora nessuna foto o video</string>
+    <string name="channel_media_error">Impossibile caricare foto e video</string>
+    <string name="channel_media_retry">Riprova</string>
     <string name="channels_loading">Caricamento…</string>
     <string name="channels_subscribers">Iscritti: %1$s</string>
     <string name="channels_unmute">Riattiva notifiche</string>
@@ -463,6 +467,7 @@
 
     <!-- Media -->
     <string name="media_video_quality">Qualità video</string>
+    <string name="media_video_speed">Velocità di riproduzione</string>
     <string name="media_retry">riprova</string>
     <string name="media_load_stalled">download bloccato</string>
     <string name="spoiler_sensitive_tap">Contenuto sensibile. Tocca per vedere</string>

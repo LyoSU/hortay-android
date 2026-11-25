@@ -113,6 +113,7 @@ fun ChannelsSearchScreen(
             onChannelClick = open,
             onShareClick = { post -> scope.launch { PostActions.share(context, channels, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
+            onCopyLinkClick = { post -> scope.launch { PostActions.copyLink(context, channels, post) } },
             onOpenClick = { post -> scope.launch { PostActions.openInTelegram(context, channels, post) } },
             onBookmarkClick = { post -> scope.launch { bookmarks.toggle(post) } },
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },

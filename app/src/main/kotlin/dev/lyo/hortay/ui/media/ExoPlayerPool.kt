@@ -68,7 +68,9 @@ class ExoPlayerPool(
      * `setMediaItem`/`prepare`, so any leftover queue, surface attachment, or playWhenReady
      * flag from the previous user must be cleared. `stop()` flushes the source and parks
      * the player in IDLE; `clearMediaItems()` empties the playlist; the attribute resets
-     * give the next caller a known starting state.
+     * give the next caller a known starting state. The [PlaybackParameters] reset is
+     * load-bearing: the fullscreen viewer and the audio session both change the speed, and
+     * an audible instance can next serve an unmuted round video that must play at 1×.
      *
      * Note: we deliberately do NOT call `setVideoEffects(emptyList())` here. The
      * implementation reflection-loads `androidx.media3.effect.SingleInputVideoGraph$Factory`

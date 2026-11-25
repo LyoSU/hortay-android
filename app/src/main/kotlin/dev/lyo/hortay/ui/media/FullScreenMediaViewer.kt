@@ -324,6 +324,21 @@ fun FullScreenMediaViewer(
             // entries that the pager re-uses for a different message.
             val qualityChoices = remember(items) { mutableStateMapOf<Int, VideoQuality>() }
 
+            // Playback speed is per viewer session AND per item, unlike quality: it belongs
+            // to the page it was picked on ([speedPage]) and drops back to 1× once the pager
+            // settles on any other page, so swiping away and back starts at normal speed and
+            // a neighbour never inherits it. Keyed on settledPage, not currentPage, so a drag
+            // that crosses the half-way mark and springs back doesn't reset the pick. Closing
+            // the viewer discards the state; the pool resets the player itself.
+            var speedPage by remember(items) { mutableIntStateOf(-1) }
+            var speed by remember(items) { mutableFloatStateOf(1f) }
+            LaunchedEffect(pagerState.settledPage) {
+                if (pagerState.settledPage != speedPage) {
+                    speedPage = -1
+                    speed = 1f
+                }
+            }
+
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
@@ -364,6 +379,9 @@ fun FullScreenMediaViewer(
                     isActive = page == pagerState.currentPage,
                     pickedQuality = qualityChoices[page],
                     onQualityPick = { quality -> qualityChoices[page] = quality },
+                    // Lambda, so a speed pick recomposes only the player's speed effect,
+                    // not every composed page.
+                    playbackSpeed = { if (page == speedPage) speed else 1f },
                     onZoomedChange = { zoomed -> zoomedPages[page] = zoomed },
                     // Player chrome would ride the transform as a shrinking overlay.
                     showChrome = settled && !closing,
@@ -427,7 +445,7 @@ fun FullScreenMediaViewer(
             )
 
             // Top-right tool column for the active page: QualityChip (videos
-            // with alternativeVideos) over Save / Copy buttons. One vertical
+            // with alternativeVideos) and SpeedChip (videos) over Save / Copy buttons. One vertical
             // stack avoids the playback chrome conflict the bottom-right
             // placement had — [VideoPlayerControls] owns the entire bottom
             // band (scrim, BottomBar slider+mute, navigationBarsPadding) and
@@ -506,10 +524,13 @@ fun FullScreenMediaViewer(
             // resolve it via their own HTTP stack.
             val webShareUrl: String? = activeItem?.webShareFallbackUrl()
             val showQuality = activeQualities?.hasOptions == true
+            // Speed applies to real videos only: GIF-style animations loop silently and
+            // photos don't play, so neither gets the chip.
+            val showSpeed = activeItem is AlbumItem.Video
             val persistableItem = activeItem.takeIf { readyPath != null }
             val shareCapable = readyPath != null || !webShareUrl.isNullOrBlank()
 
-            if (showQuality || persistableItem != null || shareCapable) {
+            if (showQuality || showSpeed || persistableItem != null || shareCapable) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -528,6 +549,15 @@ fun FullScreenMediaViewer(
                             current = current,
                             qualities = activeQualities,
                             onPick = { qualityChoices[pagerState.currentPage] = it },
+                        )
+                    }
+                    if (showSpeed) {
+                        SpeedChip(
+                            current = if (speedPage == pagerState.currentPage) speed else 1f,
+                            onPick = {
+                                speedPage = pagerState.currentPage
+                                speed = it
+                            },
                         )
                     }
                     val chromeShape = CircleShape
@@ -844,6 +874,7 @@ private fun MediaPage(
     onQualityPick: (VideoQuality) -> Unit,
     onZoomedChange: (Boolean) -> Unit,
     showChrome: Boolean,
+    playbackSpeed: () -> Float,
 ) {
     when (item) {
         is AlbumItem.Photo -> ZoomableImage(item, onZoomedChange)
@@ -870,6 +901,7 @@ private fun MediaPage(
                     priority = DownloadPriority.Foreground,
                     initialAspect = item.posterAspect(),
                     onFirstFrameRendered = onFirstFrame,
+                    playbackSpeed = playbackSpeed(),
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1225,8 +1257,9 @@ private fun AlbumItem.webShareFallbackUrl(): String? = when (this) {
 // deeper 0→55 % scrim for the seek bar.
 private const val TOP_SCRIM_ALPHA = 0.35f
 
-// Band height BELOW the status-bar inset: 6 dp column inset + quality chip (48 dp
-// touch target) + three 48 dp tool buttons + gaps ≈ 216 dp, plus a fall-off tail so
+// Band height BELOW the status-bar inset: 6 dp column inset + four 48 dp touch targets
+// (the tallest column: a video's quality and speed chips over save / share; a photo
+// stacks only save / share / copy) + gaps ≈ 216 dp, plus a fall-off tail so
 // the last button still sits on the dense part of the gradient.
 private val TOP_SCRIM_HEIGHT = 260.dp
 
@@ -1234,10 +1267,10 @@ private val TOP_SCRIM_HEIGHT = 260.dp
 private const val TOP_SCRIM_PLATEAU = 0.75f
 
 // Backdrop disc / pill alpha for every viewer control (close, save, share, copy,
-// counter). Over a pure-white image 55 % black gives a #737373 plate — ~4.7:1 against
+// counter, quality and speed chips). Over a pure-white image 55 % black gives a #737373 plate — ~4.7:1 against
 // the white glyph, above WCAG's 3:1 for icons with margin for the scrim fading out
 // during the dismiss drag. The former 45 % (#8C8C8C, ~3.4:1) sat right at the floor.
-private const val CHROME_BACKDROP_ALPHA = 0.55f
+internal const val CHROME_BACKDROP_ALPHA = 0.55f
 
 // Backdrop: blur applied to the minithumb stretched fullscreen, and the black veil over it.
 // 82 % black caps the backdrop at ~18 % of the source brightness: at 65 % a white photo's

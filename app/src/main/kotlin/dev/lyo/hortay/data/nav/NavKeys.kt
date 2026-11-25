@@ -58,6 +58,15 @@ data class CommentsKey(
     val heroAnchorY: Int? = null,
 ) : AppNavKey
 
+/**
+ * A channel's shared media grid (photos and videos), pushed from the channel info sheet.
+ * Signed-in mode only — the guest scaffold carries a self-healing no-op entry for it.
+ */
+@Immutable
+data class ChannelMediaKey(
+    val chatId: Long,
+) : AppNavKey
+
 /** Archive browser. */
 @Immutable
 data object ArchiveKey : AppNavKey

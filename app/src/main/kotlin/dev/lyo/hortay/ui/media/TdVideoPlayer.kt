@@ -97,6 +97,14 @@ fun TdVideoPlayer(
      * Null = no observer, zero overhead.
      */
     onFirstFrameRendered: (() -> Unit)? = null,
+    /**
+     * Playback rate (1f = normal), applied through [ExoPlayer.setPlaybackSpeed], which
+     * time-stretches and keeps the pitch natural. Only the fullscreen viewer passes anything
+     * but 1f. No reset is needed on dispose: [ExoPlayerPool.release] restores
+     * `PlaybackParameters.DEFAULT`, so a pooled instance never carries a viewer speed into
+     * an inline feed video.
+     */
+    playbackSpeed: Float = 1f,
 ) {
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -168,6 +176,9 @@ fun TdVideoPlayer(
     // cycle. [currentAutoPlay] (via [rememberUpdatedState], same idiom as
     // [firstFrameCallback]) keeps the observer reading the current value.
     LaunchedEffect(autoPlay) { exoPlayer.playWhenReady = autoPlay }
+    // ExoPlayer ignores a set that equals the current parameters, so the default 1f on a
+    // freshly pooled instance costs nothing.
+    LaunchedEffect(playbackSpeed) { exoPlayer.setPlaybackSpeed(playbackSpeed) }
     val currentAutoPlay by rememberUpdatedState(autoPlay)
 
     // Swap the source when the file becomes Ready, or when the caller picks a

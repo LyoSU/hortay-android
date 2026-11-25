@@ -161,6 +161,8 @@ fun ChannelScreen(
     onReportChannel: (() -> Unit)? = null,
     /** Feeds the info sheet's "Similar channels"; null hides that section. */
     discovery: ChannelDiscoveryRepository? = null,
+    /** Opens this channel's shared-media grid from the info sheet; null hides the row. */
+    onOpenMedia: (() -> Unit)? = null,
     /**
      * Hidden-channels store. When non-null, propagated to [ChannelInfoSheet]
      * which renders a "Hide from feed" toggle row. Optional so the screen
@@ -661,6 +663,7 @@ fun ChannelScreen(
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> scope.launch { PostActions.share(context, channels, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
+            onCopyLinkClick = { post -> scope.launch { PostActions.copyLink(context, channels, post) } },
             onOpenClick = { post ->
                 markPostReadState.value(post)
                 scope.launch { PostActions.openInTelegram(context, channels, post) }
@@ -1086,6 +1089,7 @@ fun ChannelScreen(
             ignoredChannels = ignoredChannels,
             discovery = discovery,
             onOpenChannel = { id -> onChannelOpen(id, null) },
+            onOpenMedia = onOpenMedia,
         )
     }
 

@@ -438,6 +438,7 @@ fun CommentsScreen(
             onBookmarkClick = { p -> bookmarks?.let { b -> actionScope.launch { b.toggle(p) } } },
             onShareClick = { p -> actionScope.launch { PostActions.share(context, channels, p) } },
             onCopyClick = { p -> PostActions.copyText(context, p) },
+            onCopyLinkClick = { p -> actionScope.launch { PostActions.copyLink(context, channels, p) } },
             onOpenClick = { p -> actionScope.launch { PostActions.openInTelegram(context, channels, p) } },
             isBookmarked = { p -> p.bookmarkKey() in bookmarkedState.value },
         )

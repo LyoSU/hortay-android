@@ -97,6 +97,22 @@ object PostActions {
         }
     }
 
+    /**
+     * Copy the post's link — the same URL [share] and [openInTelegram] resolve, so a
+     * private channel yields the same `t.me/c/…` link Telegram's own "Copy link" gives.
+     * Plain text rather than `newRawUri`: apps that read `ClipData.Item.getText()` directly
+     * would paste nothing from a URI-only item. Same clip shape as the link sheet's "Copy
+     * link". Toast only below Android 13, like [copyText].
+     */
+    suspend fun copyLink(context: Context, channels: ChannelDirectory?, post: TimelinePost) {
+        val url = shareUrl(channels, post)
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        cm.setPrimaryClip(ClipData.newPlainText("link", url))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            Toast.makeText(context, context.getString(dev.lyo.hortay.R.string.link_copied_toast), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     suspend fun share(context: Context, channels: ChannelDirectory?, post: TimelinePost) {
         val url = shareUrl(channels, post)
         val intent = Intent(Intent.ACTION_SEND).apply {

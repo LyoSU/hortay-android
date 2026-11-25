@@ -296,6 +296,10 @@
 
     <!-- Kanal -->
     <string name="channels_title">Kanal</string>
+    <string name="channels_media">Media</string>
+    <string name="channel_media_empty">Belum ada foto atau video</string>
+    <string name="channel_media_error">Tidak dapat memuat foto dan video</string>
+    <string name="channel_media_retry">Coba lagi</string>
     <string name="channels_loading">Memuat…</string>
     <string name="channels_subscribers">Pelanggan: %1$s</string>
     <string name="channels_unmute">Aktifkan notifikasi</string>
@@ -441,6 +445,7 @@
 
     <!-- Media -->
     <string name="media_video_quality">Kualitas video</string>
+    <string name="media_video_speed">Kecepatan pemutaran</string>
     <string name="media_retry">coba lagi</string>
     <string name="media_load_stalled">unduhan terhenti</string>
     <string name="spoiler_sensitive_tap">Sensitif. Ketuk untuk melihat</string>

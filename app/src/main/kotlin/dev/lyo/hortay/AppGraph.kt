@@ -14,6 +14,7 @@ import dev.lyo.hortay.data.toStringResolver
 import dev.lyo.hortay.ui.report.GuestReportDelegator
 import dev.lyo.hortay.data.AccountSession
 import dev.lyo.hortay.data.ChannelActionsRepository
+import dev.lyo.hortay.data.ChannelMediaRepository
 import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
 import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
@@ -436,6 +437,9 @@ class AppGraph(context: Context) {
     }
 
     val statsRepository: StatsRepository = StatsRepository(tdClient, userMessages, res)
+
+    /** Channel shared-media grid pages; stateless, fetched only while the grid is open. */
+    val channelMedia: ChannelMediaRepository = ChannelMediaRepository(tdClient)
 
     val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
 

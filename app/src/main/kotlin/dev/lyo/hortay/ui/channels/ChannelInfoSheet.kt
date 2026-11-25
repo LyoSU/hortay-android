@@ -1,5 +1,10 @@
 package dev.lyo.hortay.ui.channels
 
+import android.content.Context
+import android.os.Build
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import dev.lyo.hortay.ui.components.copyPlainText
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -92,9 +97,15 @@ fun ChannelInfoSheet(
     discovery: ChannelDiscoveryRepository? = null,
     /** Opens a similar channel; the sheet dismisses itself first. */
     onOpenChannel: ((Long) -> Unit)? = null,
+    /**
+     * Opens the channel's shared-media grid; the sheet dismisses itself first. Null hides
+     * the row (guest mode, or any host without the grid on its back stack).
+     */
+    onOpenMedia: (() -> Unit)? = null,
 ) {
     val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var info by remember(chatId) { mutableStateOf<ChannelInfo?>(null) }
 
     // Live "is this channel hidden from the feed" state. Reads through to the
@@ -167,6 +178,25 @@ fun ChannelInfoSheet(
                 }
             }
             Spacer(Modifier.height(20.dp))
+            if (onOpenMedia != null) {
+                ActionRow(
+                    symbol = "image",
+                    label = stringResource(R.string.channels_media),
+                    onClick = {
+                        onDismiss()
+                        onOpenMedia()
+                    },
+                )
+            }
+            // Public channels only: a private channel has no stable t.me link to hand out.
+            channelPublicLink(current.handle)?.let { link ->
+                val copiedToast = stringResource(R.string.link_copied_toast)
+                ActionRow(
+                    symbol = "link",
+                    label = stringResource(R.string.link_action_copy),
+                    onClick = { copyChannelLink(context, link, copiedToast) },
+                )
+            }
             ActionRow(
                 symbol = if (current.isMuted) "notifications_active" else "notifications_off",
                 label = stringResource(if (current.isMuted) R.string.channels_unmute else R.string.channels_mute),
@@ -337,6 +367,27 @@ private fun SimilarChannels(
 }
 
 private const val SIMILAR_MAX = 6
+
+/**
+ * `https://t.me/<username>` for a channel's public handle (`@name` or bare `name`), or null
+ * when the channel has none. Pure so it is unit-tested.
+ */
+internal fun channelPublicLink(handle: String?): String? {
+    val name = handle?.trim()?.removePrefix("@")?.takeIf { it.isNotEmpty() } ?: return null
+    return "https://t.me/$name"
+}
+
+/**
+ * Same clip shape as the post menu's "Copy link" (plain text, so apps reading
+ * `ClipData.Item.getText()` paste the URL); the toast only below Android 13, where the
+ * system doesn't confirm clipboard writes itself.
+ */
+private fun copyChannelLink(context: Context, link: String, copiedToast: String) {
+    context.copyPlainText("link", link)
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
+    }
+}
 
 // Grouping follows the current UI locale (observable via LocalConfiguration, so a
 // per-app language switch re-renders) instead of a hardcoded one.

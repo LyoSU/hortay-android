@@ -341,6 +341,10 @@
 
     <!-- القنوات -->
     <string name="channels_title">القنوات</string>
+    <string name="channels_media">الوسائط</string>
+    <string name="channel_media_empty">لا توجد صور أو مقاطع فيديو بعد</string>
+    <string name="channel_media_error">تعذّر تحميل الصور ومقاطع الفيديو</string>
+    <string name="channel_media_retry">إعادة المحاولة</string>
     <string name="channels_loading">جارٍ التحميل…</string>
     <string name="channels_subscribers">المشتركون: %1$s</string>
     <string name="channels_unmute">تفعيل الإشعارات</string>
@@ -501,6 +505,7 @@
 
     <!-- الوسائط -->
     <string name="media_video_quality">جودة الفيديو</string>
+    <string name="media_video_speed">سرعة التشغيل</string>
     <string name="media_retry">إعادة المحاولة</string>
     <string name="media_load_stalled">توقّف التنزيل</string>
     <string name="spoiler_sensitive_tap">محتوى حساس. اضغط للعرض</string>

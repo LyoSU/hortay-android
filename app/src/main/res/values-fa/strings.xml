@@ -305,6 +305,10 @@
 
     <!-- کانال‌ها -->
     <string name="channels_title">کانال‌ها</string>
+    <string name="channels_media">رسانه</string>
+    <string name="channel_media_empty">هنوز عکس یا ویدیویی نیست</string>
+    <string name="channel_media_error">عکس‌ها و ویدیوها بارگیری نشدند</string>
+    <string name="channel_media_retry">تلاش دوباره</string>
     <string name="channels_loading">در حال بارگذاری…</string>
     <string name="channels_subscribers">مشترکان: %1$s</string>
     <string name="channels_unmute">روشن کردن اعلان‌ها</string>
@@ -453,6 +457,7 @@
 
     <!-- رسانه -->
     <string name="media_video_quality">کیفیت ویدیو</string>
+    <string name="media_video_speed">سرعت پخش</string>
     <string name="media_retry">تلاش مجدد</string>
     <string name="media_load_stalled">دانلود متوقف شد</string>
     <string name="spoiler_sensitive_tap">محتوای حساس. برای مشاهده ضربه بزنید</string>

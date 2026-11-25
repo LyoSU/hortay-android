@@ -50,6 +50,11 @@ data class PostInteractions(
     val onBookmarkClick: (post: TimelinePost) -> Unit = {},
     val onShareClick: (post: TimelinePost) -> Unit = {},
     val onCopyClick: (post: TimelinePost) -> Unit = {},
+    /**
+     * "Copy link" in the post menu — copies the same URL Share resolves. Null hides the
+     * item, so a surface that never wires it (or has no link to give) shows no dead entry.
+     */
+    val onCopyLinkClick: ((post: TimelinePost) -> Unit)? = null,
     val onOpenClick: (post: TimelinePost) -> Unit = {},
     val isBookmarked: (post: TimelinePost) -> Boolean = { false },
     val onTranslateClick: (post: TimelinePost) -> Unit = {},

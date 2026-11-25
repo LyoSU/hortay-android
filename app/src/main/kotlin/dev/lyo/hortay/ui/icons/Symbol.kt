@@ -139,6 +139,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "line_pin" -> R.drawable.sym_line_pin
         "line_share" -> R.drawable.sym_line_share
         "line_views" -> R.drawable.sym_line_views
+        "link" -> R.drawable.sym_link
         "location_on" -> R.drawable.sym_location_on
         "lock" -> R.drawable.sym_lock
         "login" -> R.drawable.sym_login

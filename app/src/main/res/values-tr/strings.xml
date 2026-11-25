@@ -307,6 +307,10 @@
 
     <!-- Kanallar -->
     <string name="channels_title">Kanallar</string>
+    <string name="channels_media">Medya</string>
+    <string name="channel_media_empty">Henüz fotoğraf veya video yok</string>
+    <string name="channel_media_error">Fotoğraflar ve videolar yüklenemedi</string>
+    <string name="channel_media_retry">Tekrar dene</string>
     <string name="channels_loading">Yükleniyor…</string>
     <string name="channels_subscribers">Abone: %1$s</string>
     <string name="channels_unmute">Bildirimleri aç</string>
@@ -455,6 +459,7 @@
 
     <!-- Medya -->
     <string name="media_video_quality">Video kalitesi</string>
+    <string name="media_video_speed">Oynatma hızı</string>
     <string name="media_retry">yeniden dene</string>
     <string name="media_load_stalled">indirme takıldı</string>
     <string name="spoiler_sensitive_tap">Hassas içerik. Görmek için tıkla</string>

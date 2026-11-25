@@ -325,6 +325,10 @@
 
     <!-- Channels -->
     <string name="channels_title">Каналы</string>
+    <string name="channels_media">Медиа</string>
+    <string name="channel_media_empty">Здесь пока нет фото и видео</string>
+    <string name="channel_media_error">Не удалось загрузить фото и видео</string>
+    <string name="channel_media_retry">Повторить</string>
     <string name="channels_loading">Загружаем…</string>
     <string name="channels_subscribers">Подписчики: %1$s</string>
     <string name="channels_unmute">Включить уведомления</string>
@@ -479,6 +483,7 @@
 
     <!-- Media -->
     <string name="media_video_quality">Качество видео</string>
+    <string name="media_video_speed">Скорость воспроизведения</string>
     <string name="media_retry">повторить</string>
     <string name="media_load_stalled">загрузка зависла</string>
     <string name="spoiler_sensitive_tap">Деликатный контент. Нажмите, чтобы посмотреть</string>

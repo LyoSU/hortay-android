@@ -40,6 +40,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.nav.ArchiveKey
 import dev.lyo.hortay.data.nav.ArchiveSettingsKey
 import dev.lyo.hortay.data.nav.ChannelKey
+import dev.lyo.hortay.data.nav.ChannelMediaKey
 import dev.lyo.hortay.data.nav.CommentsKey
 import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.nav.WebChannelKey
@@ -600,6 +601,13 @@ fun MainScaffold(graph: AppGraph) {
                                 )
                             }
                             entry<CommentsKey> { key ->
+                                RenderNavKey(
+                                    key, graph, detailContentPadding, feedOrder, scope, popNav,
+                                    pushComments, pushCommentsHero, safelyOpenChannel,
+                                    openReport, onPostReportClick, canReportPost, onLinkNotFound,
+                                )
+                            }
+                            entry<ChannelMediaKey> { key ->
                                 RenderNavKey(
                                     key, graph, detailContentPadding, feedOrder, scope, popNav,
                                     pushComments, pushCommentsHero, safelyOpenChannel,

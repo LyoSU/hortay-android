@@ -320,6 +320,10 @@
 
     <!-- Channels -->
     <string name="channels_title">Канали</string>
+    <string name="channels_media">Медіа</string>
+    <string name="channel_media_empty">Тут ще немає фото чи відео</string>
+    <string name="channel_media_error">Не вдалося завантажити фото й відео</string>
+    <string name="channel_media_retry">Спробувати ще раз</string>
     <string name="channels_loading">Завантажуємо…</string>
     <string name="channels_subscribers">Підписники: %1$s</string>
     <string name="channels_unmute">Увімкнути сповіщення</string>
@@ -474,6 +478,7 @@
 
     <!-- Media -->
     <string name="media_video_quality">Якість відео</string>
+    <string name="media_video_speed">Швидкість відтворення</string>
     <string name="media_retry">Повторити</string>
     <string name="media_load_stalled">Завантаження зупинилося</string>
     <string name="spoiler_sensitive_tap">Делікатний контент. Натисни, щоб переглянути</string>
