@@ -35,7 +35,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.ui.media.DissolveController
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
+import dev.lyo.hortay.ui.media.dissolveOverlay
+import dev.lyo.hortay.ui.media.dissolveSource
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.util.rememberReducedMotion
@@ -64,6 +67,9 @@ internal fun TimelineFeedColumn(
     highlightedPostKey: Pair<Long, Long>?,
     interactions: PostInteractions,
     onTapRevisions: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
+    // Live-deleted rows on screen dissolve into particles (see [DissolveController]); null
+    // where nothing is ever deleted live.
+    dissolve: DissolveController? = null,
     modifier: Modifier = Modifier,
 ) {
     // J1 first-paint stagger: run ONCE per process, on the first cold feed mount —
@@ -120,7 +126,8 @@ internal fun TimelineFeedColumn(
                 .align(Alignment.TopCenter)
                 .widthIn(max = READING_WIDTH_CAP)
                 .fillMaxWidth()
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                .then(if (dissolve != null) Modifier.dissolveOverlay(dissolve) else Modifier),
         ) {
             itemsIndexed(
                 items = feedItems,
@@ -204,7 +211,14 @@ internal fun TimelineFeedColumn(
                         ) {
                             Box(
                                 modifier = staggerModifier
-                                    .onGloballyPositioned { topY[0] = it.positionInWindow().y },
+                                    .onGloballyPositioned { topY[0] = it.positionInWindow().y }
+                                    .then(
+                                        if (dissolve != null) {
+                                            Modifier.dissolveSource(dissolve, post.chatId, post.id)
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
                             ) {
                                 val annotations = LocalFeedAnnotations.current
                                 val itemKey = item.key

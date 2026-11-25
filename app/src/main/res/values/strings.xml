@@ -260,6 +260,12 @@
 
     <!-- Post body content -->
     <string name="document_unnamed">Document</string>
+    <string name="document_download">Download file</string>
+    <string name="document_open">Open file</string>
+    <string name="document_download_progress">%1$s of %2$s</string>
+    <string name="document_download_failed">Couldn\'t download</string>
+    <string name="document_no_app">No app on this phone can open this file</string>
+    <string name="document_open_failed">Couldn\'t open this file</string>
     <string name="voice_message">Voice message</string>
     <string name="content_audio_fallback">Audio track</string>
     <string name="content_invoice">Invoice</string>

@@ -19,6 +19,8 @@ private val FILE_ALBUM_GAP = 8.dp
  * bot's caption on the last file sits under that file. Each audio member is its own
  * [AudioBlock], so it plays independently through the shared inline audio player.
  *
+ * [contentProtected] keeps document members on "open in Telegram" (see [DocumentBlock]).
+ *
  * [translation] is the post's translated caption; it replaces the first captioned member's
  * caption, the one [PostContent.FileAlbum.captionPlain] leads with.
  */
@@ -28,6 +30,7 @@ internal fun FileAlbumBlock(
     captionLimit: Int,
     translation: FormattedText?,
     onOpenInSource: () -> Unit,
+    contentProtected: Boolean = false,
 ) {
     val translatedId = remember(content) {
         content.items.firstOrNull { it.file.caption.text.isNotBlank() }?.messageId
@@ -37,7 +40,7 @@ internal fun FileAlbumBlock(
             if (index > 0) Spacer(Modifier.height(FILE_ALBUM_GAP))
             val itemTranslation = translation.takeIf { item.messageId == translatedId }
             when (val file = item.file) {
-                is PostContent.Document -> DocumentBlock(file, captionLimit, itemTranslation, onOpenInSource)
+                is PostContent.Document -> DocumentBlock(file, captionLimit, itemTranslation, onOpenInSource, contentProtected)
                 is PostContent.Audio -> AudioWithCaption(file, captionLimit, itemTranslation, onOpenInSource)
             }
         }

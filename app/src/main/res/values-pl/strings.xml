@@ -271,6 +271,12 @@
 
     <!-- Treść wpisu -->
     <string name="document_unnamed">Dokument</string>
+    <string name="document_download">Pobierz plik</string>
+    <string name="document_open">Otwórz plik</string>
+    <string name="document_download_progress">%1$s z %2$s</string>
+    <string name="document_download_failed">Nie udało się pobrać</string>
+    <string name="document_no_app">Żadna aplikacja na telefonie nie otworzy tego pliku</string>
+    <string name="document_open_failed">Nie udało się otworzyć pliku</string>
     <string name="voice_message">Wiadomość głosowa</string>
     <string name="content_audio_fallback">Utwór audio</string>
     <string name="content_invoice">Faktura</string>

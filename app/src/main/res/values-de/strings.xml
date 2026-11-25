@@ -259,6 +259,12 @@
 
     <!-- Beitragsinhalt -->
     <string name="document_unnamed">Dokument</string>
+    <string name="document_download">Datei herunterladen</string>
+    <string name="document_open">Datei öffnen</string>
+    <string name="document_download_progress">%1$s von %2$s</string>
+    <string name="document_download_failed">Download fehlgeschlagen</string>
+    <string name="document_no_app">Keine App auf diesem Telefon kann diese Datei öffnen</string>
+    <string name="document_open_failed">Datei konnte nicht geöffnet werden</string>
     <string name="voice_message">Sprachnachricht</string>
     <string name="content_audio_fallback">Audiotitel</string>
     <string name="content_invoice">Rechnung</string>

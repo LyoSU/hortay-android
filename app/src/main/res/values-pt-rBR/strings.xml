@@ -266,6 +266,12 @@
 
     <!-- Conteúdo do corpo da publicação -->
     <string name="document_unnamed">Documento</string>
+    <string name="document_download">Baixar arquivo</string>
+    <string name="document_open">Abrir arquivo</string>
+    <string name="document_download_progress">%1$s de %2$s</string>
+    <string name="document_download_failed">Não foi possível baixar</string>
+    <string name="document_no_app">Nenhum app do celular consegue abrir este arquivo</string>
+    <string name="document_open_failed">Não foi possível abrir o arquivo</string>
     <string name="voice_message">Mensagem de voz</string>
     <string name="content_audio_fallback">Faixa de áudio</string>
     <string name="content_invoice">Fatura</string>

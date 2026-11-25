@@ -285,6 +285,12 @@
 
     <!-- محتوى نص المنشور -->
     <string name="document_unnamed">مستند</string>
+    <string name="document_download">تنزيل الملف</string>
+    <string name="document_open">فتح الملف</string>
+    <string name="document_download_progress">%1$s من %2$s</string>
+    <string name="document_download_failed">تعذّر التنزيل</string>
+    <string name="document_no_app">لا يوجد تطبيق على هذا الهاتف يمكنه فتح هذا الملف</string>
+    <string name="document_open_failed">تعذّر فتح الملف</string>
     <string name="voice_message">رسالة صوتية</string>
     <string name="content_audio_fallback">مقطع صوتي</string>
     <string name="content_invoice">فاتورة</string>

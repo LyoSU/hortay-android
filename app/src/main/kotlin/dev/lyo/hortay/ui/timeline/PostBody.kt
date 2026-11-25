@@ -68,8 +68,8 @@ fun PostBody(
      */
     translation: FormattedText? = null,
     /**
-     * Tap on a non-playable card (document, audio, voice / video note) — Hortay
-     * doesn't host its own download / playback UI for those file kinds, so a tap
+     * Tap on a card Hortay can't handle in-app (an audio / voice / video note without a
+     * playable file, a protected or deleted post's document, open-in-Telegram cards) —
      * routes the user to the original Telegram post via [PostInteractions.onOpenClick].
      * Default is a no-op so callers that don't have a post context (preview surfaces,
      * tests) can still mount [PostBody] without wiring.
@@ -90,6 +90,11 @@ fun PostBody(
      * hosts whose surroundings must not be overflowed, like an avatar-indented comment row.
      */
     albumBleed: Dp = 0.dp,
+    /**
+     * The message can't be saved (`!Message.can_be_saved`). Document cards then keep opening
+     * the post in Telegram instead of downloading the file for other apps to open.
+     */
+    contentProtected: Boolean = false,
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
@@ -114,9 +119,9 @@ fun PostBody(
                     is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation, albumBleed)
                     is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
                     is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
-                    is PostContent.Document -> DocumentBlock(content, captionLimit, translation, onOpenInSource)
+                    is PostContent.Document -> DocumentBlock(content, captionLimit, translation, onOpenInSource, contentProtected)
                     is PostContent.Audio -> AudioWithCaption(content, captionLimit, translation, onOpenInSource)
-                    is PostContent.FileAlbum -> FileAlbumBlock(content, captionLimit, translation, onOpenInSource)
+                    is PostContent.FileAlbum -> FileAlbumBlock(content, captionLimit, translation, onOpenInSource, contentProtected)
                     is PostContent.VoiceNote -> VoiceNoteBlock(content, onOpenInSource)
                     is PostContent.VideoNote -> VideoNoteBlock(content, onOpenInSource)
                     is PostContent.Sticker -> StickerBlock(content)

@@ -2,15 +2,10 @@
 
 package dev.lyo.hortay.ui.timeline
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,8 +87,8 @@ import kotlin.math.max
  *     [PollKind.Regular.allowsRevoting] is true. The block hides the affordance otherwise.
  *   * `[i]` → single-answer commit (single-answer regular poll or quiz).
  *   * `[i, j, …]` → multi-answer commit. Only invoked when the poll or quiz allows multiple
- *     answers ([allowsMultipleAnswers]); the block then renders a "Vote" CTA below the option list and stages the
- *     selection locally until the user confirms.
+ *     answers ([allowsMultipleAnswers]); the block then stages the selection locally and
+ *     commits it from a "Vote" button in the footer slot (see [PollFooter]).
  *
  * Held [@Immutable] so the parent PostCard's recomposition does not invalidate the block's
  * skippability when neither lambda changes identity.
@@ -120,7 +116,8 @@ private val ControlSize = 22.dp
  *
  * Stages:
  *   1. **Pre-vote, single answer** (regular or quiz) — radio ring per row, tap commits.
- *   2. **Pre-vote, multiple answers** — checkbox per row, tap stages, "Vote" commits.
+ *   2. **Pre-vote, multiple answers** — checkbox per row, tap stages, "Vote" (in the footer
+ *      slot, laid out from the first frame) commits.
  *   3. **Results** (voted, closed, or read-only) — no controls: each row fills from the start
  *      edge to its share, percentage in tabular figures at the end. The user's pick and, for
  *      quizzes, correct / wrong answers carry an icon AND a colour role (never colour alone)
@@ -146,6 +143,11 @@ internal fun PollBlock(
     voting: PollVoting?,
     onOpenInSource: () -> Unit,
 ) {
+    // Staged selection for multi-answer pre-vote, shared by the option rows (which toggle it)
+    // and the footer's Vote button (which commits it). Reset whenever options identity changes
+    // (e.g. after a successful commit lands new `isChosen` state via UpdateMessageContent)
+    // so the local state never lags behind TDLib's authoritative view.
+    val staged = remember(content.options) { mutableStateOf<Set<Int>>(emptySet()) }
     Column(modifier = Modifier.fillMaxWidth()) {
         // Header media (photo banner attached to the poll itself — TDLib Polls 2.0).
         content.headerMedia?.let { thumb ->
@@ -160,8 +162,8 @@ internal fun PollBlock(
             PollDescription(content)
         }
         Spacer(Modifier.height(12.dp))
-        PollOptionsList(content, voting)
-        PollFooter(content, voting, onOpenInSource)
+        PollOptionsList(content, voting, staged)
+        PollFooter(content, voting, staged, onOpenInSource)
     }
 }
 
@@ -306,7 +308,7 @@ internal fun allowsMultipleAnswers(content: PostContent.Poll): Boolean = when (v
 }
 
 @Composable
-private fun PollOptionsList(content: PostContent.Poll, voting: PollVoting?) {
+private fun PollOptionsList(content: PostContent.Poll, voting: PollVoting?, staged: MutableState<Set<Int>>) {
     val haptics = LocalHapticFeedback.current
     val multi = allowsMultipleAnswers(content)
     // Local val so Kotlin's smart-cast carries through the lambda capture below.
@@ -315,10 +317,6 @@ private fun PollOptionsList(content: PostContent.Poll, voting: PollVoting?) {
     val showResults = !canVote
     // A poll nobody voted in has nothing to chart: no percentages, no fill.
     val showNumbers = showResults && content.totalVotes > 0
-    // Staged selection for multi-answer pre-vote. Reset whenever options identity changes
-    // (e.g. after a successful commit lands new `isChosen` state via UpdateMessageContent)
-    // so the local state never lags behind TDLib's authoritative view.
-    val staged = remember(content.options) { mutableStateOf<Set<Int>>(emptySet()) }
     val reduced = rememberReducedMotion()
     val fillSpec: AnimationSpec<Float> =
         if (reduced) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
@@ -363,28 +361,6 @@ private fun PollOptionsList(content: PostContent.Poll, voting: PollVoting?) {
                 fillSpec = fillSpec,
                 onTap = onTap,
             )
-        }
-        // Multi-answer commit CTA, inline below the options only while ≥ 1 row is staged.
-        AnimatedVisibility(
-            visible = multi && canVote && staged.value.isNotEmpty(),
-            enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
-                expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
-            exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
-                shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
-        ) {
-            Button(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                    v?.onCommit(staged.value.sorted().toIntArray())
-                    staged.value = emptySet()
-                },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                shape = OptionShape,
-            ) {
-                Symbol(name = "how_to_vote", size = 18.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.poll_action_vote))
-            }
         }
     }
 }
@@ -617,36 +593,66 @@ private fun DrawCheck(color: Color, size: Dp, modifier: Modifier = Modifier) {
 }
 
 /**
- * Vote count on the post's text edge (tabular figures), with the poll's actions at the end:
- * Retract (regular, revotable, voted, open), Why? (quiz explanation, after answering) and
- * Propose an option (taps through to Telegram). All are quiet text buttons — the poll body
- * stays `quiet` in the intensity budget.
+ * One footer slot under the options. Normally the vote count on the post's text edge
+ * (tabular figures) with the poll's actions at the end: Retract (regular, revotable, voted,
+ * open), Why? (quiz explanation, after answering) and Propose an option (taps through to
+ * Telegram) — quiet text buttons, the poll body stays `quiet` in the intensity budget.
+ *
+ * A votable multi-answer poll puts its "Vote" button in the same slot instead of the count,
+ * from the first frame: disabled (M3's quiet disabled colours, announced as disabled) until
+ * at least one option is staged. Committing swaps it for the count + actions, which occupy
+ * the same ≥ 48 dp slot, so neither staging nor voting changes the block's height.
+ *
+ * Tried: the Vote button as an extra row below the options, expanding in only once a row was
+ * staged. In the reverse-layout channel feed the list is anchored at the bottom, so the
+ * growing block pushed every option above it up by the button's height under the finger —
+ * the second tap landed on a different option. Voting then collapsed the row again.
  */
 @Composable
 private fun PollFooter(
     content: PostContent.Poll,
     voting: PollVoting?,
+    staged: MutableState<Set<Int>>,
     onOpenInSource: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .padding(top = 4.dp),
+            .padding(top = 4.dp)
+            .heightIn(min = 48.dp),
     ) {
-        val totalLabel = if (content.totalVotes == 0) {
-            stringResource(R.string.poll_total_votes_empty)
+        val multiVote = voting.takeIf { !content.isClosed && !content.hasVoted && allowsMultipleAnswers(content) }
+        if (multiVote != null) {
+            Button(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    multiVote.onCommit(staged.value.sorted().toIntArray())
+                    staged.value = emptySet()
+                },
+                enabled = staged.value.isNotEmpty(),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                shape = OptionShape,
+            ) {
+                Symbol(name = "how_to_vote", size = 18.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.poll_action_vote))
+            }
         } else {
-            pluralStringResource(R.plurals.poll_total_votes_plural, content.totalVotes, content.totalVotes)
+            val totalLabel = if (content.totalVotes == 0) {
+                stringResource(R.string.poll_total_votes_empty)
+            } else {
+                pluralStringResource(R.plurals.poll_total_votes_plural, content.totalVotes, content.totalVotes)
+            }
+            Text(
+                text = totalLabel,
+                style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                color = cs.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
         }
-        Text(
-            text = totalLabel,
-            style = MaterialTheme.typography.labelMedium.tabularFigures(),
-            color = cs.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
 
         // Retraction affordance for regular polls only (quiz polls cannot be re-voted).
         val regular = content.kind as? PollKind.Regular

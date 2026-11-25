@@ -321,6 +321,8 @@ fun TimelineScreen(
     )
     val context = LocalContext.current
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    // Posts deleted live while on screen dissolve (see [DissolveController]).
+    val dissolve = dev.lyo.hortay.ui.media.rememberDissolveController(feed.liveDeletions)
 
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
@@ -2000,6 +2002,7 @@ fun TimelineScreen(
                                     onTapRevisions = { post ->
                                         if (archiveRepository != null) revisionsForPost = post
                                     },
+                                    dissolve = dissolve,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                                 }

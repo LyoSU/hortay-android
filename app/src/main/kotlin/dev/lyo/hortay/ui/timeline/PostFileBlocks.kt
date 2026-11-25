@@ -1,6 +1,5 @@
 package dev.lyo.hortay.ui.timeline
 
-import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -14,10 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FormattedText
@@ -27,7 +24,6 @@ import dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay
 import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.theme.mediaFrame
-import dev.lyo.hortay.ui.theme.tabularFigures
 
 /**
  * Document card. The leading [FileTypeBadge] carries the file's extension ("PDF", "XLSX")
@@ -35,9 +31,10 @@ import dev.lyo.hortay.ui.theme.tabularFigures
  * MIDDLE — "budget_final_v3…approved.xlsx" keeps both the distinguishing tail and the
  * extension, where an end ellipsis cut exactly the part that tells two versions apart.
  *
- * The whole row is the one action: it opens the post in Telegram ([onOpenInSource]). Hortay
- * has no in-app document download / open path, so there is no download or progress state to
- * show; the badge is the affordance and TalkBack hears "Open in Telegram" as the click label.
+ * With a TDLib file the whole row is one stateful action — download, cancel, open — see
+ * [DownloadableDocumentRow]. Without one (no resolvable file) or when the chat forbids
+ * saving its content ([contentProtected]: opening the file in another app would export
+ * it), the row opens the post in Telegram ([onOpenInSource]), as it always did.
  */
 @Composable
 internal fun DocumentBlock(
@@ -45,21 +42,14 @@ internal fun DocumentBlock(
     maxLines: Int,
     translation: FormattedText?,
     onOpenInSource: () -> Unit,
+    contentProtected: Boolean = false,
 ) {
-    val sizeLabel = if (content.sizeBytes > 0) {
-        formatByteSize(content.sizeBytes, stringArrayResource(R.array.size_units))
+    val fileId = content.fileId
+    if (fileId == null || contentProtected) {
+        DocumentInfoRow(content, onOpenInSource)
     } else {
-        null
+        DownloadableDocumentRow(content, fileId, onOpenInSource)
     }
-    ContentRow(
-        leading = { FileTypeBadge(content.fileName, content.mimeType) },
-        primary = content.fileName.ifBlank { stringResource(R.string.document_unnamed) },
-        secondary = sizeLabel,
-        onClick = onOpenInSource,
-        onClickLabel = stringResource(R.string.content_open_in_telegram),
-        primaryOverflow = TextOverflow.MiddleEllipsis,
-        secondaryStyle = MaterialTheme.typography.bodySmall.tabularFigures(),
-    )
     // Documents never carry the caption-above flag (Telegram only exposes that toggle for
     // photo/video/animation/paid-media), so we always render below.
     MediaCaption(translation ?: content.caption, maxLines, above = false, show = true)

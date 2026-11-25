@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.media
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
@@ -173,17 +174,24 @@ object MediaShareActions {
         context: Context,
         item: AlbumItem,
         localPath: String,
+    ): Result = shareFile(context, localPath, item.guessMimeType())
+
+    /**
+     * [shareMedia] for any TDLib file with a known [mime] — documents included. With a
+     * non-blank [displayName] the receiving app sees the file under that name (the
+     * FileProvider's `DISPLAY_NAME` column) instead of TDLib's on-disk name.
+     */
+    fun shareFile(
+        context: Context,
+        localPath: String,
+        mime: String,
+        displayName: String? = null,
     ): Result {
         val src = File(localPath)
         if (!src.exists()) return Result.Failure(R.string.media_share_error_source_missing)
-        val mime = item.guessMimeType()
 
         return try {
-            val uri = FileProvider.getUriForFile(
-                context,
-                context.packageName + ".fileprovider",
-                src,
-            )
+            val uri = fileUri(context, src, displayName)
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = mime
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -204,6 +212,51 @@ object MediaShareActions {
                 reasonResId = R.string.media_share_error_intent_failed,
                 debugDetail = t.message ?: t.javaClass.simpleName,
             )
+        }
+    }
+
+    /** Outcome of [openFile]; the caller turns [NoApp] into a "share instead" offer. */
+    enum class OpenOutcome { Opened, NoApp, Missing, Failed }
+
+    /**
+     * Opens the TDLib file at [localPath] in whatever app handles [mime] (`ACTION_VIEW`),
+     * through the same FileProvider authority as [shareFile], with a one-shot read grant.
+     * [displayName] (the document's real name) is what the receiving app shows and saves
+     * under. Started directly, not through a chooser: the system's own picker appears when
+     * there is no default, and a remembered default opens in one tap, as for any file.
+     * No `resolveActivity` probe — package visibility hides most handlers from it; a
+     * missing handler surfaces as [ActivityNotFoundException] instead.
+     */
+    fun openFile(
+        context: Context,
+        localPath: String,
+        mime: String,
+        displayName: String?,
+    ): OpenOutcome {
+        val src = File(localPath)
+        if (!src.exists()) return OpenOutcome.Missing
+        return try {
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(fileUri(context, src, displayName), mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(view)
+            OpenOutcome.Opened
+        } catch (_: ActivityNotFoundException) {
+            OpenOutcome.NoApp
+        } catch (t: Throwable) {
+            Log.w(TAG, "openFile failed", t)
+            OpenOutcome.Failed
+        }
+    }
+
+    private fun fileUri(context: Context, src: File, displayName: String?): Uri {
+        val authority = context.packageName + ".fileprovider"
+        return if (displayName.isNullOrBlank()) {
+            FileProvider.getUriForFile(context, authority, src)
+        } else {
+            FileProvider.getUriForFile(context, authority, src, displayName)
         }
     }
 

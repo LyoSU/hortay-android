@@ -12,6 +12,8 @@
 - Fullscreen videos have a speed button: 0.5×, 1×, 1.5× or 2×.
 - Buttons that channels and bots attach under a post now show up and work — links open, answers from the bot appear, and promo codes copy in one tap.
 - A location post shows a map with a pin, and a live location says whether it is still being shared.
+- Tapping a file in a post downloads it with a progress ring and opens it in a suitable app, instead of sending you to Telegram.
+- A post or comment deleted while you are looking at it crumbles into particles, as in Telegram.
 - Audio tracks show their album cover, live photos carry a LIVE badge, and a payment request shows its price.
 - Tapping a quoted fragment in a post or a comment jumps to the original and briefly highlights the quoted words.
 - Long posts that Telegram can summarize offer “Summarize” in their ⋯ menu, with the summary in your app language.
@@ -218,6 +220,7 @@
 - A post with several files or several audio tracks shows all of them with its caption, instead of only the first one.
 - Live locations no longer go missing from the feed, and an audio track keeps its caption.
 - A quiz with several correct answers lets you pick several, a closed poll no longer looks tappable, and an audio track at 0:00 no longer looks finished.
+- Ticking answers in a multi-answer poll no longer shifts the poll under your finger.
 - A contact post shows a person icon, coordinates read as two numbers in every language, and tapping a location opens your maps app.
 - A message type Hortay can't show yet says so in your language instead of printing an internal name.
 - Small controls in posts, media and the edit history are easier to tap, and screen readers announce them as buttons, tabs or switches.

@@ -606,6 +606,7 @@ fun PostCard(
                             pollVoting = pollVoting,
                             // Album strips scroll edge to edge across the card's own padding.
                             albumBleed = CARD_H_PADDING,
+                            contentProtected = post.protectedContent,
                         )
                     }
                     if (expanded) {

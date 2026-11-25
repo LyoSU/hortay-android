@@ -449,7 +449,10 @@ class MediaCache(
             // The 100% emit and any non-Downloading transition are exempt — they're
             // either terminal or the last chance to show "complete, awaiting rename"
             // before Ready arrives.
+            // An `active` flip (queued → transferring, or TDLib stopping on its own) is
+            // a state change for renderers that key on it, never a progress tick to drop.
             val emitting = previous !is MediaState.Downloading
+                || previous.active != merged.active
                 || merged.progress >= 1f
                 || now - base.lastEmitMs >= PROGRESS_MIN_INTERVAL_MS
             tracks[file.id] = if (emitting) base.copy(lastEmitMs = now) else base
@@ -634,6 +637,54 @@ class MediaCache(
     }
 
     fun observe(fileId: Int): StateFlow<MediaState> = slot(fileId).asStateFlow()
+
+    /**
+     * Look-only seed for files the app downloads on an explicit tap only (documents).
+     * Asks TDLib what it has locally ([TdApi.GetFile], an offline request) and hands the
+     * answer to the reducer ONLY when the file is on disk or a transfer is running.
+     *
+     * Why not [resync]: for a file nobody asked for, TDLib reports an inactive, incomplete
+     * file, which [toMediaState] maps to [MediaState.Downloading] at 0 % (or at whatever a
+     * download in a previous process left behind). Routed through the reducer, that seeds a
+     * watchdog [Track] that never goes away and pins the slot against [evictTerminalSlots]
+     * — one leak per document card scrolled past. Leaving the slot on [MediaState.Idle]
+     * keeps it terminal and evictable, and the card on its "download" affordance.
+     *
+     * No-op for slots no Composable has observed (same contract as [resync]).
+     */
+    fun probe(fileId: Int) {
+        if (states[fileId] == null) return
+        scope.launch(ioDispatcher) {
+            runCatching {
+                val file = td.send(TdApi.GetFile(fileId))
+                if (file.local.isDownloadingCompleted || file.local.isDownloadingActive) {
+                    fileEvents.send(FileEvent.FromTdLib(file))
+                }
+            }.onFailure { err ->
+                if (err is kotlinx.coroutines.CancellationException) throw err
+                Log.w(TAG, "probe($fileId) failed", err)
+            }
+        }
+    }
+
+    /**
+     * User-requested download (a tap on a document card). Same path as [ensure], but
+     * launched on the app [scope]: the request must survive the card leaving composition
+     * in the same frame (a tap followed by a fling), which a composition-scoped coroutine
+     * would cancel before `DownloadFile` went out. The download is deliberately NOT tied
+     * to the card's lifetime — no [cancelDeferred] on dispose — because the user asked for
+     * this file; only [cancelExplicit] stops it. A [MediaState.Failed] slot goes through
+     * [retry], whose reset makes a repeated failure a fresh transition observers can see.
+     */
+    fun requestDownload(fileId: Int, priority: DownloadPriority = DownloadPriority.Foreground) {
+        scope.launch(ioDispatcher) {
+            if (states[fileId]?.value is MediaState.Failed) {
+                retry(fileId, priority)
+            } else {
+                ensureInternal(fileId, priority, joinInFlightLookup = false)
+            }
+        }
+    }
 
     /**
      * Idempotent: safe to call from each Composable that mounts.
@@ -1194,11 +1245,15 @@ sealed interface MediaState {
      *   `expectedSize` (heuristic estimate) when the real size is still unknown. 0 when
      *   neither is known — UI should hide the byte label in that case rather than print
      *   "5.2 / 0 MB".
+     * @param active mirror of TDLib's `local.isDownloadingActive` (or completed). False for a
+     *   partially downloaded file nothing is fetching — a renderer that downloads on tap
+     *   only (documents) must not read that as "in progress".
      */
     data class Downloading(
         val progress: Float,
         val downloadedBytes: Long = 0L,
         val totalBytes: Long = 0L,
+        val active: Boolean = true,
     ) : MediaState
     data class Ready(val path: String) : MediaState
     data class Failed(val reason: String) : MediaState
@@ -1247,5 +1302,6 @@ private fun TdApi.File.toMediaState(): MediaState {
         progress = progress,
         downloadedBytes = local.downloadedSize,
         totalBytes = resolvedTotal,
+        active = local.isDownloadingActive || local.isDownloadingCompleted,
     )
 }

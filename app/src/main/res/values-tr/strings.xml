@@ -259,6 +259,12 @@
 
     <!-- Gönderi gövdesi içeriği -->
     <string name="document_unnamed">Belge</string>
+    <string name="document_download">Dosyayı indir</string>
+    <string name="document_open">Dosyayı aç</string>
+    <string name="document_download_progress">%1$s / %2$s</string>
+    <string name="document_download_failed">İndirilemedi</string>
+    <string name="document_no_app">Telefondaki hiçbir uygulama bu dosyayı açamıyor</string>
+    <string name="document_open_failed">Dosya açılamadı</string>
     <string name="voice_message">Sesli mesaj</string>
     <string name="content_audio_fallback">Ses parçası</string>
     <string name="content_invoice">Fatura</string>

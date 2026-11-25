@@ -16,6 +16,13 @@ data class ArchiveSettings(
     val captureEdits: Boolean = true,
     val captureDeletes: Boolean = true,
 ) {
+    /**
+     * Whether a deletion in [chat] is recorded under these settings: the archive is on, the
+     * "Deletions" capture switch is on, and the chat is not in "Channels without archive".
+     * The same gate `ArchiveRepository.captureTdlibDelete` applies before it marks anything.
+     */
+    fun keepsDeletionsFor(chat: ChatRef): Boolean = enabled && captureDeletes && chat !in excludedChats
+
     companion object {
         val DEFAULT = ArchiveSettings()
         val RETENTION_OPTIONS: PersistentList<Int> = persistentListOf(7, 30, 90, Int.MAX_VALUE)

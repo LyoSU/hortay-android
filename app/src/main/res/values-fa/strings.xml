@@ -257,6 +257,12 @@
 
     <!-- محتوای متن پست -->
     <string name="document_unnamed">سند</string>
+    <string name="document_download">دانلود فایل</string>
+    <string name="document_open">باز کردن فایل</string>
+    <string name="document_download_progress">%1$s از %2$s</string>
+    <string name="document_download_failed">دانلود نشد</string>
+    <string name="document_no_app">هیچ برنامه‌ای روی این گوشی نمی‌تواند این فایل را باز کند</string>
+    <string name="document_open_failed">باز کردن فایل ممکن نشد</string>
     <string name="voice_message">پیام صوتی</string>
     <string name="content_audio_fallback">فایل صوتی</string>
     <string name="content_invoice">فاکتور</string>

@@ -156,6 +156,19 @@ class CommentsRepository(
      */
     private val invalidations = MutableSharedFlow<Pair<Long, Long>>(extraBufferCapacity = 64)
 
+    // Hint-only (see [LiveDeletion]): a burst past the buffer drops the oldest rather than
+    // stalling the thread's single mutator.
+    private val _liveDeletions = MutableSharedFlow<LiveDeletion>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Comments a live, permanent delete took out of an observed thread, emitted BEFORE the
+     * thread re-emits without them, so the comments screen can let them dissolve.
+     */
+    val liveDeletions: SharedFlow<LiveDeletion> = _liveDeletions
+
     // Bounded LRU. accessOrder=true bumps an entry to most-recently-used on every
     // get/put; removeEldestEntry caps the size and cancels the dropped stream's
     // sharing job (see [ThreadStream]) so it can be GC'd. Synchronized at the map
@@ -781,6 +794,10 @@ class CommentsRepository(
                 // can never be in `live` in the first place (UpdateNewMessage
                 // gates them out above) and are silent no-ops here.
                 val ids = upd.messageIds.toHashSet()
+                if (!upd.fromCache) {
+                    val removed = live.mapNotNullTo(HashSet()) { m -> m.id.takeIf { it in ids } }
+                    if (removed.isNotEmpty()) _liveDeletions.tryEmit(LiveDeletion(upd.chatId, removed))
+                }
                 val before = live.size
                 live.removeAll { it.id in ids }
                 if (live.size != before) {

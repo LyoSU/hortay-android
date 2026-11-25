@@ -70,6 +70,9 @@ import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.posts.PostsRepository
+import dev.lyo.hortay.ui.media.dissolveOverlay
+import dev.lyo.hortay.ui.media.dissolveSource
+import dev.lyo.hortay.ui.media.rememberDissolveController
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.bookmarkKey
@@ -216,6 +219,8 @@ fun ChannelScreen(
             }
         },
     )
+    // Posts deleted live while on screen dissolve (see [DissolveController]).
+    val dissolve = rememberDissolveController(repo.liveDeletions)
 
     // Single-state read: `data` is the channel's `Loading | Loaded(posts)`
     // sealed union. `posts` is derived from `data` inside the same Compose
@@ -971,7 +976,8 @@ fun ChannelScreen(
                                     .align(Alignment.TopCenter)
                                     .widthIn(max = READING_WIDTH_CAP)
                                     .fillMaxWidth()
-                                    .fillMaxHeight(),
+                                    .fillMaxHeight()
+                                    .dissolveOverlay(dissolve),
                             ) {
                                 items(
                                     items = displayedList,
@@ -1013,7 +1019,11 @@ fun ChannelScreen(
                                                 LocalIsHighlightedItem provides highlighted,
                                                 LocalShowFullPost provides showFull,
                                             ) {
-                                                Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .onGloballyPositioned { topY[0] = it.positionInWindow().y }
+                                                        .dissolveSource(dissolve, post.chatId, post.id),
+                                                ) {
                                                     PostCard(
                                                         post = post,
                                                         interactions = itemInteractions,

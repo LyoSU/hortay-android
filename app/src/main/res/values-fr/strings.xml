@@ -266,6 +266,12 @@
 
     <!-- Contenu du corps de publication -->
     <string name="document_unnamed">Document</string>
+    <string name="document_download">Télécharger le fichier</string>
+    <string name="document_open">Ouvrir le fichier</string>
+    <string name="document_download_progress">%1$s sur %2$s</string>
+    <string name="document_download_failed">Échec du téléchargement</string>
+    <string name="document_no_app">Aucune app sur ce téléphone ne peut ouvrir ce fichier</string>
+    <string name="document_open_failed">Impossible d\'ouvrir ce fichier</string>
     <string name="voice_message">Message vocal</string>
     <string name="content_audio_fallback">Piste audio</string>
     <string name="content_invoice">Facture</string>

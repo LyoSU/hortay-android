@@ -269,6 +269,12 @@
 
     <!-- Post body content -->
     <string name="document_unnamed">Документ</string>
+    <string name="document_download">Завантажити файл</string>
+    <string name="document_open">Відкрити файл</string>
+    <string name="document_download_progress">%1$s з %2$s</string>
+    <string name="document_download_failed">Не вдалося завантажити</string>
+    <string name="document_no_app">Жодна програма на телефоні не може відкрити цей файл</string>
+    <string name="document_open_failed">Не вдалося відкрити файл</string>
     <string name="voice_message">Голосове повідомлення</string>
     <string name="content_audio_fallback">Аудіо</string>
     <string name="content_invoice">Рахунок</string>

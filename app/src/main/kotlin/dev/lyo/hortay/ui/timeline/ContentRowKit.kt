@@ -181,12 +181,7 @@ internal fun GlyphBadge(
 internal fun FileTypeBadge(fileName: String, mimeType: String) {
     val label = fileExtensionLabel(fileName)
     val family = fileFamilyOf(fileName, mimeType)
-    val cs = MaterialTheme.colorScheme
-    val (container, content) = when (family) {
-        FileFamily.Document -> cs.primaryContainer to cs.onPrimaryContainer
-        FileFamily.Sheet, FileFamily.Audio, FileFamily.Image -> cs.tertiaryContainer to cs.onTertiaryContainer
-        FileFamily.Archive, FileFamily.Code -> cs.secondaryContainer to cs.onSecondaryContainer
-    }
+    val (container, content) = fileBadgeColors(family)
     if (label == null) {
         GlyphBadge(symbol = family.symbol, container = container, content = content)
         return
@@ -210,6 +205,18 @@ internal fun FileTypeBadge(fileName: String, mimeType: String) {
             softWrap = false,
             autoSize = TextAutoSize.StepBased(minFontSize = 7.sp, maxFontSize = 12.sp, stepSize = 0.5.sp),
         )
+    }
+}
+
+/** Container / content colours of a [FileTypeBadge] — and of the download ring that replaces it. */
+@Composable
+@ReadOnlyComposable
+internal fun fileBadgeColors(family: FileFamily): Pair<Color, Color> {
+    val cs = MaterialTheme.colorScheme
+    return when (family) {
+        FileFamily.Document -> cs.primaryContainer to cs.onPrimaryContainer
+        FileFamily.Sheet, FileFamily.Audio, FileFamily.Image -> cs.tertiaryContainer to cs.onTertiaryContainer
+        FileFamily.Archive, FileFamily.Code -> cs.secondaryContainer to cs.onSecondaryContainer
     }
 }
 

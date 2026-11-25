@@ -113,6 +113,14 @@ class ArchiveRepository(
         return s.enabled && s.captureEdits && chat !in s.excludedChats
     }
 
+    /**
+     * True when a deletion in [chat] would be recorded under the current settings and the
+     * archive database is open — the feed's cheap, synchronous gate for keeping a deleted
+     * post as a tombstone (no database access; [ArchiveSettings.keepsDeletionsFor] on the
+     * in-memory settings snapshot).
+     */
+    fun keepsDeletionsFor(chat: ChatRef): Boolean = settings.value.keepsDeletionsFor(chat) && available()
+
     /** Why a VERSION capture for [chat] would be skipped under [s], or null when it would run. */
     private fun versionGate(s: ArchiveSettings, chat: ChatRef): ArchiveDecision? = when {
         !s.enabled || !s.captureEdits -> ArchiveDecision.DISABLED

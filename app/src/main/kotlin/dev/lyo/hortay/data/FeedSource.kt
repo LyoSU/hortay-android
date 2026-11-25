@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +45,13 @@ interface FeedSource {
      * (guest mode) treat every fetched chat as subscribed.
      */
     val subscribedPosts: StateFlow<PersistentList<TimelinePost>> get() = posts
+
+    /**
+     * Live, permanent deletions of whole rows, each emitted BEFORE [posts] drops those rows
+     * (see [LiveDeletion]). A cosmetic hint for the dissolve effect; null for impls without
+     * live deletes (guest mode), so their rows skip the effect's per-row layer entirely.
+     */
+    val liveDeletions: Flow<LiveDeletion>? get() = null
 
     /**
      * Force a fresh fetch regardless of staleness window. Pull-to-refresh

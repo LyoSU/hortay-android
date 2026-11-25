@@ -273,6 +273,12 @@
 
     <!-- Post body content -->
     <string name="document_unnamed">Документ</string>
+    <string name="document_download">Скачать файл</string>
+    <string name="document_open">Открыть файл</string>
+    <string name="document_download_progress">%1$s из %2$s</string>
+    <string name="document_download_failed">Не удалось скачать</string>
+    <string name="document_no_app">Ни одно приложение на телефоне не может открыть этот файл</string>
+    <string name="document_open_failed">Не удалось открыть файл</string>
     <string name="voice_message">Голосовое сообщение</string>
     <string name="content_audio_fallback">Аудиодорожка</string>
     <string name="content_invoice">Счёт</string>

@@ -104,7 +104,10 @@ internal object SpoilerParticles {
         ensureScheduled()
     }
 
-    /** Draw phase: a reveal ripple is on screen and needs a per-frame [frameTimeMs]. */
+    /**
+     * Draw phase: a reveal ripple — or a running dissolve ([DissolveController]) — is on screen
+     * and needs a per-frame [frameTimeMs].
+     */
     fun markRevealing() {
         lastRevealNs = System.nanoTime()
         ensureScheduled()

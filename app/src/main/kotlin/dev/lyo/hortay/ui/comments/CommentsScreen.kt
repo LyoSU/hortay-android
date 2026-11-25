@@ -66,6 +66,9 @@ import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.data.CommentsRepository
+import dev.lyo.hortay.ui.media.dissolveOverlay
+import dev.lyo.hortay.ui.media.dissolveSource
+import dev.lyo.hortay.ui.media.rememberDissolveController
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.posts.RichFullFetchStatus
@@ -336,6 +339,8 @@ fun CommentsScreen(
             repo.observeThread(post.chatId, candidateIds)
         }
     }
+    // Comments deleted live while on screen dissolve (see [DissolveController]).
+    val dissolve = rememberDissolveController(if (threadDisabled) null else repo?.liveDeletions)
     // key(threadRetryNonce): collectAsState keeps its last value across a flow swap, so a
     // Retry tap left the failed state on screen until the new stream emitted — a repeated
     // failure read as a dead button. A fresh collector per retry starts from Loading, so
@@ -749,6 +754,7 @@ fun CommentsScreen(
             ),
             modifier = Modifier
                 .fillMaxSize()
+                .dissolveOverlay(dissolve)
                 .graphicsLayer { alpha = if (heroPending) 0f else 1f }
                 .drawWithContent {
                     drawContent()
@@ -883,7 +889,8 @@ fun CommentsScreen(
                                 fadeInSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
                                 placementSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>(),
                                 fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
-                            ).contextMenuAnchor(menuAnchor),
+                            ).contextMenuAnchor(menuAnchor)
+                                .dissolveSource(dissolve, s.threadChatId, row.message.id),
                             onQuoteClick = { reply ->
                                 // Jump to the quoted comment, or to the post above the thread
                                 // when the quote is from it, and light up the quoted words.
@@ -1309,6 +1316,7 @@ private fun CommentBubble(
                     // File rows, open-in-Telegram cards and the unsupported placeholder
                     // open the comment in Telegram, as they do in the feed.
                     onOpenInSource = openMessage,
+                    contentProtected = message.protectedContent,
                 )
             }
 

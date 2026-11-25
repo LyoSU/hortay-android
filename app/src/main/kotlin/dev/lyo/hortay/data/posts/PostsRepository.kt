@@ -28,6 +28,7 @@ import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.archive.ArchiveRepository
 import dev.lyo.hortay.data.archive.ArchiveRecorder
+import dev.lyo.hortay.data.archive.ChatRef
 import dev.lyo.hortay.data.archive.PendingEditBuffer
 import dev.lyo.hortay.data.archive.TombstoneRecord
 import dev.lyo.hortay.data.surfaceTo
@@ -162,8 +163,9 @@ class PostsRepository(
      * historical call sites that don't wire the archive feature keep constructing a
      * repository without it. When null, capture calls are no-ops and [handleDeleted]
      * falls back to the pre-feature remove-on-delete behaviour; when present and
-     * [ArchiveRepository.isEnabled] is true, [handleDeleted] marks posts as
-     * [TimelinePost.isDeleted] instead so a tombstone surfaces in the feed.
+     * [ArchiveRepository.keepsDeletionsFor] the chat (archive on, Deletions capture on,
+     * chat not excluded), [handleDeleted] marks posts as [TimelinePost.isDeleted] instead
+     * so a tombstone surfaces in the feed.
      */
     private val archiveRepository: ArchiveRepository? = null,
     /**
@@ -668,6 +670,16 @@ class PostsRepository(
 
     /** Chat ids whose pinned set changed (`UpdateMessageIsPinned`); [pinnedMessages] re-reads. */
     val pinnedChanged: SharedFlow<Long> = _pinnedChanged.asSharedFlow()
+
+    // Declared before `init`: the update collector launched there emits into it. Hint-only
+    // (see [LiveDeletion]), so a burst past the buffer drops the oldest instead of stalling
+    // the update collector.
+    private val _liveDeletions = MutableSharedFlow<dev.lyo.hortay.data.LiveDeletion>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    override val liveDeletions: SharedFlow<dev.lyo.hortay.data.LiveDeletion> = _liveDeletions.asSharedFlow()
 
     init {
         // One collector for every TDLib update this repository handles, dispatched in
@@ -2311,10 +2323,20 @@ class PostsRepository(
         if (!update.isPermanent) return
         rememberDeleted(update.chatId, update.messageIds)
 
-        // Single read of the archive-enabled gate up front. Capture and feed-side
-        // branches use the SAME observation, so a Settings flip between them can't
-        // strand a ghost in the feed without a backing snapshot, or vice versa.
+        // Single read of each archive gate up front, from the in-memory settings snapshot, so
+        // a Settings flip mid-update can't split the branches below:
+        //  * [archiveEnabled] — the recorder gets the ids whenever the archive is on; it
+        //    applies the Deletions switch and the per-chat exclusion itself (and journals
+        //    those decisions), so its semantics are unchanged.
+        //  * [keepsTombstones] — the feed keeps a deleted post as a tombstone only when the
+        //    archive actually records deletions for THIS chat (on + Deletions capture on +
+        //    chat not excluded). Otherwise the update behaves exactly as with the archive
+        //    off: rows leave and the dissolve hint fires. Gating the tombstone on the global
+        //    switch alone left ghosts in excluded channels that the archive never stored —
+        //    gone on the next launch, with no versions to open.
         val archiveEnabled = archiveRepository?.isEnabled() == true
+        val keepsTombstones = archiveEnabled &&
+            archiveRepository?.keepsDeletionsFor(ChatRef.tdlib(update.chatId)) == true
 
         // Archive: hand the deleted ids to the recorder, which debounces them per chat
         // (200 ms quiet window) and drains through `captureTdlibDeleteSmart` in its
@@ -2337,10 +2359,22 @@ class PostsRepository(
         }
 
         val ids = update.messageIds.toHashSet()
+        // Live-delete hint for the dissolve effect, emitted BEFORE the rows leave [_posts] so
+        // a screen still showing one can capture it first. Only for a real live delete that
+        // takes whole rows out: where the archive keeps this chat's deletions they stay as
+        // tombstones (nothing leaves), and a delete replayed from TDLib's cache is not
+        // something happening now. Evaluated on a snapshot outside the CAS lambda below,
+        // which stays pure.
+        if (!keepsTombstones && !update.fromCache) {
+            val removed = dev.lyo.hortay.data.rowsRemovedWhole(_posts.value, update.chatId, ids)
+            if (removed.isNotEmpty()) {
+                _liveDeletions.tryEmit(dev.lyo.hortay.data.LiveDeletion(update.chatId, removed))
+            }
+        }
         // One surviving member id per document / audio album whose anchor was deleted.
         // A set, so a retried CAS lambda below adds the same ids again harmlessly.
         val orphanedAlbumMembers = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
-        if (archiveEnabled) {
+        if (keepsTombstones) {
             // Archive mode: tombstone deleted posts with isDeleted=true so a
             // DeletedBadge can surface in the feed instead of the post vanishing silently.
             // Albums whose anchor is fully deleted also get tombstoned; partially-deleted

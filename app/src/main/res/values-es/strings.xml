@@ -265,6 +265,12 @@
 
     <!-- Post body content -->
     <string name="document_unnamed">Documento</string>
+    <string name="document_download">Descargar archivo</string>
+    <string name="document_open">Abrir archivo</string>
+    <string name="document_download_progress">%1$s de %2$s</string>
+    <string name="document_download_failed">No se pudo descargar</string>
+    <string name="document_no_app">Ninguna app del teléfono puede abrir este archivo</string>
+    <string name="document_open_failed">No se pudo abrir el archivo</string>
     <string name="voice_message">Mensaje de voz</string>
     <string name="content_audio_fallback">Pista de audio</string>
     <string name="content_invoice">Factura</string>

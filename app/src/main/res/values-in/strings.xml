@@ -250,6 +250,12 @@
 
     <!-- Konten isi kiriman -->
     <string name="document_unnamed">Dokumen</string>
+    <string name="document_download">Unduh file</string>
+    <string name="document_open">Buka file</string>
+    <string name="document_download_progress">%1$s dari %2$s</string>
+    <string name="document_download_failed">Gagal mengunduh</string>
+    <string name="document_no_app">Tidak ada aplikasi di ponsel ini yang bisa membuka file ini</string>
+    <string name="document_open_failed">Tidak dapat membuka file</string>
     <string name="voice_message">Pesan suara</string>
     <string name="content_audio_fallback">Trek audio</string>
     <string name="content_invoice">Invoice</string>
