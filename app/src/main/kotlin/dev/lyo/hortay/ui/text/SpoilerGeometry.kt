@@ -79,6 +79,27 @@ internal class SpoilerGeometry(
 )
 
 /**
+ * The part of [range] (inclusive dst offsets of a spoiler, link, quote or block) that has
+ * laid-out, visible glyphs, or null when none does. [textLength] is the laid-out text's length
+ * and [visibleEnd] the exclusive end of the last visible line (short of [textLength] under a
+ * `maxLines` clamp). Every layout offset lookup on a range goes through this first.
+ *
+ * Total for any input — ranges past the clamp, past the text (stale after a text change),
+ * reversed, empty or at `Int` extremes — because a throw here fails composition and crashes
+ * the app on every open of the same feed. The visible limit is applied before the start, in
+ * `Long`, so an inverted bound pair can never arise (the former
+ * `(last + 1).coerceIn(start, lastVisible)` threw once a range started past the clamp).
+ */
+internal fun visibleLayoutSpan(range: IntRange, textLength: Int, visibleEnd: Int): IntRange? {
+    val limit = minOf(textLength, visibleEnd).toLong()
+    if (limit <= 0L) return null
+    val start = maxOf(range.first.toLong(), 0L)
+    val end = minOf(range.last.toLong() + 1L, limit)
+    if (start >= end) return null
+    return start.toInt() until end.toInt()
+}
+
+/**
  * Builds [SpoilerGeometry] for every group that has a visible glyph in [layout] (ranges past a
  * `maxLines` clamp are dropped). Per-glyph bounding boxes give each line's horizontal extent,
  * which is RTL-correct; `getHorizontalPosition` at a wrap offset is ambiguous.
@@ -98,9 +119,9 @@ internal fun buildSpoilerGeometry(
     for (group in groups) {
         segments.clear()
         for (range in group.ranges) {
-            val start = range.first.coerceIn(0, len)
-            val end = (range.last + 1).coerceIn(start, minOf(len, lastVisible))
-            if (start >= end) continue
+            val visible = visibleLayoutSpan(range, len, lastVisible) ?: continue
+            val start = visible.first
+            val end = visible.last + 1
             for (line in layout.getLineForOffset(start)..layout.getLineForOffset(end - 1)) {
                 val segStart = maxOf(start, layout.getLineStart(line))
                 val segEnd = minOf(end, layout.getLineEnd(line, visibleEnd = true))

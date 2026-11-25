@@ -449,6 +449,10 @@ private fun buildFromFormatted(
         }
         .filter { it.start < it.end }
         .sortedBy { it.start }
+        // Same stall as the spoiler entries in computeSpoilerSrcGrouping: the loop below only
+        // matches a range starting exactly at the current src position, so one overlapping
+        // CustomEmoji entity would leave every later emoji as raw fallback characters.
+        .let { dropOverlappingRanges(it, start = { r -> r.start }, end = { r -> r.end }) }
 
     fun emojiUnderCoveredGroup(srcPos: Int): Boolean {
         val groupId = spoilerSrc.groupAtSrcPos(srcPos) ?: return false

@@ -124,11 +124,15 @@ fun LinkAwareText(
             val range = pressedRange ?: return@drawBehind
             val chars = layout.layoutInput.text
             val len = chars.length
-            if (len == 0) return@drawBehind
+            if (len == 0 || layout.lineCount == 0) return@drawBehind
             // Trim whitespace off the entity edges so the highlight starts/ends exactly
-            // where the visible glyphs do, not on a leading/trailing space.
-            var startOff = range.first.coerceIn(0, len)
-            var endOff = (range.last + 1).coerceIn(startOff, len)
+            // where the visible glyphs do, not on a leading/trailing space. Bounded by the
+            // last visible glyph: offsets clipped by maxLines may fall in a paragraph the
+            // layout never measured, where the offset lookups below can throw.
+            val visible = visibleLayoutSpan(range, len, layout.getLineEnd(layout.lineCount - 1, visibleEnd = true))
+                ?: return@drawBehind
+            var startOff = visible.first
+            var endOff = visible.last + 1
             while (startOff < endOff && chars[startOff].isWhitespace()) startOff++
             while (endOff > startOff && chars[endOff - 1].isWhitespace()) endOff--
             if (endOff <= startOff) return@drawBehind
@@ -210,10 +214,12 @@ fun LinkAwareText(
             val layout = layoutResult ?: return@drawBehind
             val a = quoteAlpha.value
             if (a <= 0f) return@drawBehind
+            if (layout.lineCount == 0) return@drawBehind
             val len = layout.layoutInput.text.length
-            val start = quoteSpan.first.coerceIn(0, len)
-            val end = (quoteSpan.last + 1).coerceIn(start, len)
-            if (end <= start) return@drawBehind
+            val lastVisible = layout.getLineEnd(layout.lineCount - 1, visibleEnd = true)
+            val visible = visibleLayoutSpan(quoteSpan, len, lastVisible) ?: return@drawBehind
+            val start = visible.first
+            val end = visible.last + 1
             drawPath(layout.getPathForRange(start, end), quoteColor.copy(alpha = QUOTE_HIGHLIGHT_ALPHA * a))
         }
     } else Modifier
@@ -247,9 +253,9 @@ fun LinkAwareText(
             // node had no slack past the text. Now the inset provides that slack at both edges.
             val yOff = BLOCK_VPAD.toPx()
             for (deco in blockDecorations) {
-                if (deco.start >= lastVisible) continue
-                val s = deco.start.coerceIn(0, len - 1)
-                val eIncl = (deco.end - 1).coerceIn(s, lastVisible - 1)
+                val visible = visibleLayoutSpan(deco.start until deco.end, len, lastVisible) ?: continue
+                val s = visible.first
+                val eIncl = visible.last
                 val firstLine = layout.getLineForOffset(s)
                 val lastLine = layout.getLineForOffset(eIncl)
                 val top = (yOff + layout.getLineTop(firstLine) - vpad).coerceAtLeast(0f)
