@@ -453,6 +453,14 @@ class AppGraph(context: Context) {
             recommendedChannels.onMembershipChanged(chatId, isMember)
         }
 
+    /** Callback buttons of posts' inline keyboards; stateless, one query per press. */
+    val inlineKeyboards: dev.lyo.hortay.data.posts.InlineKeyboardRepository =
+        dev.lyo.hortay.data.posts.InlineKeyboardRepository(tdClient, userMessages, tdClient.connection, res, session)
+
+    /** Static map pictures for location posts; file ids cached per session. */
+    val mapThumbnails: dev.lyo.hortay.data.MapThumbnailRepository =
+        dev.lyo.hortay.data.MapThumbnailRepository(tdClient, session)
+
     /**
      * Proxy support (SOCKS5 / HTTP / MTProto). A thin driver over TDLib's native proxy API plus
      * a failover watchdog; see [dev.lyo.hortay.data.proxy.ProxyRepository] KDoc. The pool lives in

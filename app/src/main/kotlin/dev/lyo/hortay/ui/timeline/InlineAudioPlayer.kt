@@ -3,23 +3,19 @@ package dev.lyo.hortay.ui.timeline
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -35,19 +31,21 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.MediaState
-import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.ui.media.AudioPlaybackSession
 import dev.lyo.hortay.ui.media.AudioSpeedChip
 import dev.lyo.hortay.ui.media.LocalAudioPlaybackSession
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaPassive
+import dev.lyo.hortay.ui.theme.tabularFigures
 
 /**
  * App-wide inline audio / voice-note player row, shared by the regular feed's `AudioBlock` /
- * `VoiceNoteBlock` and the rich-message audio / voice blocks. A round play/pause button folds
+ * `VoiceNoteBlock` and the rich-message audio / voice blocks. A 48 dp tonal [PlayDisc] folds
  * in the download state (idle → download-then-play, in-flight → progress ring, ready →
- * play/pause); audio shows title + performer with a linear progress bar, a voice note shows a
- * waveform decoded from TDLib's packed samples. Both show an elapsed / total readout.
+ * play/pause); audio shows title, a thin [AudioProgressTrack] and "performer · duration", a
+ * voice note shows a waveform decoded from TDLib's packed samples and its duration. The
+ * elapsed / total readout uses tabular figures so ticking seconds never shift the line.
  *
  * Playback is owned by the single-active-source [AudioPlaybackSession] (via
  * [LocalAudioPlaybackSession]), so it survives scrolling the row off-screen and starting this
@@ -56,12 +54,19 @@ import dev.lyo.hortay.ui.media.LocalMediaPassive
  * app-level mini-player stays hidden as long as the track's own controls are on screen. The
  * loaded track also shows a playback-speed chip (1× → 1.5× → 2×), shared with the mini-player.
  *
- * [onOpenInSource], when non-null, adds a trailing "open in Telegram" affordance (the regular
- * feed keeps its escape hatch; rich blocks pass null). A [fileId] of null — a rare hydration
- * path with no resolvable file — degrades to the informational [NonPlayableFileRow].
+ * Recomposition budget: the session ticks position every 200 ms. Only derived values that
+ * change rarely (active, phase, whole elapsed seconds) are read in composition; the progress
+ * fraction is read in the draw phase of the waveform / track, so a tick redraws one layer.
  *
- * @param isVoice selects the voice-note presentation (waveform track, no title line, larger
- *  container shape) vs the audio presentation (title + performer, linear bar).
+ * [onOpenInSource] is used only by the informational [NonPlayableFileRow] fallback (no
+ * resolvable file, or a tombstone without the file on disk). A playable row has no trailing
+ * "open in Telegram" button any more: on the device it read as the row's primary action, and
+ * the post's ⋯ / long-press menu already carries "Open in Telegram" for every post.
+ *
+ * @param isVoice selects the voice-note presentation (waveform track, no title line) vs the
+ *  audio presentation (title + performer, linear track).
+ * @param cover optional album art painted under the play glyph (the feed's `AudioBlock` passes
+ *  the track's album cover; voice notes and rich-message audio pass null).
  */
 @Composable
 internal fun InlineAudioPlayerRow(
@@ -72,17 +77,16 @@ internal fun InlineAudioPlayerRow(
     waveform: ByteArray?,
     isVoice: Boolean,
     onOpenInSource: (() -> Unit)?,
+    cover: TdMedia? = null,
 ) {
     val symbol = if (isVoice) "mic" else "audio_file"
-    val shape = if (isVoice) MaterialTheme.shapes.large else MaterialTheme.shapes.medium
+    val fallbackSecondary = if (isVoice) {
+        formatDuration(durationSec)
+    } else {
+        listOfNotNull(performer, formatDuration(durationSec)).joinToString(" · ")
+    }
     if (fileId == null) {
-        NonPlayableFileRow(
-            symbol = symbol,
-            primary = title,
-            secondary = if (isVoice) formatDuration(durationSec) else performer.orEmpty(),
-            onClick = onOpenInSource,
-            shape = shape,
-        )
+        NonPlayableFileRow(symbol = symbol, primary = title, secondary = fallbackSecondary, onClick = onOpenInSource)
         return
     }
     // Tombstone (deleted post): playback would `ensure` (download) a file TDLib can no longer
@@ -92,13 +96,7 @@ internal fun InlineAudioPlayerRow(
         val cache = LocalMediaCache.current
         val cached by remember(fileId) { cache.observe(fileId) }.collectAsStateWithLifecycle()
         if (cached !is MediaState.Ready) {
-            NonPlayableFileRow(
-                symbol = symbol,
-                primary = title,
-                secondary = if (isVoice) formatDuration(durationSec) else performer.orEmpty(),
-                onClick = onOpenInSource,
-                shape = shape,
-            )
+            NonPlayableFileRow(symbol = symbol, primary = title, secondary = fallbackSecondary, onClick = onOpenInSource)
             return
         }
     }
@@ -108,90 +106,78 @@ internal fun InlineAudioPlayerRow(
         session.attachRow(fileId)
         onDispose { session.detachRow(fileId) }
     }
-    val playback by session.state.collectAsStateWithLifecycle()
-    val active = playback?.key == fileId
-    val phase = if (active) playback?.phase else null
+    val playbackState = session.state.collectAsStateWithLifecycle()
+    val active by remember(playbackState, fileId) { derivedStateOf { playbackState.value?.key == fileId } }
+    val phase by remember(playbackState, fileId) {
+        derivedStateOf { playbackState.value?.takeIf { it.key == fileId }?.phase }
+    }
+    val elapsedSec by remember(playbackState, fileId) {
+        derivedStateOf {
+            val p = playbackState.value
+            if (p != null && p.key == fileId) (p.positionMs / 1000L).toInt() else 0
+        }
+    }
     val totalMs = durationSec.coerceAtLeast(0) * 1000L
-    val positionMs = if (active) playback?.positionMs ?: 0L else 0L
-    val fraction = if (active && totalMs > 0L) (positionMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
+    // Draw-phase reader: never call this from composition.
+    val progress = remember(playbackState, fileId, totalMs) {
+        {
+            val p = playbackState.value
+            if (p != null && p.key == fileId && totalMs > 0L) {
+                (p.positionMs.toFloat() / totalMs).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+        }
+    }
+    val isActive = remember(playbackState, fileId) { { playbackState.value?.key == fileId } }
 
-    val playCd = stringResource(R.string.rich_audio_play)
-    val pauseCd = stringResource(R.string.rich_audio_pause)
-    val loadingCd = stringResource(R.string.rich_audio_loading)
     val buttonCd = when (phase) {
-        AudioPlaybackSession.Phase.Playing -> pauseCd
-        AudioPlaybackSession.Phase.Loading -> loadingCd
-        else -> playCd
+        AudioPlaybackSession.Phase.Playing -> stringResource(R.string.rich_audio_pause)
+        AudioPlaybackSession.Phase.Loading -> stringResource(R.string.rich_audio_loading)
+        else -> stringResource(R.string.rich_audio_play)
+    }
+    val glyph = when (phase) {
+        AudioPlaybackSession.Phase.Playing -> PlayGlyph.Pause
+        AudioPlaybackSession.Phase.Loading -> PlayGlyph.Loading
+        else -> PlayGlyph.Play
+    }
+    val track = remember(title, performer, isVoice) {
+        AudioPlaybackSession.TrackInfo(title = title, performer = performer, isVoice = isVoice)
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            // The play disc and the open-in-source disc each sit centred in a 48 dp touch
-            // target (minimumInteractiveComponentSize); the start / end padding gives back
-            // the slop those targets add, so both discs keep their 14 dp inset from the edge.
-            // Top / bottom are 12 dp so a row whose tallest child is the 48 dp play target
-            // keeps the former 72 dp height (44 dp disc + 2 × 14 dp).
-            .padding(
-                start = 12.dp,
-                end = if (onOpenInSource != null) 6.dp else 14.dp,
-                top = 12.dp,
-                bottom = 12.dp,
-            ),
+            .clip(ContentBlockShape)
+            .background(contentBlockColor)
+            // 8 dp start: the 48 dp disc is its own touch target, so its visible edge sits
+            // where a 40 dp badge would with 12 dp padding — file and audio rows line up.
+            .padding(start = 8.dp, end = if (active) 4.dp else 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
+        PlayDisc(
+            glyph = glyph,
+            cover = cover,
             modifier = Modifier
-                .minimumInteractiveComponentSize()
-                .size(44.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer)
                 .clickable(
                     onClickLabel = buttonCd,
                     role = Role.Button,
-                    onClick = {
-                        session.toggle(
-                            fileId,
-                            durationSec,
-                            AudioPlaybackSession.TrackInfo(title = title, performer = performer, isVoice = isVoice),
-                        )
-                    },
+                    onClick = { session.toggle(fileId, durationSec, track) },
                 )
                 .semantics { contentDescription = buttonCd },
-            contentAlignment = Alignment.Center,
-        ) {
-            when (phase) {
-                AudioPlaybackSession.Phase.Loading -> CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-                AudioPlaybackSession.Phase.Playing -> Symbol(
-                    name = "pause",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    size = 24.dp,
-                    filled = true,
-                )
-                else -> Symbol(
-                    name = "play_arrow",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    size = 24.dp,
-                    filled = true,
-                )
-            }
-        }
-        Spacer(Modifier.width(10.dp))
+        )
+        Spacer(Modifier.width(12.dp))
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (!isVoice) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -200,58 +186,50 @@ internal fun InlineAudioPlayerRow(
                 val bars = remember(waveform) { waveform?.let(::decodeWaveform) ?: IntArray(0) }
                 AudioWaveform(
                     bars = bars,
-                    fraction = fraction,
+                    progress = progress,
                     modifier = Modifier.fillMaxWidth().height(24.dp),
                 )
             } else {
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth(),
+                AudioProgressTrack(
+                    progress = progress,
+                    showThumb = isActive,
+                    modifier = Modifier.fillMaxWidth().height(12.dp),
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    // Elapsed / total once the track is loaded; total only at rest.
-                    text = if (active) {
-                        "${formatDuration((positionMs / 1000L).toInt())} / ${formatDuration(durationSec)}"
-                    } else {
-                        formatDuration(durationSec)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (performer != null) {
-                    Text(
-                        text = " · $performer",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+            val time = if (active) {
+                "${formatDuration(elapsedSec)} / ${formatDuration(durationSec)}"
+            } else {
+                formatDuration(durationSec)
             }
+            AudioMetaLine(performer = if (isVoice) null else performer, time = time)
         }
         if (active) {
             Spacer(Modifier.width(4.dp))
             AudioSpeedChip()
         }
-        if (onOpenInSource != null) {
-            val openCd = stringResource(R.string.content_open_in_telegram)
-            Box(
-                modifier = Modifier
-                    .minimumInteractiveComponentSize()
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .clickable(onClickLabel = openCd, role = Role.Button, onClick = onOpenInSource),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(
-                    name = "open_in_new",
-                    contentDescription = openCd,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 18.dp,
-                )
-            }
+    }
+}
+
+/**
+ * "Performer · 1:35" for audio, "0:14" for voice. The performer ellipsizes; the time never
+ * truncates and uses tabular figures so the per-second tick doesn't jitter its neighbours.
+ */
+@Composable
+private fun AudioMetaLine(performer: String?, time: String) {
+    val style = MaterialTheme.typography.labelMedium
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (!performer.isNullOrBlank()) {
+            Text(
+                text = performer,
+                style = style,
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Text(text = " · ", style = style, color = color, maxLines = 1)
         }
+        Text(text = time, style = style.tabularFigures(), color = color, maxLines = 1, softWrap = false)
     }
 }

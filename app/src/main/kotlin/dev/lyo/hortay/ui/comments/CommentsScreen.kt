@@ -78,6 +78,7 @@ import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.ThreadRow
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.ui.timeline.InlineKeyboardBlock
 import kotlinx.coroutines.flow.map
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
@@ -919,6 +920,7 @@ fun CommentsScreen(
                             onShowReactors = { kind ->
                                 reactorsRequest = ReactorsRequest(s.threadChatId, row.message.id, row.message.reactions, kind)
                             },
+                            onOpenInTelegram = pinnedPostInteractions.onOpenClick,
                         )
                         if (pickerOpen) {
                             CommentContextMenu(
@@ -1143,6 +1145,7 @@ private fun CommentNode(
     onReactionTap: (ReactionItem) -> Unit,
     onLongPress: () -> Unit,
     onShowReactors: (ReactionKind?) -> Unit,
+    onOpenInTelegram: (TimelinePost) -> Unit,
     modifier: Modifier = Modifier,
     effectRequest: ReactionEffectRequest? = null,
 ) {
@@ -1181,6 +1184,7 @@ private fun CommentNode(
             onMediaClick = onMediaClick,
             onReactionTap = onReactionTap,
             onShowReactors = onShowReactors,
+            onOpenInTelegram = onOpenInTelegram,
             modifier = Modifier.weight(1f),
             effectRequest = effectRequest,
         )
@@ -1202,10 +1206,14 @@ private fun CommentBubble(
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
     onShowReactors: (ReactionKind?) -> Unit,
+    onOpenInTelegram: (TimelinePost) -> Unit,
     modifier: Modifier = Modifier,
     effectRequest: ReactionEffectRequest? = null,
 ) {
     val message = row.message
+    // Reads the latest message so the lambda stays stable across reaction / view updates.
+    val latestMessage by rememberUpdatedState(message)
+    val openMessage = remember(onOpenInTelegram) { { onOpenInTelegram(latestMessage) } }
     val opener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
     // Tap surface for the avatar + author name → user-profile sheet. Guarded by
     // senderUserId because comments authored by a chat (channel posting on behalf
@@ -1298,6 +1306,20 @@ private fun CommentBubble(
                         message.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
                     },
                     expanded = true,
+                    // File rows, open-in-Telegram cards and the unsupported placeholder
+                    // open the comment in Telegram, as they do in the feed.
+                    onOpenInSource = openMessage,
+                )
+            }
+
+            // A bot's inline keyboard under the comment, as under a feed post; a deleted
+            // comment's buttons would act on a message that no longer exists.
+            message.inlineKeyboard?.takeIf { !message.isDeleted }?.let { keyboard ->
+                Spacer(Modifier.height(HortaySpacing.sm))
+                InlineKeyboardBlock(
+                    keyboard = keyboard,
+                    chatId = message.chatId,
+                    onOpenInSource = openMessage,
                 )
             }
 

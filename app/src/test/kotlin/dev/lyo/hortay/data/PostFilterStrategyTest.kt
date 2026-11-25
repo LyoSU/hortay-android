@@ -95,31 +95,97 @@ class PostFilterStrategyTest {
     }
 
     @Test
-    fun `album of document members keeps the anchor content instead of an empty PhotoAlbum`() {
-        // Telegram supports media groups of documents (and audio). None of those
-        // map to an AlbumItem, so the naive merge produced PhotoAlbum(items = [])
-        // — a blank card. The merged card must keep the anchor's own renderable
-        // content while still carrying the full member-id list so read-ack,
-        // dedup and the degraded-album checks stay album-aware.
+    fun `album of documents becomes a FileAlbum of every member with the last member's caption`() {
+        // A bot's media group of three files, captioned on the LAST member. The merged card
+        // used to keep only the anchor's content — the first file, without the caption.
         val albumId = 9L
-        fun doc(id: Long, name: String) = post(
+        fun doc(id: Long, name: String, caption: String = "") = post(
             id = id, mediaAlbumId = albumId, date = 100L,
-            content = PostContent.Document(
-                fileId = null, fileName = name, mimeType = "application/pdf",
-                sizeBytes = 1L, thumb = null, caption = FormattedText.Empty,
+            content = document(name, caption),
+        )
+        val input = listOf(doc(12L, "c.pdf", caption = "Три файли"), doc(10L, "a.pdf"), doc(11L, "b.pdf"))
+
+        val merged = PostFilterStrategy.apply(input).single()
+
+        assertEquals(10L, merged.id, "anchor stays the lowest-id member")
+        assertEquals(listOf(10L, 11L, 12L), merged.albumMessageIds)
+        val album = merged.content as PostContent.FileAlbum
+        assertEquals(listOf(10L, 11L, 12L), album.items.map { it.messageId })
+        assertEquals(listOf("a.pdf", "b.pdf", "c.pdf"), album.items.map { (it.file as PostContent.Document).fileName })
+        assertEquals("Три файли", album.items.last().file.caption.text)
+        assertEquals("Три файли", album.captionPlain)
+    }
+
+    @Test
+    fun `album of audio tracks keeps every track and its caption`() {
+        val albumId = 5L
+        fun track(id: Long, title: String, caption: String = "") = post(
+            id = id, mediaAlbumId = albumId,
+            content = PostContent.Audio(
+                fileId = id.toInt(), title = title, performer = "", durationSec = 60,
+                caption = FormattedText.plain(caption),
             ),
         )
-        val result = PostFilterStrategy.apply(listOf(doc(10L, "a.pdf"), doc(11L, "b.pdf")))
+        val merged = PostFilterStrategy.apply(listOf(track(20L, "One"), track(21L, "Two", caption = "Два треки"))).single()
 
-        assertEquals(1, result.size, "document album still collapses into one card")
-        val merged = result.single()
-        assertEquals(10L, merged.id, "anchor stays the lowest-id member")
-        assertEquals(listOf(10L, 11L), merged.albumMessageIds)
-        assertTrue(
-            merged.content is PostContent.Document,
-            "card must keep the anchor's renderable content, got ${merged.content::class.simpleName}",
-        )
+        val album = merged.content as PostContent.FileAlbum
+        assertEquals(listOf(20, 21), album.items.map { (it.file as PostContent.Audio).fileId })
+        assertEquals("Два треки", album.captionPlain)
     }
+
+    @Test
+    fun `re-merging a merged file album with a fresh member does not duplicate items`() {
+        val albumId = 3L
+        val firstPass = PostFilterStrategy.mergeAlbums(
+            listOf(
+                post(id = 1L, mediaAlbumId = albumId, content = document("a")),
+                post(id = 2L, mediaAlbumId = albumId, content = document("b")),
+            ),
+        ).single()
+        val again = PostFilterStrategy.mergeAlbums(
+            listOf(firstPass, post(id = 2L, mediaAlbumId = albumId, content = document("b")), post(id = 3L, mediaAlbumId = albumId, content = document("c"))),
+        ).single()
+
+        assertEquals(listOf(1L, 2L, 3L), (again.content as PostContent.FileAlbum).items.map { it.messageId })
+    }
+
+    @Test
+    fun `a file album with a member of another kind keeps the anchor content`() {
+        val albumId = 4L
+        val merged = PostFilterStrategy.apply(
+            listOf(
+                post(id = 1L, mediaAlbumId = albumId, content = document("a")),
+                post(id = 2L, mediaAlbumId = albumId, content = PostContent.Text(FormattedText.plain("x"))),
+            ),
+        ).single()
+
+        assertTrue(merged.content is PostContent.Document)
+        assertEquals(listOf(1L, 2L), merged.albumMessageIds)
+    }
+
+    @Test
+    fun `album keeps the inline keyboard of whichever member carries it`() {
+        val albumId = 6L
+        val keyboard = InlineKeyboard(
+            messageId = 2L,
+            rows = kotlinx.collections.immutable.persistentListOf(
+                kotlinx.collections.immutable.persistentListOf(InlineButton("Go", InlineButtonAction.Url("https://example.com"))),
+            ),
+        )
+        val merged = PostFilterStrategy.apply(
+            listOf(
+                post(id = 1L, mediaAlbumId = albumId, content = document("a")),
+                post(id = 2L, mediaAlbumId = albumId, content = document("b")).copy(inlineKeyboard = keyboard),
+            ),
+        ).single()
+
+        assertEquals(keyboard, merged.inlineKeyboard)
+    }
+
+    private fun document(name: String, caption: String = "") = PostContent.Document(
+        fileId = null, fileName = name, mimeType = "application/pdf",
+        sizeBytes = 1L, thumb = null, caption = FormattedText.plain(caption),
+    )
 
     @Test
     fun `standalone posts (mediaAlbumId == 0) are never merged`() {

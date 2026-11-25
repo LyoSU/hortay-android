@@ -46,6 +46,7 @@ import dev.lyo.hortay.ui.text.LinkRange
 import dev.lyo.hortay.ui.text.LocalHashtagTap
 import dev.lyo.hortay.ui.text.LocalLinkConfirm
 import dev.lyo.hortay.ui.text.RenderableText
+import dev.lyo.hortay.ui.text.RevealedSpoilers
 import dev.lyo.hortay.ui.text.SpoilerGroupInfo
 import dev.lyo.hortay.ui.text.Unhandled
 import dev.lyo.hortay.ui.text.rememberSpoilerReveal
@@ -75,7 +76,7 @@ internal val LocalRichAnchorTap = staticCompositionLocalOf<(kind: RichLinkKind, 
  * Renders a [RichInline] tree as a link-aware [androidx.compose.material3.Text].
  *
  * The tree is flattened into a [RenderableText] by [rememberRichInline] and drawn through
- * the shared [LinkAwareText], so custom-emoji inline content, the spoiler dot-cloud +
+ * the shared [LinkAwareText], so custom-emoji inline content, the spoiler particle cover +
  * reveal, the pressed-link highlight, and the long-press link sheet all behave identically
  * to the [dev.lyo.hortay.data.FormattedText] renderer. Link / mention / hashtag / anchor
  * taps route through the SAME CompositionLocals ([LocalUriHandler], [LocalLinkConfirm],
@@ -189,7 +190,7 @@ internal fun rememberRichInline(inline: RichInline, baseStyle: TextStyle): Rende
         inlineContent = allInlineContent,
         linkRanges = built.linkRanges,
         spoilerGroups = built.spoilerGroups,
-        spoilerDispersion = spoiler.dispersion,
+        spoilerRevealStart = spoiler.revealStart,
         pressableRanges = built.pressableRanges.toImmutableList(),
         contentKey = contentKey,
     )
@@ -246,7 +247,7 @@ private class RichBuildContext(
     val hashtagTap: (String) -> Unit,
     val userMentionTap: (Long) -> Unit,
     val anchorTap: (RichLinkKind, String, String) -> Unit,
-    val revealedGroups: Set<Int>,
+    val revealedGroups: RevealedSpoilers,
     val reveal: (Int) -> Unit,
     val linkRanges: MutableList<LinkRange> = mutableListOf(),
     val pressableRanges: MutableList<IntRange> = mutableListOf(),
@@ -266,7 +267,7 @@ private fun buildRichAnnotated(
     hashtagTap: (String) -> Unit,
     userMentionTap: (Long) -> Unit,
     anchorTap: (RichLinkKind, String, String) -> Unit,
-    revealedGroups: Set<Int>,
+    revealedGroups: RevealedSpoilers,
     reveal: (Int) -> Unit,
 ): BuiltRich {
     val safeOpen = LinkInteractionListener { link ->
@@ -389,7 +390,7 @@ private fun AnnotatedString.Builder.walkRich(node: RichInline, ctx: RichBuildCon
                     pop()
                 }
                 // Already inside a link → can't add the reveal clickable; keep the cover
-                // shimmer, tap falls through to the enclosing link.
+                // particles, tap falls through to the enclosing link.
                 else -> withStyle(SpanStyle(color = Color.Transparent)) { walkRich(node.child, ctx, covering = groupId, canLink = false) }
             }
             val end = length

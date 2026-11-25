@@ -40,4 +40,23 @@ class AudioWaveformTest {
         val bytes = ByteArray(16) { (it * 37).toByte() }
         assertTrue(decodeWaveform(bytes).all { it in 0..31 })
     }
+
+    @Test
+    fun `resample max-pools when shrinking and normalises to the peak`() {
+        val out = resampleWaveform(intArrayOf(0, 8, 2, 4, 16, 1), 3)
+        assertArrayEquals(floatArrayOf(0.5f, 0.25f, 1f), out, 1e-6f)
+    }
+
+    @Test
+    fun `resample stretches by repeating samples`() {
+        val out = resampleWaveform(intArrayOf(10, 20), 4)
+        assertArrayEquals(floatArrayOf(0.5f, 0.5f, 1f, 1f), out, 1e-6f)
+    }
+
+    @Test
+    fun `resample of silence or empty input is all zeros of the requested size`() {
+        assertArrayEquals(FloatArray(5), resampleWaveform(IntArray(8), 5), 0f)
+        assertArrayEquals(FloatArray(3), resampleWaveform(IntArray(0), 3), 0f)
+        assertEquals(0, resampleWaveform(intArrayOf(1, 2), 0).size)
+    }
 }

@@ -1043,4 +1043,14 @@
     <string name="archive_no_matches_title">Ничего не найдено</string>
     <string name="archive_no_matches_body">Попробуйте другой фильтр или запрос</string>
     <string name="archive_remove_action">Убрать из архива</string>
+    <string name="op_press_button">нажать кнопку</string>
+    <string name="inline_button_pending">Ждём ответа бота</string>
+    <string name="content_location">Геопозиция</string>
+    <string name="content_live_location">Трансляция геопозиции</string>
+    <string name="content_live_location_ended">Трансляция геопозиции завершена</string>
+    <string name="poll_option_your_vote">Ваш голос</string>
+    <string name="poll_option_correct">Правильный ответ</string>
+    <string name="poll_option_wrong">Неправильный ответ</string>
+    <string name="content_unsupported_message">Hortay пока не умеет показывать такое сообщение</string>
+    <string name="media_desc_live_photo">Живое фото</string>
 </resources>

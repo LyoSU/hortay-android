@@ -449,8 +449,18 @@ fun MainScaffold(graph: AppGraph) {
             graph.postsRepository.summarize(post.chatId, post.id, java.util.Locale.getDefault().language)
         }
     }
+    // Callback buttons of posts' inline keyboards; guest mode leaves this null.
+    val inlineCallbackPresser: dev.lyo.hortay.ui.timeline.InlineCallbackPresser = remember(graph) {
+        { chatId, messageId, data -> graph.inlineKeyboards.pressCallback(chatId, messageId, data) }
+    }
+    // Static map pictures on location cards; guest mode (no TDLib) leaves this null.
+    val mapThumbnailResolver: dev.lyo.hortay.ui.timeline.MapThumbnailResolver = remember(graph) {
+        { request -> graph.mapThumbnails.resolve(request) }
+    }
     LinkAwareScaffold(graph) {
         CompositionLocalProvider(
+            dev.lyo.hortay.ui.timeline.LocalInlineCallbackPresser provides inlineCallbackPresser,
+            dev.lyo.hortay.ui.timeline.LocalMapThumbnailResolver provides mapThumbnailResolver,
             LocalReadCursors provides cursorHolder,
             dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
             LocalUserProfileOpener provides userProfileOpener,

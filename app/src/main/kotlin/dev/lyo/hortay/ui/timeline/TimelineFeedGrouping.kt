@@ -41,6 +41,14 @@ internal fun PostContent.posterFileIds(): List<Int> = buildList {
         is PostContent.Video -> content.media.fileId?.let(::add)
         is PostContent.Animation -> content.media.fileId?.let(::add)
         is PostContent.Document -> content.thumb?.fileId?.let(::add)
+        // Album art only; the track is a playback file and is never warmed.
+        is PostContent.Audio -> content.cover?.fileId?.let(::add)
+        is PostContent.FileAlbum -> content.items.forEach { item ->
+            when (val file = item.file) {
+                is PostContent.Document -> file.thumb?.fileId?.let(::add)
+                is PostContent.Audio -> file.cover?.fileId?.let(::add)
+            }
+        }
         is PostContent.Sticker -> {
             // Stickers are tiny (<100 KB) — pulling both thumb and the playback file
             // up-front means the inline animation starts the moment the post settles,
@@ -56,7 +64,7 @@ internal fun PostContent.posterFileIds(): List<Int> = buildList {
         // Video-note playback fileIds intentionally NOT added here — they are warmed
         // via [playbackFileIds] below alongside the autoplay-prewarm pass, where the
         // duration gate matches the actual autoplay eligibility.
-        // Text/Audio/VoiceNote/Poll/Location/Contact/Dice/Checklist/Service/Expired/
+        // Text/VoiceNote/Poll/Location/Contact/Dice/Checklist/Service/Expired/
         // Unsupported — no still preview to warm.
         else -> Unit
     }

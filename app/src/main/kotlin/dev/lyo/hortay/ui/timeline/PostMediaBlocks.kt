@@ -29,9 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -57,6 +55,8 @@ import dev.lyo.hortay.ui.media.SpoilerKind
 import dev.lyo.hortay.ui.media.SpoilerOverlay
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.TdVideoPlayer
+import dev.lyo.hortay.ui.media.mediaSpoilerBlur
+import dev.lyo.hortay.ui.media.rememberMediaSpoilerState
 import dev.lyo.hortay.ui.media.rememberViewerSourceAnchor
 import dev.lyo.hortay.ui.media.viewerSource
 import dev.lyo.hortay.ui.theme.mediaFrame
@@ -125,9 +125,8 @@ internal fun MediaWithSpoiler(
     // shrink back into it. [sourceShape] is the clip the caller applies around this tile,
     // so the viewer's corner radius lands on the tile's own corners.
     val viewerAnchor = rememberViewerSourceAnchor(item.media, sourceShape)
-    var revealed by remember(item.media.fileId) {
-        mutableStateOf(!item.hasSpoiler && !item.isSecret)
-    }
+    val spoiler = rememberMediaSpoilerState(item.media.fileId, covered = item.hasSpoiler || item.isSecret)
+    val revealed = spoiler.isRevealed
     val unplayable = item.isUnplayableVideo
     val inlineAutoplayEnabled = LocalInlineVideoAutoplay.current
     // Deleted-post tombstone: media is observe-only. No autoplay (would mount an
@@ -207,16 +206,11 @@ internal fun MediaWithSpoiler(
         revealed &&
         isPosterDownloading(item.media.fileId)
     // Blur regime:
-    //   • spoiler / sensitive: heavy blur until the user reveals — same as TDLib mode.
+    //   • spoiler / sensitive: heavy blur until the user reveals, un-blurring from the tap
+    //     point while the reveal circle grows ([mediaSpoilerBlur]).
     //   • unplayable video: light blur as a visual "this is a preview, you'll need to
     //     open Telegram to actually watch it" cue. Keeps the poster recognisable while
     //     making clear the in-app player can't drive it.
-    //   • otherwise: no blur.
-    val blur = when {
-        !revealed -> SPOILER_BLUR_RADIUS
-        unplayable -> UNPLAYABLE_VIDEO_BLUR_RADIUS
-        else -> 0.dp
-    }
     // Media-kind description for the primary post image — resolved once here
     // rather than per-call since it only depends on the sealed [AlbumItem] type.
     val mediaDescription = when (item) {
@@ -233,15 +227,16 @@ internal fun MediaWithSpoiler(
         // When the autoplayer mounts on top, suppress the poster's own progress spinner —
         // TdVideoPlayer renders its own MediaLoadingOverlay for the playback file, and a
         // poster-side spinner would stack visibly on top of it ("два кружки в центрі").
-        // Spoiler blur: while !revealed, the underlying photo is heavily blurred via
-        // RenderEffect (no-op on pre-S, where the shimmer dim alone obscures the image).
+        // Spoiler blur: while covered, the underlying photo is heavily blurred via
+        // RenderEffect; pre-S the overlay's minithumb cover stands in for it.
         TdMediaImage(
             media = item.media,
             contentDescription = mediaDescription,
             showProgress = !(autoplayVideo || autoplayAnimation),
             modifier = Modifier
                 .fillMaxSize()
-                .let { if (blur > 0.dp) it.blur(blur) else it },
+                .let { if (unplayable) it.blur(UNPLAYABLE_VIDEO_BLUR_RADIUS) else it }
+                .mediaSpoilerBlur(spoiler, SPOILER_BLUR_RADIUS),
         )
         when {
             autoplayVideo -> {
@@ -290,9 +285,10 @@ internal fun MediaWithSpoiler(
         }
         if (!revealed) {
             SpoilerOverlay(
+                state = spoiler,
                 kind = if (item.isSecret) SpoilerKind.Sensitive else SpoilerKind.Spoiler,
                 seed = item.media.fileId ?: 0,
-                onReveal = { revealed = true },
+                coverThumb = item.media.minithumbBytes,
             )
         }
     }
@@ -332,7 +328,9 @@ private fun BoxScope.MediaOverlay(item: AlbumItem, hidePlayBadge: Boolean = fals
             text = "GIF",
             modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
         )
-        is AlbumItem.Photo -> Unit
+        is AlbumItem.Photo -> if (item.isLive) {
+            LivePhotoBadge(modifier = Modifier.align(Alignment.TopStart).padding(12.dp))
+        }
     }
 }
 
@@ -490,9 +488,8 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
     )
     val caption = translation ?: content.caption
 
-    var revealed by remember(content.playbackFileId) {
-        mutableStateOf(!content.hasSpoiler && !content.isSecret)
-    }
+    val spoiler = rememberMediaSpoilerState(content.playbackFileId, covered = content.hasSpoiler || content.isSecret)
+    val revealed = spoiler.isRevealed
     // Tombstone: keep the static (minithumb/cached) poster, but never mount the
     // autoplayer or route a tap to a server-deleted file. See [LocalMediaPassive].
     val passive = LocalMediaPassive.current
@@ -518,7 +515,7 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
             showProgress = !revealed,
             modifier = Modifier
                 .fillMaxSize()
-                .let { if (revealed) it else it.blur(SPOILER_BLUR_RADIUS) },
+                .mediaSpoilerBlur(spoiler, SPOILER_BLUR_RADIUS),
         )
         // Only mount the video player once the spoiler is revealed — otherwise we'd start
         // an ExoPlayer + TDLib download for content the user explicitly hasn't asked to see
@@ -545,9 +542,10 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
             DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
         } else {
             SpoilerOverlay(
+                state = spoiler,
                 kind = if (content.isSecret) SpoilerKind.Sensitive else SpoilerKind.Spoiler,
                 seed = content.playbackFileId,
-                onReveal = { revealed = true },
+                coverThumb = content.media.minithumbBytes,
             )
         }
     }

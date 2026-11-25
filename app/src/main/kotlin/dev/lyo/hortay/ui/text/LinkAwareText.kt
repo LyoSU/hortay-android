@@ -22,7 +22,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -32,10 +31,20 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.lyo.hortay.ui.media.SpoilerField
-import dev.lyo.hortay.ui.media.TEXT_DENSITY_PX_PER_DOT
-import dev.lyo.hortay.ui.media.drawSpoilerShimmer
-import dev.lyo.hortay.ui.media.rememberSpoilerDrift
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import dev.lyo.hortay.ui.media.SpoilerParticles
+import dev.lyo.hortay.ui.media.SpoilerRipple
+import dev.lyo.hortay.ui.media.SpoilerTileKind
+import dev.lyo.hortay.ui.media.SpoilerTilePaint
+import dev.lyo.hortay.ui.media.drawSpoilerParticles
+import dev.lyo.hortay.ui.media.rememberSpoilerMotion
 
 // Block-decoration geometry. Calibrated to line up with the sp text indents in
 // FormattedTextRenderer (QUOTE_TEXT_INDENT / CODE_TEXT_INDENT) at the default font scale.
@@ -56,19 +65,20 @@ private val LINK_HIGHLIGHT_VPAD = 1.5.dp
 private val LINK_HIGHLIGHT_CORNER = 6.dp
 
 /**
- * Drop-in [Text] replacement with link-tap handling, long-press, spoiler dot-cloud overlay,
+ * Drop-in [Text] replacement with link-tap handling, long-press, spoiler particle cover,
  * and paragraph-level block decorations (block quotes, code blocks).
  *
  * Block decorations ([RenderableText.blockDecorations]) are painted on a single backing
  * [Text] — the body never splits into separate composables, so the `maxLines` clamp and
  * the "Показати більше" toggle keep working, and every surface (feed / channel / comments /
  * detail) renders the block identically. Backgrounds are drawn with [Modifier.drawBehind]
- * (behind the glyphs); the code-block language label and the spoiler shimmer are drawn on
+ * (behind the glyphs); the code-block language label and the spoiler cover are drawn on
  * top via [Modifier.drawWithContent]. All geometry is read from the captured
  * [TextLayoutResult], so a quote/code block clipped away by `maxLines` simply isn't drawn.
  *
- * Spoiler model: see [RenderableText]. Each [SpoilerGroupInfo] is painted as ONE shimmer
- * over the union of its sub-range paths so a single logical spoiler reveals as one cover.
+ * Spoiler model: see [RenderableText]. Each [SpoilerGroupInfo] is painted as ONE particle cover
+ * over its line boxes ([buildSpoilerGeometry]) and reveals behind one ripple from the tap point:
+ * particles are cleared inside the growing circle and the glyphs fade in behind its front.
  */
 @Composable
 fun LinkAwareText(
@@ -81,7 +91,7 @@ fun LinkAwareText(
     onTextLayout: (TextLayoutResult) -> Unit = {},
 ) {
     // Key on [renderable.contentKey] (source text identity) rather than `renderable`
-    // or its `text` AnnotatedString: RenderableText carries a `spoilerDispersion`
+    // or its `text` AnnotatedString: RenderableText carries a `spoilerRevealStart`
     // lambda whose identity flips per-recomposition, and `text` itself mutates when
     // a spoiler is revealed (Transparent → onSurface). contentKey is stable across
     // both, so long-press sheet and captured TextLayout survive reactions / edits /
@@ -266,63 +276,113 @@ fun LinkAwareText(
         }
     } else Modifier
 
-    // ---- Spoiler shimmer (see RenderableText doc) ----
+    // ---- Spoiler cover + reveal ripple (see RenderableText / SpoilerReveal) ----
     val spoilerGroups = renderable.spoilerGroups
-    val spoilerDispersion = renderable.spoilerDispersion
-    val spoilerColor = MaterialTheme.colorScheme.onSurface
-    val spoilerDrift by rememberSpoilerDrift()
+    val spoilerRevealStart = renderable.spoilerRevealStart
+    // Particles take the text's own colour, as Telegram tints them with the layout paint.
+    val spoilerColor = style.color.takeOrElse { LocalContentColor.current }
+    val spoilerMotion = rememberSpoilerMotion()
+    val density = LocalDensity.current
+    val spoilerFx = remember(renderable.contentKey) { SpoilerTextFx() }
+    val spoilerPaints = remember(renderable.contentKey) { HashMap<Int, SpoilerTilePaint>() }
+    val spoilerSlop = with(density) { SPOILER_TAP_SLOP.toPx() }
 
-    // One particle field per group, reused across frames so steady-state shimmer allocates
-    // nothing (see [SpoilerField]).
-    val spoilerFields = remember(renderable.contentKey) { HashMap<Int, SpoilerField>() }
-
-    // Merged clip path per group, rebuilt ONLY when the text layout changes — never per
-    // frame. `Path.op(Union)` and `getPathForRange` are heavy, and the layout is stable
-    // across the whole dispersion animation, so caching here removes the per-frame Path
-    // churn that the animating drift/dispersion would otherwise trigger.
-    val mergedPaths: Map<Int, Path> = remember(layoutResult, spoilerGroups) {
-        val layout = layoutResult ?: return@remember emptyMap()
-        val textLen = layout.layoutInput.text.length
-        buildMap {
-            for (group in spoilerGroups) {
-                val merged = Path()
-                var any = false
-                for (r in group.ranges) {
-                    val end = r.last.coerceAtMost(textLen - 1) + 1
-                    val start = r.first.coerceIn(0, end)
-                    if (start >= end) continue
-                    val sub = layout.getPathForRange(start, end)
-                    if (any) merged.op(merged, sub, PathOperation.Union) else merged.addPath(sub)
-                    any = true
-                }
-                if (any) put(group.groupId, merged)
-            }
+    // Line-box geometry per group, rebuilt ONLY when the text layout changes — never per frame.
+    val spoilerGeometry: List<SpoilerGeometry> = remember(layoutResult, spoilerGroups, density) {
+        val layout = layoutResult ?: return@remember emptyList()
+        with(density) {
+            buildSpoilerGeometry(layout, spoilerGroups, SPOILER_CORNER.toPx(), SPOILER_INSET.toPx())
         }
     }
 
-    // One overlay pass over the content: spoiler shimmer first, then code language chips.
+    // Records where a tap lands (Initial pass, never consumed) so the ripple starts under the
+    // finger; the reveal itself comes from the spoiler's own click annotation.
+    val spoilerTapMod = if (spoilerGroups.isNotEmpty()) {
+        Modifier.pointerInput(spoilerFx) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                spoilerFx.lastDown[0] = down.position.x
+                spoilerFx.lastDown[1] = down.position.y
+            }
+        }
+    } else Modifier
+
+    // Time fraction of a group's running ripple (draw phase), 1 once it has passed.
+    fun rippleFraction(start: Long, maxRadius: Float): Float {
+        SpoilerParticles.markRevealing()
+        val duration = if (spoilerMotion.reduced) {
+            SpoilerRipple.REDUCED_MOTION_FADE_MS
+        } else {
+            SpoilerRipple.durationMs(maxRadius)
+        }
+        return SpoilerRipple.fraction(SpoilerParticles.frameTimeMs(), start, duration)
+    }
+
+    fun maxRadiusOf(geo: SpoilerGeometry, origin: FloatArray): Float =
+        SpoilerRipple.farthestCorner(origin[0], origin[1], geo.left, geo.top, geo.right, geo.bottom)
+
+    // One overlay pass over the content: spoiler cover first, then code language chips.
     // Both sit ON TOP of the glyphs, and a single drawWithContent owns the one drawContent()
     // call (chaining two drawWithContent modifiers would paint the text twice).
     val overlayMod = if (spoilerGroups.isNotEmpty() || codeLabels.isNotEmpty()) {
         Modifier.drawWithContent {
-            drawContent()
-            if (mergedPaths.isNotEmpty()) {
-                for (group in spoilerGroups) {
-                    val progress = spoilerDispersion(group.groupId) ?: continue
-                    if (progress >= 1f) continue
-                    val path = mergedPaths[group.groupId] ?: continue
-                    val field = spoilerFields.getOrPut(group.groupId) { SpoilerField() }
-                    clipPath(path) {
-                        drawSpoilerShimmer(
-                            field = field,
-                            seed = group.seed,
-                            drift = spoilerDrift,
-                            color = spoilerColor,
-                            dispersionProgress = progress,
-                            densityPxPerDot = TEXT_DENSITY_PX_PER_DOT,
-                        )
+            val canvas = drawContext.canvas.nativeCanvas
+            // A running ripple masks the freshly revealed glyphs outside its front, which needs
+            // an offscreen layer — only for the few hundred ms of a reveal, never while idle.
+            var rippling = false
+            if (!spoilerMotion.reduced) {
+                for (geo in spoilerGeometry) {
+                    val start = spoilerRevealStart(geo.groupId)
+                    if (start <= SPOILER_COVERED) continue
+                    val origin = spoilerFx.origin(geo, spoilerSlop)
+                    if (rippleFraction(start, maxRadiusOf(geo, origin)) < 1f) {
+                        rippling = true
+                        break
                     }
                 }
+            }
+            if (rippling) {
+                val save = canvas.saveLayer(0f, 0f, size.width, size.height, null)
+                drawContent()
+                for (geo in spoilerGeometry) {
+                    val start = spoilerRevealStart(geo.groupId)
+                    if (start <= SPOILER_COVERED) continue
+                    val origin = spoilerFx.origin(geo, spoilerSlop)
+                    val maxRadius = maxRadiusOf(geo, origin)
+                    val fraction = rippleFraction(start, maxRadius)
+                    if (fraction >= 1f) continue
+                    val radius = SpoilerRipple.radius(SpoilerRipple.EaseInQuad.transform(fraction), maxRadius)
+                    spoilerFx.erase(canvas, geo, origin, radius.coerceAtLeast(1f))
+                }
+                canvas.restoreToCount(save)
+            } else {
+                drawContent()
+            }
+            for (geo in spoilerGeometry) {
+                val start = spoilerRevealStart(geo.groupId)
+                if (start == SPOILER_SETTLED) continue
+                val paint = spoilerPaints.getOrPut(geo.groupId) { SpoilerTilePaint(SpoilerTileKind.Text, geo.seed) }
+                if (start == SPOILER_COVERED) {
+                    drawSpoilerParticles(paint, spoilerMotion, spoilerColor, path = geo.cover)
+                    continue
+                }
+                if (spoilerMotion.reduced) {
+                    val fraction = rippleFraction(start, 0f)
+                    if (fraction < 1f) {
+                        drawSpoilerParticles(paint, spoilerMotion, spoilerColor, alpha = 1f - fraction, path = geo.cover)
+                    }
+                    continue
+                }
+                val origin = spoilerFx.origin(geo, spoilerSlop)
+                val maxRadius = maxRadiusOf(geo, origin)
+                val fraction = rippleFraction(start, maxRadius)
+                if (fraction >= 1f) continue
+                // `SpoilerEffect`: particles vanish inside the circle and the rest fade with it.
+                val eased = SpoilerRipple.EaseInQuad.transform(fraction)
+                val save = canvas.save()
+                canvas.clipOutPath(spoilerFx.circle(origin, SpoilerRipple.radius(eased, maxRadius)))
+                drawSpoilerParticles(paint, spoilerMotion, spoilerColor, alpha = 1f - eased, path = geo.cover)
+                canvas.restoreToCount(save)
             }
             val layout = layoutResult
             if (layout != null && codeLabels.isNotEmpty() && layout.lineCount > 0) {
@@ -373,7 +433,7 @@ fun LinkAwareText(
             onTextLayout(layout)
         },
         // Draw order (behind → front): block boxes, pressed-link highlight, then the
-        // glyphs, then spoiler shimmer / code labels on top.
+        // glyphs, then spoiler cover / code labels on top.
         //
         // [blockMod] sits OUTSIDE the vertical padding so its boxes can paint into the inset
         // strip that gives edge-of-post blocks their breathing room; every modifier after the
@@ -388,6 +448,7 @@ fun LinkAwareText(
             .then(pressMod)
             .then(quoteMod)
             .then(highlightMod)
+            .then(spoilerTapMod)
             .then(overlayMod),
     )
 
@@ -395,6 +456,15 @@ fun LinkAwareText(
         LinkActionsSheet(url = url, onDismiss = { pressedLink = null })
     }
 }
+
+/** Rounding of a spoiler run's ends (Telegram Web A's `border-radius` on the cover). */
+private val SPOILER_CORNER = 4.dp
+
+/** Vertical inset of the particles inside a line box (`SpoilerEffect.VERTICAL_PADDING_DP`). */
+private val SPOILER_INSET = 2.5.dp
+
+/** How far off a spoiler a tap may land and still be taken as its ripple origin. */
+private val SPOILER_TAP_SLOP = 24.dp
 
 /** How long a tapped quote stays fully lit before it fades. */
 private const val QUOTE_HOLD_MS = 1_600L

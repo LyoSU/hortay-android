@@ -1009,4 +1009,14 @@
     <string name="archive_no_matches_title">No se encontró nada</string>
     <string name="archive_no_matches_body">Prueba con otro filtro o búsqueda</string>
     <string name="archive_remove_action">Quitar del archivo</string>
+    <string name="op_press_button">pulsar el botón</string>
+    <string name="inline_button_pending">Esperando al bot</string>
+    <string name="content_location">Ubicación</string>
+    <string name="content_live_location">Ubicación en tiempo real</string>
+    <string name="content_live_location_ended">Ubicación en tiempo real finalizada</string>
+    <string name="poll_option_your_vote">Tu voto</string>
+    <string name="poll_option_correct">Respuesta correcta</string>
+    <string name="poll_option_wrong">Respuesta incorrecta</string>
+    <string name="content_unsupported_message">Hortay aún no admite este mensaje</string>
+    <string name="media_desc_live_photo">Foto en vivo</string>
 </resources>

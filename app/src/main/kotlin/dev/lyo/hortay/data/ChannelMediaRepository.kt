@@ -108,6 +108,7 @@ internal fun TdApi.Message.toChannelMediaItem(): ChannelMediaItem? {
             fullscreen = c.photo.toMedia(PHOTO_TARGET_FULLSCREEN_PX),
             hasSpoiler = c.hasSpoiler,
             isSecret = c.isSecret,
+            isLive = c.video != null,
         )
         is TdApi.MessageVideo -> {
             val video = c.video ?: return null

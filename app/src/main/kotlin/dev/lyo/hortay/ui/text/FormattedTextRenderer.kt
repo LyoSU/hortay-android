@@ -51,8 +51,8 @@ import kotlinx.collections.immutable.toImmutableList
  *
  * To match Telegram's single-cover UX we group spoiler entities by transitive
  * adjacency (gap ≤ 1 source character — covers the codepoint-of-CustomEmoji case) at
- * build time. Each group renders as ONE shimmer over the union of its dst ranges with
- * a single shared seed, and reveals atomically with one [Animatable] for the whole
+ * build time. Each group renders as ONE particle cover over the union of its dst ranges with
+ * a single shared seed, and reveals atomically with one ripple for the whole
  * group. Genuinely distant spoilers — different paragraphs, different hidden phrases
  * — fall into separate groups and still reveal independently.
  */
@@ -62,7 +62,11 @@ data class RenderableText(
     val inlineContent: Map<String, InlineTextContent>,
     val linkRanges: List<LinkRange> = emptyList(),
     val spoilerGroups: List<SpoilerGroupInfo> = emptyList(),
-    val spoilerDispersion: (Int) -> Float? = { _ -> null },
+    /**
+     * Draw-phase lookup of a spoiler group's reveal: [SPOILER_COVERED] while covered, the reveal
+     * start (`SpoilerParticles.nowMs`) while its ripple may still run, [SPOILER_SETTLED] after.
+     */
+    val spoilerRevealStart: (Int) -> Long = { _ -> SPOILER_SETTLED },
     /**
      * Paragraph-level block elements (block quotes, code blocks) in dst coordinates.
      * Drawn as a tinted box + accent bar BEHIND the single [Text] by [LinkAwareText]
@@ -81,7 +85,7 @@ data class RenderableText(
     /**
      * Identity that downstream composables should pass to `remember(...)` instead of
      * the full [RenderableText] or [text]. Stable across:
-     *  * `spoilerDispersion` lambda churn (data-class equality of the wrapping
+     *  * `spoilerRevealStart` lambda churn (data-class equality of the wrapping
      *    RenderableText fails every recomposition because of the lambda).
      *  * Spoiler reveal flips (the underlying AnnotatedString changes colour spans
      *    when a spoiler is revealed; keying on `text` would reset expand-state).
@@ -121,7 +125,7 @@ data class BlockDecoration(
  * One logical spoiler cover (group of adjacent TDLib Spoiler entities that visually
  * read as a single block). [seed] is shared across all ranges so the dot pattern is
  * continuous across entity boundaries. [groupId] is the index into
- * [RenderableText.spoilerGroups] — passed to `spoilerDispersion`. [ranges] are
+ * [RenderableText.spoilerGroups] — passed to `spoilerRevealStart`. [ranges] are
  * dst-coordinate IntRanges (start..end-1) to be unioned into a Path for clipping.
  */
 @Immutable
@@ -137,8 +141,8 @@ data class SpoilerGroupInfo(
  *
  * Spoiler grouping (see [RenderableText] doc): we project spoiler entities into source
  * ranges, then run a union-find / connected-components pass over transitive adjacency
- * (gap ≤ 1 char). Each group gets one shared [Animatable]; tapping any glyph or
- * inline-emoji stub inside a group triggers dispersion for the whole group at once.
+ * (gap ≤ 1 char). Each group gets one shared reveal; tapping any glyph or
+ * inline-emoji stub inside a group starts one reveal ripple for the whole group at once.
  */
 @Composable
 fun rememberRenderableText(formatted: FormattedText): RenderableText {
@@ -170,7 +174,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     // same hidden phrase.
     val spoilerStateKey = remember(formatted) { spoilerContentKey(formatted) }
 
-    // Reveal state (revealed set + dispersion animations) is shared with the rich-message
+    // Reveal state (revealed set + ripple start times) is shared with the rich-message
     // renderer in `ui.rich` via [rememberSpoilerReveal]; this path adds only the source-
     // position → group hit-test on top.
     val spoiler = rememberSpoilerReveal(spoilerStateKey)
@@ -272,7 +276,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         inlineContent = inlineContent,
         linkRanges = built.linkRanges,
         spoilerGroups = built.spoilerGroups,
-        spoilerDispersion = spoiler.dispersion,
+        spoilerRevealStart = spoiler.revealStart,
         blockDecorations = built.blockDecorations,
         pressableRanges = built.pressableRanges,
         contentKey = formatted.text,
@@ -418,7 +422,7 @@ private fun buildFromFormatted(
      *  inline mention with a resolved TDLib user id). `@handle` mentions still route
      *  through the URL pipeline so the link resolver can fall back to t.me/<handle>. */
     userMentionTap: (Long) -> Unit,
-    revealedGroups: Set<Int>,
+    revealedGroups: RevealedSpoilers,
     revealAtSrcPos: (Int) -> Unit,
 ): BuiltAnnotated {
     val linkRanges = mutableListOf<LinkRange>()

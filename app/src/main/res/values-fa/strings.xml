@@ -983,4 +983,14 @@
     <string name="archive_no_matches_title">چیزی پیدا نشد</string>
     <string name="archive_no_matches_body">فیلتر یا جستجوی دیگری را امتحان کن</string>
     <string name="archive_remove_action">حذف از آرشیو</string>
+    <string name="op_press_button">زدن دکمه</string>
+    <string name="inline_button_pending">در انتظار ربات</string>
+    <string name="content_location">موقعیت مکانی</string>
+    <string name="content_live_location">موقعیت زنده</string>
+    <string name="content_live_location_ended">موقعیت زنده پایان یافت</string>
+    <string name="poll_option_your_vote">رأی شما</string>
+    <string name="poll_option_correct">پاسخ درست</string>
+    <string name="poll_option_wrong">پاسخ نادرست</string>
+    <string name="content_unsupported_message">این پیام هنوز در Hortay پشتیبانی نمی‌شود</string>
+    <string name="media_desc_live_photo">عکس زنده</string>
 </resources>

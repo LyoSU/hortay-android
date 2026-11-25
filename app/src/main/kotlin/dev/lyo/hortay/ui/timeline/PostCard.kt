@@ -49,6 +49,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -622,6 +623,22 @@ fun PostCard(
                 post.factCheck?.let { note ->
                     Spacer(Modifier.height(10.dp))
                     FactCheckPlate(note)
+                }
+                // The bot's inline keyboard, under the content (rich posts included) and above
+                // the action row, as in Telegram. A tombstone's buttons would act on a message
+                // that no longer exists, so it has none. The open-in-Telegram fallback reads
+                // the latest post through [rememberUpdatedState] so the lambda stays stable
+                // across interaction-info updates and the keyboard skips recomposition.
+                val keyboard = post.inlineKeyboard?.takeIf { !post.isDeleted }
+                if (keyboard != null) {
+                    val latestPost by rememberUpdatedState(post)
+                    val openKeyboardSource = remember(interactions) { { interactions.onOpenClick(latestPost) } }
+                    Spacer(Modifier.height(10.dp))
+                    InlineKeyboardBlock(
+                        keyboard = keyboard,
+                        chatId = post.chatId,
+                        onOpenInSource = openKeyboardSource,
+                    )
                 }
                 val seriesHidden = annotation?.seriesHidden ?: 0
                 if (seriesHidden > 0) {

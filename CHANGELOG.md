@@ -10,6 +10,9 @@
 - A channel's info card has a Media button that opens a grid of the channel's photos and videos — tap one to view it fullscreen.
 - A post's ⋯ menu and a public channel's info card can copy a link to the post or the channel.
 - Fullscreen videos have a speed button: 0.5×, 1×, 1.5× or 2×.
+- Buttons that channels and bots attach under a post now show up and work — links open, answers from the bot appear, and promo codes copy in one tap.
+- A location post shows a map with a pin, and a live location says whether it is still being shared.
+- Audio tracks show their album cover, live photos carry a LIVE badge, and a payment request shows its price.
 - Tapping a quoted fragment in a post or a comment jumps to the original and briefly highlights the quoted words.
 - Long posts that Telegram can summarize offer “Summarize” in their ⋯ menu, with the summary in your app language.
 - The Channels tab has quick filters — Unread, Today and Hidden — with a count on each.
@@ -73,6 +76,10 @@
 - A channel's info card shows the channel's photo, makes links in the description tappable and puts Media, notifications and Copy link in a row of buttons.
 - Fullscreen video has a slim seek bar, the quality and speed buttons sit at the bottom next to the sound button, and speed is picked from a small strip instead of a half-screen sheet.
 - The "new posts" button shows "+N", so it no longer looks the same as the unread button next to it.
+- Polls are lighter: each option is one full-width row, results fill the row with the percentage at its end, and your vote and quiz answers are marked with an icon.
+- Voice messages have a clearer waveform that fills as it plays, and voice, audio and file cards share one look with the rest of a post.
+- A file shows its type — PDF, XLSX, ZIP — on its badge, and a long file name keeps its ending.
+- Spoilers in text and on media are a drifting cloud of particles that clears in a wave from where you tap, and one tap reveals every spoiler in the text.
 - The pinned-message bar in a channel has its own background and a segmented marker showing which pin is on screen.
 - The Channels tab has softer filter buttons and clearer rows.
 - Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.
@@ -208,6 +215,11 @@
 - Channel suggestions open right away when the suggestions server is unreachable.
 - With both Hortay and Hortay beta installed, an unsupported Telegram link no longer bounces between the two apps.
 - Deleting some files from a document or audio album no longer removes the whole post from the feed.
+- A post with several files or several audio tracks shows all of them with its caption, instead of only the first one.
+- Live locations no longer go missing from the feed, and an audio track keeps its caption.
+- A quiz with several correct answers lets you pick several, a closed poll no longer looks tappable, and an audio track at 0:00 no longer looks finished.
+- A contact post shows a person icon, coordinates read as two numbers in every language, and tapping a location opens your maps app.
+- A message type Hortay can't show yet says so in your language instead of printing an internal name.
 - Small controls in posts, media and the edit history are easier to tap, and screen readers announce them as buttons, tabs or switches.
 - Sign-in code cells and "Read full post"-style action rows no longer clip their text at the largest font sizes.
 - At large font sizes the bottom navigation labels are no longer cut off, the floating new-posts button no longer grows over the post, and Channels and Settings rows wrap instead of being cut off.

@@ -1028,4 +1028,15 @@
     <string name="archive_remove_action">Remove from archive</string>
     <string name="archive_open_summary" translatable="false">%1$s · %2$s</string>
     <string name="archive_filter_count" translatable="false">%1$s · %2$d</string>
+    <string name="op_press_button">press the button</string>
+    <string name="inline_button_pending">Waiting for the bot</string>
+    <string name="content_location">Location</string>
+    <string name="content_live_location">Live location</string>
+    <string name="content_live_location_ended">Live location ended</string>
+    <string name="poll_option_your_vote">Your vote</string>
+    <string name="poll_option_correct">Correct answer</string>
+    <string name="poll_option_wrong">Wrong answer</string>
+    <string name="content_unsupported_message">This message isn\'t supported in Hortay yet</string>
+    <string name="media_desc_live_photo">Live photo</string>
+    <string name="live_photo_badge" translatable="false">LIVE</string>
 </resources>

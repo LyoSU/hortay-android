@@ -138,6 +138,7 @@ class MessageMapper(
             factCheck = message.factCheck?.text?.text?.takeIf { it.isNotBlank() },
             canSummarize = !message.summaryLanguageCode.isNullOrEmpty(),
             protectedContent = !message.canBeSaved,
+            inlineKeyboard = InlineKeyboardMapper.map(message.replyMarkup, message.id),
         )
     }
 
@@ -184,6 +185,7 @@ class MessageMapper(
             isSenderPremium = sender.isPremium,
             senderEmojiStatusId = sender.emojiStatusId,
             protectedContent = !message.canBeSaved,
+            inlineKeyboard = InlineKeyboardMapper.map(message.replyMarkup, message.id),
         )
     }
 

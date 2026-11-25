@@ -115,7 +115,8 @@ fun PostBody(
                     is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
                     is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
                     is PostContent.Document -> DocumentBlock(content, captionLimit, translation, onOpenInSource)
-                    is PostContent.Audio -> AudioBlock(content, onOpenInSource)
+                    is PostContent.Audio -> AudioWithCaption(content, captionLimit, translation, onOpenInSource)
+                    is PostContent.FileAlbum -> FileAlbumBlock(content, captionLimit, translation, onOpenInSource)
                     is PostContent.VoiceNote -> VoiceNoteBlock(content, onOpenInSource)
                     is PostContent.VideoNote -> VideoNoteBlock(content, onOpenInSource)
                     is PostContent.Sticker -> StickerBlock(content)
@@ -150,7 +151,7 @@ fun PostBody(
                                 clampStyle = MaterialTheme.typography.bodyLarge,
                             )
                         }
-                    is PostContent.Unsupported -> UnsupportedBlock(content)
+                    is PostContent.Unsupported -> UnsupportedBlock(content, onOpenInSource)
                 }
             }
         }

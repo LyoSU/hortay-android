@@ -989,4 +989,14 @@
     <string name="archive_no_matches_title">Nichts gefunden</string>
     <string name="archive_no_matches_body">Versuche einen anderen Filter oder Suchbegriff</string>
     <string name="archive_remove_action">Aus dem Archiv entfernen</string>
+    <string name="op_press_button">die Schaltfläche drücken</string>
+    <string name="inline_button_pending">Warte auf den Bot</string>
+    <string name="content_location">Standort</string>
+    <string name="content_live_location">Live-Standort</string>
+    <string name="content_live_location_ended">Live-Standort beendet</string>
+    <string name="poll_option_your_vote">Deine Stimme</string>
+    <string name="poll_option_correct">Richtige Antwort</string>
+    <string name="poll_option_wrong">Falsche Antwort</string>
+    <string name="content_unsupported_message">Diese Nachricht wird in Hortay noch nicht unterstützt</string>
+    <string name="media_desc_live_photo">Live-Foto</string>
 </resources>

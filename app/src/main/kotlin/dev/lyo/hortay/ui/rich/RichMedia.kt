@@ -45,7 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.InlineAutoplay
@@ -63,6 +62,9 @@ import dev.lyo.hortay.ui.util.rememberReducedMotion
 import dev.lyo.hortay.ui.timeline.IconBadge
 import dev.lyo.hortay.ui.timeline.InlineAudioPlayerRow
 import dev.lyo.hortay.ui.timeline.NonPlayableFileRow
+import dev.lyo.hortay.ui.timeline.formatCoordinates
+import dev.lyo.hortay.ui.timeline.ltrIsolate
+import dev.lyo.hortay.ui.timeline.openCoordinatesInMaps
 import dev.lyo.hortay.ui.timeline.SingleMedia
 import dev.lyo.hortay.ui.timeline.mediaAspectRatio
 import kotlin.math.roundToInt
@@ -364,7 +366,7 @@ internal fun RichMapPreview(block: RichBlock.MapPreview) {
                 .clickable(
                     role = Role.Button,
                     onClickLabel = openLabel,
-                    onClick = { openInMaps(context, block.latitude, block.longitude) },
+                    onClick = { openCoordinatesInMaps(context, block.latitude, block.longitude, label = null) },
                 )
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -373,7 +375,7 @@ internal fun RichMapPreview(block: RichBlock.MapPreview) {
             IconBadge("place")
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "%.5f, %.5f".format(block.latitude, block.longitude),
+                    text = ltrIsolate(formatCoordinates(block.latitude, block.longitude)),
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Text(
@@ -384,22 +386,6 @@ internal fun RichMapPreview(block: RichBlock.MapPreview) {
             }
             Symbol(name = "open_in_new", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
         }
-    }
-}
-
-/**
- * Open a coordinate in the system maps app. Uses a generic `geo:lat,lng?q=lat,lng` URI (the
- * `?q` pin drops a marker) through an Intent chooser — no Google-specific host, so any
- * installed maps app can handle it, and nothing is fetched by us (INTERNET rules unaffected).
- */
-private fun openInMaps(context: android.content.Context, latitude: Double, longitude: Double) {
-    val uri = "geo:$latitude,$longitude?q=$latitude,$longitude".toUri()
-    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
-    runCatching {
-        context.startActivity(
-            android.content.Intent.createChooser(intent, null)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
     }
 }
 

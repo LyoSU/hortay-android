@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -26,7 +25,6 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
@@ -46,8 +44,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -69,6 +65,7 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.MinithumbImage
+import dev.lyo.hortay.ui.media.SpoilerParticleField
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.rememberDeferredLoading
 import dev.lyo.hortay.ui.media.rememberViewerSourceAnchor
@@ -329,11 +326,11 @@ private fun MediaCell(item: ChannelMediaItem, onClick: () -> Unit) {
 }
 
 /**
- * Spoiler / self-destructing media: only the blurred inline preview, never a download —
- * the content stays hidden until the user taps into the viewer.
+ * Spoiler / self-destructing media: only the blurred inline preview under Telegram's particle
+ * field, never a download — the content stays hidden until the user taps into the viewer.
  */
 @Composable
-private fun BoxScope.HiddenThumb(item: ChannelMediaItem) {
+private fun HiddenThumb(item: ChannelMediaItem) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh))
     item.thumb.minithumbBytes?.let { bytes ->
         MinithumbImage(
@@ -342,16 +339,7 @@ private fun BoxScope.HiddenThumb(item: ChannelMediaItem) {
             modifier = Modifier.fillMaxSize().blur(HIDDEN_BLUR),
         )
     }
-    Box(
-        modifier = Modifier
-            .align(Alignment.Center)
-            .size(32.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.4f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Symbol(name = "visibility_off", tint = Color.White, size = 18.dp)
-    }
+    SpoilerParticleField(seed = item.messageId.toInt())
 }
 
 @Composable

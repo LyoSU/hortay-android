@@ -1047,4 +1047,14 @@
     <string name="archive_no_matches_title">Нічого не знайдено</string>
     <string name="archive_no_matches_body">Спробуй інший фільтр або запит</string>
     <string name="archive_remove_action">Прибрати з архіву</string>
+    <string name="op_press_button">натиснути кнопку</string>
+    <string name="inline_button_pending">Чекаємо на бота</string>
+    <string name="content_location">Геопозиція</string>
+    <string name="content_live_location">Трансляція геопозиції</string>
+    <string name="content_live_location_ended">Трансляцію геопозиції завершено</string>
+    <string name="poll_option_your_vote">Твій голос</string>
+    <string name="poll_option_correct">Правильна відповідь</string>
+    <string name="poll_option_wrong">Неправильна відповідь</string>
+    <string name="content_unsupported_message">Hortay поки не вміє показувати таке повідомлення</string>
+    <string name="media_desc_live_photo">Живе фото</string>
 </resources>

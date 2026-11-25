@@ -1,5 +1,7 @@
 package dev.lyo.hortay.data
 
+import kotlinx.collections.immutable.toImmutableList
+
 /**
  * Feed-shaping rules applied right after raw → [TimelinePost] mapping.
  *
@@ -120,16 +122,37 @@ object PostFilterStrategy {
             reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
             albumMessageIds = sorted.map { it.id },
             isPinned = members.any { it.isPinned },
+            // The keyboard rides the member that carries it; its id travels inside.
+            inlineKeyboard = sorted.firstNotNullOfOrNull { it.inlineKeyboard },
         )
-        // Document / audio media groups: none of their members map to an
-        // AlbumItem, so a PhotoAlbum card would render blank. Keep the anchor's
-        // own renderable content instead; albumMessageIds above still carries
-        // every member, so read-ack, fold dedup and the degraded-album checks
-        // stay album-aware.
-        if (items.isEmpty()) return merged
+        if (items.isEmpty()) return mergeFileMembers(sorted, merged)
         return merged.copy(
             content = PostContent.PhotoAlbum(items = items, caption = caption, captionAbove = captionAbove),
         )
+    }
+
+    /**
+     * Document / audio media groups: no member maps to an [AlbumItem], so they become a
+     * [PostContent.FileAlbum] of every member in id (posting) order, each keeping its own
+     * caption. Before, the card kept only the anchor's content — the first file, without
+     * the caption a bot puts on the LAST member. A member already merged into a FileAlbum
+     * (a re-merge of a merged card with fresh siblings) contributes its items; duplicates
+     * collapse by message id. Anything else (a lone member, content that is neither a file
+     * nor a file album) keeps the anchor's own content; [merged] still carries every member
+     * id, so read-ack, fold dedup and the degraded-album checks stay album-aware.
+     */
+    private fun mergeFileMembers(sorted: List<TimelinePost>, merged: TimelinePost): TimelinePost {
+        val files = ArrayList<FileAlbumItem>(sorted.size)
+        for (post in sorted) {
+            when (val c = post.content) {
+                is PostContent.FileMember -> files += FileAlbumItem(post.id, c)
+                is PostContent.FileAlbum -> files += c.items
+                else -> return merged
+            }
+        }
+        val ordered = files.distinctBy { it.messageId }.sortedBy { it.messageId }
+        if (ordered.size < 2) return merged
+        return merged.copy(content = PostContent.FileAlbum(ordered.toImmutableList()))
     }
 
     private fun PostContent.toFormattedCaption(): FormattedText = when (this) {

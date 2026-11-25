@@ -4,28 +4,19 @@ import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -36,7 +27,18 @@ import dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay
 import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.theme.mediaFrame
+import dev.lyo.hortay.ui.theme.tabularFigures
 
+/**
+ * Document card. The leading [FileTypeBadge] carries the file's extension ("PDF", "XLSX")
+ * tinted by its family, so the type reads before the name. The name ellipsizes in the
+ * MIDDLE — "budget_final_v3…approved.xlsx" keeps both the distinguishing tail and the
+ * extension, where an end ellipsis cut exactly the part that tells two versions apart.
+ *
+ * The whole row is the one action: it opens the post in Telegram ([onOpenInSource]). Hortay
+ * has no in-app document download / open path, so there is no download or progress state to
+ * show; the badge is the affordance and TalkBack hears "Open in Telegram" as the click label.
+ */
 @Composable
 internal fun DocumentBlock(
     content: PostContent.Document,
@@ -44,11 +46,19 @@ internal fun DocumentBlock(
     translation: FormattedText?,
     onOpenInSource: () -> Unit,
 ) {
-    NonPlayableFileRow(
-        symbol = "description",
+    val sizeLabel = if (content.sizeBytes > 0) {
+        formatByteSize(content.sizeBytes, stringArrayResource(R.array.size_units))
+    } else {
+        null
+    }
+    ContentRow(
+        leading = { FileTypeBadge(content.fileName, content.mimeType) },
         primary = content.fileName.ifBlank { stringResource(R.string.document_unnamed) },
-        secondary = if (content.sizeBytes > 0) formatByteSize(content.sizeBytes, stringArrayResource(R.array.size_units)) else "—",
+        secondary = sizeLabel,
         onClick = onOpenInSource,
+        onClickLabel = stringResource(R.string.content_open_in_telegram),
+        primaryOverflow = TextOverflow.MiddleEllipsis,
+        secondaryStyle = MaterialTheme.typography.bodySmall.tabularFigures(),
     )
     // Documents never carry the caption-above flag (Telegram only exposes that toggle for
     // photo/video/animation/paid-media), so we always render below.
@@ -65,6 +75,7 @@ internal fun AudioBlock(content: PostContent.Audio, onOpenInSource: () -> Unit) 
         waveform = null,
         isVoice = false,
         onOpenInSource = onOpenInSource,
+        cover = content.cover,
     )
 }
 
@@ -155,25 +166,16 @@ private fun VideoNoteStaticBubble(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(if (hasPlayback) 56.dp else 48.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.55f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Symbol(
-                name = if (hasPlayback) "play_arrow" else "video_camera_front",
-                tint = Color.White,
-                size = if (hasPlayback) 32.dp else 26.dp,
-                filled = hasPlayback,
-                // N4 — a play triangle is visually heavier on its left edge, so
-                // mechanically centring it reads as sitting slightly left. Nudge the
-                // triangle ~1.5 dp right inside its disc for true optical centring.
-                // The camera glyph (no-playback fallback) is symmetric, so it stays put.
-                modifier = if (hasPlayback) Modifier.offset(x = 1.5.dp) else Modifier,
+        if (hasPlayback) {
+            PlayDisc(
+                glyph = PlayGlyph.Play,
+                overMedia = true,
+                modifier = Modifier.align(Alignment.Center),
             )
+        } else {
+            // No playback file (thumbnail-only hydration): the camera glyph on the same
+            // tonal disc says "video message" without promising inline playback.
+            GlyphDisc(modifier = Modifier.align(Alignment.Center))
         }
         if (content.durationSec > 0) {
             DurationChip(
@@ -187,18 +189,19 @@ private fun VideoNoteStaticBubble(
 }
 
 /**
- * Shared layout for non-playable file cards (document, audio, voice note).
+ * Shared layout for non-playable cards (audio / voice without a resolvable file, locked paid
+ * media, invoice / giveaway / game "open in Telegram" cards, rich-message fallbacks).
  *
- * Hortay doesn't host an in-app download / playback path for these kinds — the
- * file lives on Telegram's CDN and decoding it here would replicate Telegram's
- * own player. Instead, the whole row is a `clickable` affordance that routes
- * the tap to [PostInteractions.onOpenClick], which deep-links into the official
- * Telegram client. The visual is identical to what was there before; only the
- * action wiring is new.
+ * Hortay doesn't host an in-app download / playback path for these kinds, so the whole row
+ * is the affordance and routes the tap to [PostInteractions.onOpenClick], which deep-links
+ * into the official Telegram client. A former trailing "open_in_new" square read as the
+ * row's primary action and competed with the badge; it was dropped in favour of the
+ * row-wide ripple plus an "Open in Telegram" click label for TalkBack.
  *
- * [onClick] is nullable: `null` renders a purely informational card with no
- * ripple and no "open in Telegram" chevron — used by the rich-message audio /
- * voice-note blocks, which have no per-block source-post link to route a tap to.
+ * [onClick] is nullable: `null` renders a purely informational card with no ripple — used
+ * by the rich-message audio / voice-note blocks, which have no per-block source-post link to
+ * route a tap to. [shape] is kept for source compatibility; every caller uses the default
+ * [ContentBlockShape].
  */
 @Composable
 internal fun NonPlayableFileRow(
@@ -206,59 +209,37 @@ internal fun NonPlayableFileRow(
     primary: String,
     secondary: String,
     onClick: (() -> Unit)?,
-    shape: Shape = MaterialTheme.shapes.medium,
+    shape: Shape = ContentBlockShape,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBadge(symbol)
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = primary,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (secondary.isNotBlank()) {
-                Text(
-                    text = secondary,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (onClick != null) {
-            Spacer(Modifier.width(8.dp))
-            Symbol(
-                name = "open_in_new",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 18.dp,
-            )
-        }
-    }
+    ContentRow(
+        leading = { GlyphBadge(symbol) },
+        primary = primary,
+        secondary = secondary,
+        onClick = onClick,
+        onClickLabel = if (onClick != null) stringResource(R.string.content_open_in_telegram) else null,
+        shape = shape,
+    )
+}
+
+/** Tonal glyph badge; kept as the public name the rich-message blocks import. */
+@Composable
+internal fun IconBadge(symbol: String) {
+    GlyphBadge(symbol)
 }
 
 @Composable
-internal fun IconBadge(symbol: String) {
+private fun GlyphDisc(modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(MaterialTheme.shapes.small)
-            .background(MaterialTheme.colorScheme.primaryContainer),
+        modifier = modifier
+            .size(PlayDiscSize)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f)),
         contentAlignment = Alignment.Center,
     ) {
         Symbol(
-            name = symbol,
+            name = "video_camera_front",
             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            size = 22.dp,
+            size = 24.dp,
         )
     }
 }

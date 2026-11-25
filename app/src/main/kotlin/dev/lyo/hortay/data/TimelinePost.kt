@@ -158,6 +158,14 @@ data class TimelinePost(
      * Always false in guest mode (t.me/s/ exposes no such flag).
      */
     val protectedContent: Boolean = false,
+    /**
+     * The bot's inline keyboard under this post (`Message.reply_markup`), drawn between the
+     * content and the action row. For an album it is whichever member carries it (Bot API
+     * media groups take none at send time, but a later edit can add one). Kept current by
+     * `updateMessageEdited`, which carries the new markup. Null when there is none, and in
+     * guest mode.
+     */
+    val inlineKeyboard: InlineKeyboard? = null,
 )
 
 /**

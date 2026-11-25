@@ -1097,4 +1097,14 @@
     <string name="archive_no_matches_title">لم يُعثر على شيء</string>
     <string name="archive_no_matches_body">جرّب عامل تصفية أو بحثاً آخر</string>
     <string name="archive_remove_action">إزالة من الأرشيف</string>
+    <string name="op_press_button">الضغط على الزر</string>
+    <string name="inline_button_pending">بانتظار البوت</string>
+    <string name="content_location">الموقع</string>
+    <string name="content_live_location">الموقع المباشر</string>
+    <string name="content_live_location_ended">انتهت مشاركة الموقع المباشر</string>
+    <string name="poll_option_your_vote">صوتك</string>
+    <string name="poll_option_correct">إجابة صحيحة</string>
+    <string name="poll_option_wrong">إجابة خاطئة</string>
+    <string name="content_unsupported_message">هذه الرسالة غير مدعومة في Hortay بعد</string>
+    <string name="media_desc_live_photo">صورة حية</string>
 </resources>

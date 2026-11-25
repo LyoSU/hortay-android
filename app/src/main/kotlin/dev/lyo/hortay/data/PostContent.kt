@@ -3,6 +3,8 @@ package dev.lyo.hortay.data
 import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.rich.RichDocument
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableSet
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.persistentListOf
 
 /**
@@ -72,6 +74,16 @@ sealed interface PostContent {
         override val captionPlain: String get() = caption.text
     }
 
+    /**
+     * Content a file media group can carry: Telegram groups documents with documents and
+     * audio tracks with audio tracks (never with photos or videos), each member keeping its
+     * own caption. Lets [FileAlbum] hold either kind without an untyped [PostContent].
+     */
+    @Immutable
+    sealed interface FileMember : PostContent {
+        val caption: FormattedText
+    }
+
     @Immutable
     data class Document(
         val fileId: Int?,
@@ -79,8 +91,8 @@ sealed interface PostContent {
         val mimeType: String,
         val sizeBytes: Long,
         val thumb: TdMedia?,
-        val caption: FormattedText,
-    ) : PostContent {
+        override val caption: FormattedText,
+    ) : FileMember {
         // Prefer the user-authored caption, fall back to filename so the
         // post-action sheet's Copy / Share excerpt is never empty for files
         // whose poster didn't write a caption.
@@ -94,16 +106,42 @@ sealed interface PostContent {
         val title: String,
         val performer: String,
         val durationSec: Int,
-    ) : PostContent {
-        // Surface track title (and performer when present) to the action sheet
-        // so Copy / Share have something to copy. The card already renders the
-        // same fields above the duration line, so the exposed text matches
-        // what's on screen.
+        override val caption: FormattedText = FormattedText.Empty,
+        /**
+         * Album art (`audio.album_cover_thumbnail`, with `album_cover_minithumbnail` as the
+         * blurred placeholder), painted under the play glyph. A thumbnail only — the track
+         * itself is never prefetched. Null when the file carries none.
+         */
+        val cover: TdMedia? = null,
+    ) : FileMember {
+        // The poster's caption when there is one; otherwise the track title (and
+        // performer when present), so Copy / Share always have something to copy.
+        // The card renders the same fields above the duration line, so the exposed
+        // text matches what's on screen.
         override val captionPlain: String
-            get() = listOfNotNull(
+            get() = caption.text.takeUnless { it.isBlank() } ?: listOfNotNull(
                 title.takeUnless { it.isBlank() },
                 performer.takeUnless { it.isBlank() },
             ).joinToString(" — ")
+    }
+
+    /**
+     * A media group of documents or of audio tracks, merged into one post by
+     * `PostFilterStrategy.mergeAlbums`. Unlike a [PhotoAlbum] there is no shared caption:
+     * every member keeps its own (a bot usually captions only the last one), and the
+     * card renders each member followed by its caption, in posting order. [items] is
+     * sorted by message id and carries each member's id, so a partial delete trims the
+     * card by id instead of by index.
+     */
+    @Immutable
+    data class FileAlbum(
+        val items: ImmutableList<FileAlbumItem>,
+    ) : PostContent {
+        // Captions of every member that has one; a group with none falls back to the
+        // members' own labels (file names / track titles) so Copy / Share are never blank.
+        override val captionPlain: String
+            get() = items.map { it.file.caption.text }.filter { it.isNotBlank() }.joinToString("\n\n")
+                .ifBlank { items.joinToString("\n") { it.file.captionPlain } }
     }
 
     @Immutable
@@ -207,6 +245,16 @@ sealed interface PostContent {
         val longitude: Double,
         val title: String?,
         val address: String?,
+        /** Sent as a live location (`messageLiveLocation`), ongoing or already stopped. */
+        val isLive: Boolean = false,
+        /**
+         * Wall-clock time (epoch ms) until which the live location can still be updated:
+         * mapping time + TDLib's `expires_in`; 0 once sharing has stopped and for a plain
+         * point. TDLib sends `updateMessageContent` when the sender stops sharing early, but
+         * NOT when `expires_in` merely runs out (td_api.tl), so the UI compares this against
+         * the clock instead of trusting a flag captured at mapping time.
+         */
+        val liveUntilMs: Long = 0L,
     ) : PostContent
 
     @Immutable
@@ -314,11 +362,19 @@ sealed interface PostContent {
         val iconSymbol: String,
         val title: String,
         val subtitle: String = "",
+        /**
+         * Price of an invoice post (`messageInvoice`); null for every other kind. With it the
+         * card leads with [subtitle] (the product title) and shows the formatted price.
+         */
+        val price: InvoicePrice? = null,
+        /** Invoice product description, plain text; empty when absent or not an invoice. */
+        val description: String = "",
     ) : PostContent {
         override val captionPlain: String
             get() = listOfNotNull(
                 title.takeUnless { it.isBlank() },
                 subtitle.takeUnless { it.isBlank() },
+                description.takeUnless { it.isBlank() },
             ).joinToString(" — ")
     }
 
@@ -350,6 +406,24 @@ sealed interface PostContent {
         val description: String,
     ) : PostContent
 }
+
+/**
+ * Price of an invoice: ISO 4217 [currency] (or `XTR` for Telegram Stars) and [totalAmount]
+ * in the currency's smallest units (cents; whole stars for `XTR`). Formatted for display by
+ * `formatInvoicePrice`.
+ */
+@Immutable
+data class InvoicePrice(
+    val currency: String,
+    val totalAmount: Long,
+)
+
+/** One member of a [PostContent.FileAlbum]: the member's message id and its file. */
+@Immutable
+data class FileAlbumItem(
+    val messageId: Long,
+    val file: PostContent.FileMember,
+)
 
 /** Single line in a Telegram checklist. */
 @Immutable
@@ -423,6 +497,11 @@ sealed interface AlbumItem {
          * on full-screen open.
          */
         val fullscreen: TdMedia = media,
+        /**
+         * A live photo (TDLib `messagePhoto.video` is set): the still carries a short motion
+         * clip. Hortay shows the still with a "LIVE" mark and does not play the clip.
+         */
+        val isLive: Boolean = false,
     ) : AlbumItem
 
     @Immutable
@@ -703,13 +782,19 @@ sealed interface PollKind {
     @Immutable
     data class Quiz(
         /** 0-based indices of the correct option(s). Empty until the user has answered. */
-        val correctOptionIds: ImmutableList<Int>,
+        val correctOptionIds: ImmutableSet<Int>,
         /** Per-poll explanation shown after the user answers (or taps the lamp). Empty when absent. */
         val explanation: FormattedText,
+        /**
+         * The quiz takes several answers (`poll.allows_multiple_answers`, which TDLib applies
+         * to quizzes as well as regular polls): checkboxes and a "Vote" commit instead of
+         * radios, and every correct option marked once answered.
+         */
+        val allowsMultipleAnswers: Boolean = false,
     ) : PollKind {
         companion object {
             val Unanswered: Quiz = Quiz(
-                correctOptionIds = persistentListOf(),
+                correctOptionIds = persistentSetOf(),
                 explanation = FormattedText("", emptyList()),
             )
         }

@@ -958,4 +958,14 @@
     <string name="archive_no_matches_title">Tidak ada hasil</string>
     <string name="archive_no_matches_body">Coba filter atau pencarian lain</string>
     <string name="archive_remove_action">Hapus dari arsip</string>
+    <string name="op_press_button">menekan tombol</string>
+    <string name="inline_button_pending">Menunggu bot</string>
+    <string name="content_location">Lokasi</string>
+    <string name="content_live_location">Lokasi langsung</string>
+    <string name="content_live_location_ended">Lokasi langsung berakhir</string>
+    <string name="poll_option_your_vote">Pilihan Anda</string>
+    <string name="poll_option_correct">Jawaban benar</string>
+    <string name="poll_option_wrong">Jawaban salah</string>
+    <string name="content_unsupported_message">Pesan ini belum didukung di Hortay</string>
+    <string name="media_desc_live_photo">Foto Live</string>
 </resources>

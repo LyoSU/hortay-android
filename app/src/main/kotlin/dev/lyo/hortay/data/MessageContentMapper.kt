@@ -6,6 +6,7 @@ import dev.lyo.hortay.data.rich.toRichDocument
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toImmutableSet
 import kotlinx.collections.immutable.toPersistentList
 import org.drinkless.tdlib.TdApi
 
@@ -30,6 +31,7 @@ internal object MessageContentMapper {
                     fullscreen = content.photo.toMedia(PHOTO_TARGET_FULLSCREEN_PX),
                     hasSpoiler = content.hasSpoiler,
                     isSecret = content.isSecret,
+                    isLive = content.video != null,
                 ),
             ),
             caption = mapFormattedText(content.caption),
@@ -76,6 +78,8 @@ internal object MessageContentMapper {
             title = content.audio.title.orEmpty().ifBlank { content.audio.fileName.orEmpty() },
             performer = content.audio.performer.orEmpty(),
             durationSec = content.audio.duration,
+            caption = mapFormattedText(content.caption),
+            cover = content.audio.albumCoverMedia(),
         )
         is TdApi.MessageVoiceNote -> PostContent.VoiceNote(
             fileId = content.voiceNote.voice?.id,
@@ -118,6 +122,17 @@ internal object MessageContentMapper {
             longitude = content.location.longitude,
             title = null,
             address = null,
+        )
+        // A live location is its own content type at this TDLib pin (not a flag on
+        // messageLocation). Unmapped, it fell into Unsupported and the feed filter dropped
+        // the post. `expires_in` is the time left to update it; 0 = sharing has stopped.
+        is TdApi.MessageLiveLocation -> PostContent.Location(
+            latitude = content.location.location.latitude,
+            longitude = content.location.location.longitude,
+            title = null,
+            address = null,
+            isLive = true,
+            liveUntilMs = liveUntilMs(content.expiresIn, System.currentTimeMillis()),
         )
         is TdApi.MessageVenue -> PostContent.Location(
             latitude = content.venue.location.latitude,
@@ -215,6 +230,9 @@ internal object MessageContentMapper {
             iconSymbol = "description",
             title = res.getString(R.string.content_invoice),
             subtitle = content.productInfo?.title.orEmpty(),
+            price = content.currency?.takeIf { it.isNotBlank() }
+                ?.let { InvoicePrice(currency = it, totalAmount = content.totalAmount) },
+            description = content.productInfo?.description?.text.orEmpty().trim(),
         )
         is TdApi.MessageGiveaway -> PostContent.OpenInSource(
             iconSymbol = "card_giftcard",
@@ -250,8 +268,16 @@ internal object MessageContentMapper {
             val document = content.message.toRichDocument()
             PostContent.RichMessage(document, RichPlainText.of(document))
         }
-        else -> PostContent.Unsupported(content::class.java.simpleName)
+        // A localized placeholder, not the TDLib class name: comment threads render it.
+        else -> PostContent.Unsupported(res.getString(R.string.content_unsupported_message))
     }
+
+    /**
+     * Epoch ms until which a live location stays live: [nowMs] + [expiresInSec], or 0 when
+     * sharing has already stopped. Saturates instead of overflowing for "forever" periods.
+     */
+    internal fun liveUntilMs(expiresInSec: Int, nowMs: Long): Long =
+        if (expiresInSec <= 0) 0L else (nowMs + expiresInSec * 1000L).coerceAtLeast(nowMs)
 
     /**
      * Paid posts can mix unlocked photos/videos with locked [TdApi.PaidMediaPreview]
@@ -586,8 +612,9 @@ internal object MessageContentMapper {
         }
         val kind = when (val t = poll.type) {
             is TdApi.PollTypeQuiz -> PollKind.Quiz(
-                correctOptionIds = (t.correctOptionIds ?: IntArray(0)).toList().toImmutableList(),
+                correctOptionIds = (t.correctOptionIds ?: IntArray(0)).toSet().toImmutableSet(),
                 explanation = mapFormattedText(t.explanation),
+                allowsMultipleAnswers = poll.allowsMultipleAnswers,
             )
             else -> {
                 // PollTypeRegular and any future subtypes — Regular is the safe default.
@@ -729,6 +756,29 @@ internal fun TdApi.Animation.toThumbMedia(): TdMedia = TdMedia(
     height = height,
     minithumbBytes = minithumbnail?.data,
 )
+
+/**
+ * Album art of an audio track: the cover thumbnail (JPEG/PNG — a TGS/WebM-style thumbnail
+ * format would not decode as a still, so it is skipped) with the minithumbnail as its
+ * blurred placeholder; the minithumbnail alone when there is no full thumbnail.
+ */
+internal fun TdApi.Audio.albumCoverMedia(): TdMedia? {
+    val thumb = albumCoverThumbnail?.takeIf {
+        it.format is TdApi.ThumbnailFormatJpeg || it.format is TdApi.ThumbnailFormatPng ||
+            it.format is TdApi.ThumbnailFormatWebp
+    }
+    val mini = albumCoverMinithumbnail
+    return when {
+        thumb != null -> TdMedia(
+            fileId = thumb.file.id,
+            width = thumb.width,
+            height = thumb.height,
+            minithumbBytes = mini?.data,
+        )
+        mini != null -> TdMedia(fileId = null, width = mini.width, height = mini.height, minithumbBytes = mini.data)
+        else -> null
+    }
+}
 
 internal fun TdApi.Thumbnail.toMedia(): TdMedia = TdMedia(
     fileId = file.id,

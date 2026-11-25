@@ -9,6 +9,7 @@ import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.ChatRegistry
 import dev.lyo.hortay.data.MessageContentMapper
 import dev.lyo.hortay.data.MessageMapper
+import dev.lyo.hortay.data.InlineKeyboardMapper
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.PostFilterStrategy
@@ -36,6 +37,7 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.coroutines.CancellationException
@@ -2218,6 +2220,11 @@ class PostsRepository(
         // additions, etc.) — it's an internal "something changed" signal, not a
         // human/bot edit. Only editDate > 0 should stamp the badge AND trigger
         // archive capture.
+        //
+        // The reply markup is applied BEFORE that gate: a bot editing only its inline
+        // keyboard (editMessageReplyMarkup) is not a content edit, and the update still
+        // carries the new markup.
+        applyReplyMarkup(update)
         if (update.editDate <= 0) return
 
         // editDate stamp + revisionCount bump together — UME(editDate > 0) is the
@@ -2266,6 +2273,30 @@ class PostsRepository(
             channel = livePost?.archiveChannelMeta(),
             isComment = false,
         )
+    }
+
+    /**
+     * Swap in the inline keyboard `updateMessageEdited` carries for [update]'s message.
+     * Album-aware: the update may name any member. A member that carries no keyboard must
+     * not wipe one carried by a sibling, so a null markup only clears a keyboard owned by
+     * the same message. Pure function of the snapshot, safe in the CAS loop.
+     */
+    private fun applyReplyMarkup(update: TdApi.UpdateMessageEdited) {
+        val next = InlineKeyboardMapper.map(update.replyMarkup, update.messageId)
+        // Fast path: most edits (and every editDate == 0 heartbeat) leave the markup as is —
+        // skip the CAS round-trip over the whole feed for them.
+        val live = _posts.value.firstOrNull { p ->
+            p.chatId == update.chatId && (p.id == update.messageId || update.messageId in p.albumMessageIds)
+        } ?: return
+        if (live.inlineKeyboard == next) return
+        updateOnePostByAnyMemberId(update.chatId, update.messageId) { post ->
+            val current = post.inlineKeyboard
+            when {
+                current == next -> post
+                next == null && current != null && current.messageId != update.messageId -> post
+                else -> post.copy(inlineKeyboard = next)
+            }
+        }
     }
 
     private fun TimelinePost.archiveChannelMeta(): ArchiveRecorder.ChannelMeta =
@@ -2343,9 +2374,12 @@ class PostsRepository(
                             // Nothing left to draw → same as a fully deleted album.
                             list[i] = post.trimmedPhotoAlbum(content, keepIdx, survivedIds)
                                 ?: post.copy(isDeleted = true)
+                        } else if (content is PostContent.FileAlbum) {
+                            list[i] = post.trimmedFileAlbum(content, survivedIds)
+                                ?: post.copy(isDeleted = true)
                         } else if (post.id in survivedIds) {
-                            // Document / audio media group: the card renders its anchor's
-                            // content, so with the anchor alive only the member list shrinks.
+                            // Degraded album (the card still renders a single member's
+                            // content): with the anchor alive only the member list shrinks.
                             list[i] = post.copy(albumMessageIds = survivedIds)
                         } else {
                             // The anchor itself was deleted: this card's content is gone,
@@ -2387,9 +2421,12 @@ class PostsRepository(
                             val trimmed = post.trimmedPhotoAlbum(content, keepIdx, survivedIds)
                             // Nothing left to draw → same as a fully deleted album.
                             if (trimmed == null) toRemove += i else list[i] = trimmed
+                        } else if (content is PostContent.FileAlbum) {
+                            val trimmed = post.trimmedFileAlbum(content, survivedIds)
+                            if (trimmed == null) toRemove += i else list[i] = trimmed
                         } else if (post.id in survivedIds) {
-                            // Document / audio media group: the card renders its anchor's
-                            // content, so with the anchor alive only the member list shrinks.
+                            // Degraded album (the card still renders a single member's
+                            // content): with the anchor alive only the member list shrinks.
                             list[i] = post.copy(albumMessageIds = survivedIds)
                         } else {
                             // The anchor itself was deleted: this card's content is gone,
@@ -2432,9 +2469,33 @@ class PostsRepository(
     }
 
     /**
-     * Rebuild the card of a document / audio album whose anchor was deleted while other
-     * members survive. Such a card carries only its anchor's content (see
-     * [PostFilterStrategy]), so the survivors can't be re-rendered from it; they are read
+     * A document / audio album card trimmed to the members that survived a delete, or null
+     * when none is left. Items carry their own message ids, so they are kept by id; the
+     * card id moves to the lowest survivor when the anchor went, as in [trimmedPhotoAlbum].
+     * A keyboard carried by a deleted member goes with it. Pure — runs inside
+     * [handleDeleted]'s CAS lambda.
+     */
+    private fun TimelinePost.trimmedFileAlbum(
+        content: PostContent.FileAlbum,
+        survivedIds: List<Long>,
+    ): TimelinePost? {
+        if (survivedIds.isEmpty()) return null
+        val alive = survivedIds.toHashSet()
+        val newItems = content.items.filter { it.messageId in alive }
+        if (newItems.isEmpty()) return null
+        return copy(
+            id = if (id in alive) id else survivedIds.min(),
+            content = content.copy(items = newItems.toImmutableList()),
+            albumMessageIds = survivedIds,
+            inlineKeyboard = inlineKeyboard?.takeIf { it.messageId in alive },
+        )
+    }
+
+    /**
+     * Rebuild the card of a degraded album (one member's content, e.g. a document album
+     * whose siblings never loaded) whose anchor was deleted while other members survive.
+     * Such a card carries only its anchor's content (see [PostFilterStrategy]), so the
+     * survivors can't be re-rendered from it; they are read
      * back from TDLib's local database — one [TdApi.GetMessage] per album, siblings via the
      * offline coalesce — and ingested as a fresh album. Without this the remaining files
      * vanished from the feed until the next refresh of that channel.

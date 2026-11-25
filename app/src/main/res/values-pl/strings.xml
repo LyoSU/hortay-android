@@ -1040,4 +1040,14 @@
     <string name="archive_no_matches_title">Nic nie znaleziono</string>
     <string name="archive_no_matches_body">Spróbuj innego filtra lub zapytania</string>
     <string name="archive_remove_action">Usuń z archiwum</string>
+    <string name="op_press_button">nacisnąć przycisk</string>
+    <string name="inline_button_pending">Czekamy na bota</string>
+    <string name="content_location">Lokalizacja</string>
+    <string name="content_live_location">Lokalizacja na żywo</string>
+    <string name="content_live_location_ended">Lokalizacja na żywo zakończona</string>
+    <string name="poll_option_your_vote">Twój głos</string>
+    <string name="poll_option_correct">Poprawna odpowiedź</string>
+    <string name="poll_option_wrong">Błędna odpowiedź</string>
+    <string name="content_unsupported_message">Hortay nie obsługuje jeszcze tej wiadomości</string>
+    <string name="media_desc_live_photo">Zdjęcie Live</string>
 </resources>

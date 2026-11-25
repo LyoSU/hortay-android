@@ -217,8 +217,13 @@ class MediaAutoDownloader(
                 c.thumb?.let { prefetchPoster(it, policy) }
                 c.video?.fileId?.let { dispatchVideoNote(it, policy) }
             }
+            // Album art is a small still and rides the photos policy like a poster; the
+            // track itself is never prefetched.
+            is PostContent.Audio -> c.cover?.let { prefetchPoster(it, policy) }
+            is PostContent.FileAlbum -> c.items.forEach { item ->
+                (item.file as? PostContent.Audio)?.cover?.let { prefetchPoster(it, policy) }
+            }
             is PostContent.Document,
-            is PostContent.Audio,
             is PostContent.VoiceNote,
             is PostContent.Poll,
             is PostContent.Location,

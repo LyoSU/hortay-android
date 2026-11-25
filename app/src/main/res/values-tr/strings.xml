@@ -984,4 +984,14 @@
     <string name="archive_no_matches_title">Hiçbir şey bulunamadı</string>
     <string name="archive_no_matches_body">Başka bir filtre veya arama dene</string>
     <string name="archive_remove_action">Arşivden kaldır</string>
+    <string name="op_press_button">düğmeye bas</string>
+    <string name="inline_button_pending">Bot bekleniyor</string>
+    <string name="content_location">Konum</string>
+    <string name="content_live_location">Canlı konum</string>
+    <string name="content_live_location_ended">Canlı konum sona erdi</string>
+    <string name="poll_option_your_vote">Oyunuz</string>
+    <string name="poll_option_correct">Doğru cevap</string>
+    <string name="poll_option_wrong">Yanlış cevap</string>
+    <string name="content_unsupported_message">Bu mesaj Hortay\'da henüz desteklenmiyor</string>
+    <string name="media_desc_live_photo">Canlı fotoğraf</string>
 </resources>

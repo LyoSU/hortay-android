@@ -56,6 +56,7 @@ import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.rememberMediaBinding
 import dev.lyo.hortay.ui.theme.mediaFrame
+import dev.lyo.hortay.ui.theme.tabularFigures
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -323,21 +324,12 @@ private fun BoxScope.VideoNoteChrome(
     // visually from the video itself; on pause the bubble freezes on the
     // current frame and we surface the resume affordance.
     if (!playing) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.55f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Symbol(
-                name = "play_arrow",
-                tint = Color.White,
-                size = 32.dp,
-                filled = true,
-            )
-        }
+        // Same 48 dp tonal disc as the static bubble and the voice / audio rows.
+        PlayDisc(
+            glyph = PlayGlyph.Play,
+            overMedia = true,
+            modifier = Modifier.align(Alignment.Center),
+        )
     }
 
     // Mute / unmute chip — independent tap target with its own scrim.
@@ -376,13 +368,15 @@ private fun BoxScope.VideoNoteChrome(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 12.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color.Black.copy(alpha = 0.55f))
+                // Same pill as the static bubble's DurationChip; tabular figures so the
+                // ticking countdown keeps a fixed width.
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.Black.copy(alpha = 0.6f))
                 .padding(horizontal = 8.dp, vertical = 2.dp),
         ) {
             Text(
                 text = formatRemaining(remainingMs),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.tabularFigures(),
                 color = Color.White,
             )
         }

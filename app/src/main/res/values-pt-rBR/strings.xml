@@ -1020,4 +1020,14 @@
     <string name="archive_no_matches_title">Nada encontrado</string>
     <string name="archive_no_matches_body">Tente outro filtro ou outra busca</string>
     <string name="archive_remove_action">Remover do arquivo</string>
+    <string name="op_press_button">tocar no botão</string>
+    <string name="inline_button_pending">Aguardando o bot</string>
+    <string name="content_location">Localização</string>
+    <string name="content_live_location">Localização em tempo real</string>
+    <string name="content_live_location_ended">Localização em tempo real encerrada</string>
+    <string name="poll_option_your_vote">Seu voto</string>
+    <string name="poll_option_correct">Resposta correta</string>
+    <string name="poll_option_wrong">Resposta errada</string>
+    <string name="content_unsupported_message">Esta mensagem ainda não é compatível com o Hortay</string>
+    <string name="media_desc_live_photo">Foto ao vivo</string>
 </resources>
