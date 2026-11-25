@@ -193,6 +193,7 @@ fun ChannelInfoSheet(
             val copiedToast = stringResource(R.string.link_copied_toast)
             val mediaLabel = stringResource(R.string.channels_media)
             val copyLabel = stringResource(R.string.link_action_copy)
+            val linkTileLabel = stringResource(R.string.post_action_link_short)
             val muteTileLabel = stringResource(
                 if (current.isMuted) R.string.channels_tile_unmute else R.string.channels_tile_mute,
             )
@@ -200,7 +201,6 @@ fun ChannelInfoSheet(
                 if (current.isMuted) R.string.channels_unmute else R.string.channels_mute,
             )
             val activeTint = MaterialTheme.colorScheme.primary
-            val mutedTint = MaterialTheme.colorScheme.onSurfaceVariant
             val tiles = buildList {
                 if (onOpenMedia != null) {
                     add(
@@ -217,15 +217,18 @@ fun ChannelInfoSheet(
                         ),
                     )
                 }
-                // The glyph shows the current state (bell ringing / bell off), the label the
-                // action a tap performs — Telegram's convention for this toggle.
+                // Glyph and label both name the action a tap performs, Telegram's convention for
+                // this toggle: a muted channel offers the bell + "Unmute", an unmuted one the
+                // crossed-out bell + "Mute". Showing the state glyph (crossed bell) next to the
+                // action label ("Unmute") read as a contradiction. The state stays implied by
+                // the announced action ("Unmute notifications"); no separate state string exists.
                 add(
                     ChannelActionTile(
                         key = "notifications",
-                        symbol = if (current.isMuted) "notifications_off" else "notifications_active",
+                        symbol = if (current.isMuted) "notifications_active" else "notifications_off",
                         tileLabel = muteTileLabel,
                         rowLabel = muteRowLabel,
-                        iconTint = if (current.isMuted) mutedTint else activeTint,
+                        iconTint = activeTint,
                         onClick = {
                             val target = !current.isMuted
                             info = current.copy(isMuted = target)
@@ -239,7 +242,7 @@ fun ChannelInfoSheet(
                         ChannelActionTile(
                             key = "copy_link",
                             symbol = "link",
-                            tileLabel = copyLabel,
+                            tileLabel = linkTileLabel,
                             rowLabel = copyLabel,
                             iconTint = activeTint,
                             onClick = { copyChannelLink(context, link, copiedToast) },

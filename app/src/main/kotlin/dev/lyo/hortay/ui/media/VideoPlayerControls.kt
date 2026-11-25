@@ -108,7 +108,12 @@ import kotlinx.coroutines.isActive
  *     The stock M3 1.5 track + bar thumb then read as a chunky white capsule
  *     with a tall handle over video, so the Slider keeps its gesture and
  *     semantics but paints a slim custom track ([SeekTrack], 4 dp → 6 dp while
- *     scrubbing) and a 12 dp round thumb with no thumb–track gap.
+ *     scrubbing) and a 12 dp round thumb with no thumb–track gap. A bare 12 dp thumb
+ *     sat 2 dp above the track's centre line: M3's Slider forces its slot layout to
+ *     at least its own 16 dp track height and wraps the thumb in a top-start Box, so
+ *     anything shorter than 16 dp is pinned to the top of a centred 16 dp slot. The
+ *     thumb slot is therefore as tall as the hit region with the dot centred inside
+ *     it (see [SeekThumb]).
  *
  *   • **Auto-hide** — controls fade out 3 s after the last interaction, but
  *     only while playing. Paused state keeps the play button onscreen as the
@@ -412,10 +417,10 @@ private fun BottomBar(
     Column(modifier = modifier) {
         // M3 Slider for the gesture, tap-to-seek and the a11y "set progress" action;
         // [SeekTrack] + [SeekThumb] replace its stock visuals (see the file KDoc). The
-        // 48 dp minimum height is the scrub hit region — the slider centres its 12 dp thumb
-        // and slim track inside it, so the visible bar stays thin while the finger still
-        // lands on a full touch target. Track and thumb draw white, like the rest of the
-        // viewer chrome, so they read on any frame.
+        // 48 dp minimum height is the scrub hit region — the slider centres the 48 dp thumb
+        // slot (12 dp dot in its middle) and the slim track inside it, so the visible bar
+        // stays thin while the finger still lands on a full touch target. Track and thumb
+        // draw white, like the rest of the viewer chrome, so they read on any frame.
         val interactionSource = remember { MutableInteractionSource() }
         val pressed by interactionSource.collectIsPressedAsState()
         val dragged by interactionSource.collectIsDraggedAsState()
@@ -546,14 +551,34 @@ private fun TimeAndControlsRow(
     }
 }
 
-/** The seek bar's 12 dp round white thumb. Sized exactly, so the slider leaves no gap around it. */
+/**
+ * The seek bar's 12 dp round white thumb, centred in a slot [SEEK_THUMB] wide and
+ * [SEEK_HIT_HEIGHT] tall.
+ *
+ * Why the tall slot (M3 1.5.0-rc01 `SliderImpl`, read from the bytecode): the slider's layout
+ * carries `requiredSizeIn(minHeight = TrackHeight)` (16 dp), so the thumb and track slots are
+ * measured with a 16 dp minimum height. The thumb slot is wrapped in a top-start `Box` without
+ * `propagateMinConstraints`, so a bare 12 dp dot made that wrapper 16 dp tall and sat at its
+ * top, while the layout centres the wrapper and the track — the dot's centre landed
+ * (16 − 12) / 2 = 2 dp above the track's centre line. The stock 44 dp bar thumb never hits
+ * this because it is taller than the minimum. A slot at least as tall as that minimum is not
+ * stretched, so the dot centred inside it is centred on the track. The hit-region height is
+ * used rather than a copy of M3's private 16 dp token; it also matches the height the slider
+ * already takes. The width stays exactly [SEEK_THUMB]: M3 insets the track by the thumb width
+ * and places the thumb by it, so travel and the no-gap fill are unchanged.
+ */
 @Composable
 private fun SeekThumb() {
     Box(
-        modifier = Modifier
-            .size(SEEK_THUMB)
-            .background(Color.White, CircleShape),
-    )
+        modifier = Modifier.size(width = SEEK_THUMB, height = SEEK_HIT_HEIGHT),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(SEEK_THUMB)
+                .background(Color.White, CircleShape),
+        )
+    }
 }
 
 /**
@@ -561,7 +586,10 @@ private fun SeekThumb() {
  * caps, no gap at the thumb and no stop indicator. Thickens from [SEEK_TRACK] to
  * [SEEK_TRACK_SCRUBBING] while the user scrubs, on the fast spatial spring (a snap under
  * "Remove animations"). Drawn on a Canvas, which doesn't mirror on its own — the fill runs
- * from the right edge in RTL, matching the slider's own RTL value mapping.
+ * from the right edge in RTL, matching the slider's own RTL value mapping. The Canvas is
+ * [SEEK_TRACK_SCRUBBING] tall with the line on its centre; M3 measures the track slot with no
+ * minimum height and centres it in the slider layout, whose height the [SeekThumb] slot sets —
+ * so the line and the dot share one centre (see [SeekThumb] for why the thumb alone drifted).
  */
 @Composable
 private fun SeekTrack(fraction: Float, scrubbing: Boolean) {

@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,8 +35,11 @@ import kotlinx.collections.immutable.ImmutableList
 /**
  * One primary channel action, renderable either as a tile in [ActionTileStrip] or — when the
  * strip can't hold its labels — as a plain row. [tileLabel] is the short form shown under the
- * tile icon ("Mute"); [rowLabel] is the full sentence the row fallback uses ("Mute
- * notifications"). [iconTint] lets a toggle show its current state in the glyph colour.
+ * tile icon ("Mute", "Link"); [rowLabel] is the full phrase ("Mute notifications", "Copy
+ * link") the row fallback shows and the tile announces as its accessible name, so the short
+ * visible label never has to carry the whole meaning. For a toggle, both [symbol] and the
+ * labels describe the action a tap performs (Telegram's convention), never the current state:
+ * a state glyph next to an action label reads as a contradiction.
  */
 @Immutable
 internal data class ChannelActionTile(
@@ -116,7 +121,9 @@ internal fun ActionTileStrip(
 @Composable
 private fun ActionTile(tile: ChannelActionTile, modifier: Modifier = Modifier) {
     // Surface(onClick) gives the tile Role.Button semantics, the ripple clipped to its
-    // shape, and a minimum interactive size; the visible label is the accessible name.
+    // shape, and a minimum interactive size. The content's own semantics are replaced by
+    // [ChannelActionTile.rowLabel], which merges up into the button as its accessible name:
+    // the visible tile label is the short form ("Link") of that phrase ("Copy link").
     Surface(
         onClick = tile.onClick,
         modifier = modifier,
@@ -124,12 +131,17 @@ private fun ActionTile(tile: ChannelActionTile, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
+        // Top-aligned, not centred: the strip stretches every tile to the tallest one, and a
+        // label that wraps to two lines (font scale 2.0, de / uk / ru) would otherwise lift its
+        // icon above the icons of the one-line neighbours. Top alignment keeps all icons on
+        // one line and lets the labels hang below them.
         Column(
             modifier = Modifier
                 .heightIn(min = TILE_MIN_HEIGHT)
+                .clearAndSetSemantics { contentDescription = tile.rowLabel }
                 .padding(horizontal = TILE_PADDING_H, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Top,
         ) {
             Symbol(name = tile.symbol, tint = tile.iconTint, size = 24.dp)
             Spacer(Modifier.height(6.dp))
