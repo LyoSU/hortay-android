@@ -56,8 +56,10 @@ import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.ui.discover.discoverSuggestions
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -110,10 +112,20 @@ fun AddChannelSheet(
     var input by remember { mutableStateOf("") }
     var lookupState by remember { mutableStateOf<LookupState>(LookupState.Idle) }
 
+    // One lookup at a time: a new lookup cancels the previous one, so a slow earlier
+    // probe (rate-limit gate, bad network) can't land after a newer one and overwrite
+    // its result. A plain holder, not snapshot state — nothing renders from the Job.
+    val lookupJob = remember { arrayOfNulls<Job>(1) }
+
     fun lookup(username: String) {
+        lookupJob[0]?.cancel()
         lookupState = LookupState.Loading
-        scope.launch {
-            lookupState = when (val r = client.lookupChannel(username)) {
+        lookupJob[0] = scope.launch {
+            val r = client.lookupChannel(username)
+            // Cancellation is cooperative: a superseded lookup whose probe already
+            // returned must still not publish its result.
+            ensureActive()
+            lookupState = when (r) {
                 is LookupResult.Found -> LookupState.Found(r.channel)
                 is LookupResult.Empty -> LookupState.Found(r.channel)
                 LookupResult.NotFound -> LookupState.Error(
@@ -143,10 +155,16 @@ fun AddChannelSheet(
         }
     }
 
+    // An invalid-input error supersedes any lookup still in flight, like a new lookup.
+    fun showInvalidInput() {
+        lookupJob[0]?.cancel()
+        lookupState = LookupState.Error(ctx.getString(R.string.web_add_invalid))
+    }
+
     fun trySubmit() {
         val username = parseUsernameFromInput(input)
         if (username == null) {
-            lookupState = LookupState.Error(ctx.getString(R.string.web_add_invalid))
+            showInvalidInput()
             return
         }
         lookup(username)
@@ -165,7 +183,15 @@ fun AddChannelSheet(
         if (prefilledUsername != null) {
             if (input.isBlank()) {
                 input = prefilledUsername
-                lookup(prefilledUsername)
+                // Same gate as the typed and clipboard paths: a deep link carries
+                // whatever the sender put in it, and only a parsed username may reach
+                // the t.me/s/ lookup.
+                val username = parseUsernameFromInput(prefilledUsername)
+                if (username != null) {
+                    lookup(username)
+                } else {
+                    showInvalidInput()
+                }
             }
             return@LaunchedEffect
         }

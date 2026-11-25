@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data.web
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -67,5 +69,20 @@ class WebTelegramClientRedirectTest {
         result as FetchResult.NetworkError
         assertTrue(result.cause.message!!.contains("307"))
         assertTrue(result.cause.message!!.contains("example.com"))
+    }
+
+    @Test
+    fun `preview url carries the handle as one path segment`() {
+        assertEquals("https://t.me/s/durov", buildTmePreviewUrl("durov", null, null))
+        assertEquals(
+            "https://t.me/s/durov?before=42&after=7",
+            buildTmePreviewUrl("durov", before = "42", after = "7"),
+        )
+    }
+
+    @Test
+    fun `preview url refuses handles that could change path or query`() {
+        listOf("..", "../foo", "foo/bar", "foo?a=b", "foo#x", "foo%2Fbar", "", "a".repeat(33))
+            .forEach { assertNull(buildTmePreviewUrl(it, null, null), it) }
     }
 }

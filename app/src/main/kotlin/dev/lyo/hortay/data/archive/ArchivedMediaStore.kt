@@ -77,14 +77,15 @@ class ArchivedMediaStore(
         mutex.withLock {
             val now = clock()
             val existing = db.archivedMediaFileQueries.selectBySha(sha).executeAsOneOrNull()
-            if (existing != null && File(existing.path).exists()) {
+            if (existing != null && File(existing.path).let { it.exists() && it.length() == src.length() }) {
                 db.archivedMediaFileQueries.claim(now, sha)
                 return@withLock sha
             }
             val dst = File(rootDir, "$sha.bin")
-            if (!dst.exists()) {
-                runCatching { src.copyTo(dst, overwrite = false) }
-                    .getOrElse { return@withLock null }
+            // The name is the content hash, so a file of another length is a leftover of an
+            // interrupted copy from before copies went through a temp file: replace it.
+            if (!dst.exists() || dst.length() != src.length()) {
+                if (!copyAtomically(src, dst)) return@withLock null
             }
             db.archivedMediaFileQueries.insert(
                 sha = sha,
@@ -100,6 +101,22 @@ class ArchivedMediaStore(
     }
 
     /**
+     * Copies [src] to a temp file next to [dst] and renames it into place, so `<sha>.bin`
+     * only ever exists complete: a copy cut off by an I/O error, a full disk or the process
+     * dying leaves at most a temp file, which this call (or [sweepOrphans]) deletes. A later
+     * capture of the same bytes would otherwise adopt a truncated file as the archived copy.
+     */
+    private fun copyAtomically(src: File, dst: File): Boolean {
+        val tmp = File(dst.parentFile, dst.name + TEMP_SUFFIX)
+        val ok = runCatching {
+            src.copyTo(tmp, overwrite = true)
+            tmp.length() == src.length() && (tmp.renameTo(dst) || (dst.delete() && tmp.renameTo(dst)))
+        }.getOrDefault(false)
+        if (!ok) runCatching { tmp.delete() }
+        return ok
+    }
+
+    /**
      * Path on disk for [sha], or null if not stored. Cheap read — used by the
      * revision sheet to feed Coil / ExoPlayer directly without re-downloading.
      */
@@ -111,10 +128,14 @@ class ArchivedMediaStore(
      * Removes every file no `MessageVersion` references whose last claim is older than
      * [ORPHAN_GRACE_MS] — what a purge, a retention / cap eviction, the dedupe step or a
      * skipped capture left behind. A file that can't be deleted keeps its row and is
-     * retried on the next sweep. Returns the number of files removed.
+     * retried on the next sweep. Also deletes temp files of copies that never finished
+     * (no copy is in flight while the lock is held). Returns the number of files removed.
      */
     suspend fun sweepOrphans(): Int = withContext(Dispatchers.IO) {
         mutex.withLock {
+            runCatching {
+                rootDir.listFiles { f -> f.name.endsWith(TEMP_SUFFIX) }?.forEach { it.delete() }
+            }
             val orphans = db.archivedMediaFileQueries.selectOrphans(clock() - ORPHAN_GRACE_MS).executeAsList()
             var removed = 0
             for (o in orphans) {
@@ -159,6 +180,9 @@ class ArchivedMediaStore(
 
     companion object {
         private const val BUFFER_SIZE = 8 * 1024
+
+        /** Suffix of a copy in progress; see [copyAtomically]. */
+        private const val TEMP_SUFFIX = ".tmp"
 
         /** Where the copies live: `filesDir/archive_media/`. */
         fun mediaDir(context: Context): File = File(context.filesDir, "archive_media")

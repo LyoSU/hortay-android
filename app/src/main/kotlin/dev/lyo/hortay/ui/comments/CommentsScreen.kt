@@ -104,6 +104,11 @@ import dev.lyo.hortay.ui.timeline.ReactionPickerStrip
 import dev.lyo.hortay.ui.timeline.rememberReactionEffectRequest
 import dev.lyo.hortay.ui.timeline.label
 import dev.lyo.hortay.ui.timeline.symbolName
+import dev.lyo.hortay.ui.timeline.visibleFraction
+import dev.lyo.hortay.data.isUnplayableVideo
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -247,6 +252,14 @@ fun CommentsScreen(
      * Null in guest mode — [PostActions] then falls back to the hand-rolled t.me URL.
      */
     channels: ChannelDirectory? = null,
+    /**
+     * Post archive. When non-null, the anchor's "edited" chip (and a deleted anchor's tap)
+     * opens [dev.lyo.hortay.ui.archive.PostRevisionSheet] — same wiring as the feed and
+     * ChannelScreen. Null (guest mode, previews) leaves the chip inert.
+     */
+    archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
+    /** Companion to [archiveRepository]: renders archived media sharp in the revision sheet. */
+    archiveMediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver? = null,
 ) {
     // Live anchor: track the feed entry whose chat+id matches the post we were
     // opened with so reactions / view count / comment count stay fresh while the
@@ -343,6 +356,11 @@ fun CommentsScreen(
     val viewer = LocalMediaViewer.current
     val context = LocalContext.current
     val actionScope = rememberCoroutineScope()
+    // The anchor whose edit history is open, or null. Rendered at the end of this body.
+    var revisionsForPost by remember(post.chatId, post.id) { mutableStateOf<TimelinePost?>(null) }
+    val onTapRevisions: (TimelinePost) -> Unit = remember(archiveRepository) {
+        { p -> if (archiveRepository != null) revisionsForPost = p }
+    }
     // The "who reacted" sheet of one comment, or null. Opened from a chip's long-press (filtered
     // to that reaction) or from the comment's menu (all reactions); see [ReactorsSheet].
     var reactorsRequest by remember { mutableStateOf<ReactorsRequest?>(null) }
@@ -376,7 +394,17 @@ fun CommentsScreen(
         onPollVote,
     ) {
         PostInteractions(
-            onMediaClick = { p, idx -> viewer.openFor(p.content, idx) },
+            onMediaClick = { p, idx ->
+                // Same guard as the feed and ChannelScreen: an unplayable video (guest-mode
+                // "Media is too big", no video URL) goes to Telegram instead of a viewer
+                // that would spin preparing an empty source.
+                val items = (p.content as? PostContent.PhotoAlbum)?.items.orEmpty()
+                if (items.getOrNull(idx)?.isUnplayableVideo == true) {
+                    actionScope.launch { PostActions.openInTelegram(context, channels, p) }
+                } else {
+                    viewer.openFor(p.content, idx)
+                }
+            },
             onChannelClick = onChannelClick,
             onAuthorChatClick = onAuthorChatClick,
             // Anchor post (and any tappable inline preview the user gets to via the
@@ -481,6 +509,14 @@ fun CommentsScreen(
     // a 30 s linger), and TDLib advances read state automatically for opened chats.
     val ackedRead = remember { HashSet<Long>() }
     val scope = rememberCoroutineScope()
+    // The effect below outlives a Retry: `state` is a delegate over the State that
+    // key(threadRetryNonce) minted, so a lambda capturing it would keep reading the
+    // failed stream's State forever and never ack the reloaded thread. Read through an
+    // updated-state holder instead, which always points at the current emission.
+    val currentThreadState = rememberUpdatedState(threadState)
+    // Same foreground gate as the feed's [rememberReadAckDwell]: a comment left on
+    // screen while the phone is locked or the app is backgrounded must not be acked.
+    val lifecycleState = LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     // Skip the dwell-ack effect when there's no live thread to ack against —
     // guest mode + override branches both fall here. The empty-state body has
     // no comment rows whose ids could land in `visibleItemsInfo` anyway, so
@@ -489,12 +525,35 @@ fun CommentsScreen(
     if (!threadDisabled && repo != null) {
         val liveRepo = repo
         LaunchedEffect(listState, liveRepo, post.chatId) {
-            snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Long } }
+            // Mirrors the feed's dwell contract (ARCHITECTURE.md → "Interaction-stream
+            // contract"): a comment counts only while it is mostly visible, the list is
+            // idle and the screen is RESUMED. Without the idle gate a slow drag through
+            // the thread acked every row it passed.
+            snapshotFlow {
+                val info = listState.layoutInfo
+                val vStart = info.viewportStartOffset + info.beforeContentPadding
+                val vEnd = info.viewportEndOffset - info.afterContentPadding
+                val ids = info.visibleItemsInfo.mapNotNull { item ->
+                    val id = item.key as? Long ?: return@mapNotNull null
+                    val fraction = visibleFraction(
+                        itemStart = item.offset,
+                        itemEnd = item.offset + item.size,
+                        vStart = vStart,
+                        vEnd = vEnd,
+                    )
+                    if (fraction >= COMMENT_READ_VISIBLE_FRACTION) id else null
+                }
+                val resumed = lifecycleState.value.isAtLeast(Lifecycle.State.RESUMED)
+                Triple(ids, listState.isScrollInProgress, resumed)
+            }
                 .distinctUntilChanged()
-                .collectLatest { ids ->
-                    if (ids.isEmpty()) return@collectLatest
+                .collectLatest { (ids, scrolling, resumed) ->
+                    if (ids.isEmpty() || scrolling || !resumed) return@collectLatest
                     delay(COMMENT_READ_DWELL_MS)
-                    val ready = state as? CommentsRepository.ThreadState.Ready ?: return@collectLatest
+                    // The user can lock or background the app during the dwell window.
+                    if (!lifecycleState.value.isAtLeast(Lifecycle.State.RESUMED)) return@collectLatest
+                    val ready = currentThreadState.value as? CommentsRepository.ThreadState.Ready
+                        ?: return@collectLatest
                     val fresh = ids.filter { it !in ackedRead }
                     if (fresh.isEmpty()) return@collectLatest
                     // Populate ackedRead BEFORE dispatching, and detach the suspending ack
@@ -716,6 +775,7 @@ fun CommentsScreen(
                 PostCard(
                     post = anchor,
                     interactions = pinnedPostInteractions,
+                    onTapRevisions = onTapRevisions,
                     clickable = false,
                     actionsEnabled = true,
                     expanded = true,
@@ -924,6 +984,31 @@ fun CommentsScreen(
                 }
             }
         }
+    }
+
+    // Revision sheet for the anchor — mirrors ChannelScreen's block, including the
+    // remembered Flow: observeRevisions builds a fresh SQLDelight Flow per call and
+    // collectAsState keys on the instance, so an un-remembered call would reset the sheet
+    // to empty on every recomposition.
+    val currentRevisionPost = revisionsForPost
+    if (currentRevisionPost != null && archiveRepository != null) {
+        val revisionsFlow = remember(currentRevisionPost.chatId, currentRevisionPost.id) {
+            archiveRepository.observeRevisions(
+                dev.lyo.hortay.data.archive.ChatRef.tdlib(currentRevisionPost.chatId),
+                currentRevisionPost.id.toString(),
+            )
+        }
+        val revisions by revisionsFlow.collectAsStateWithLifecycle(
+            initialValue = null as kotlinx.collections.immutable.ImmutableList<dev.lyo.hortay.data.archive.PostSnapshot>?,
+        )
+        dev.lyo.hortay.ui.archive.PostRevisionSheet(
+            revisions = revisions,
+            onDismiss = { revisionsForPost = null },
+            onOpenInTelegram = {
+                actionScope.launch { PostActions.openInTelegram(context, channels, currentRevisionPost) }
+            },
+            mediaResolver = archiveMediaResolver,
+        )
     }
 }
 
@@ -1549,6 +1634,9 @@ private const val TOP_FADE_DP = 20
  * "viewed in an opened chat" (see tdlib/td#46).
  */
 private const val COMMENT_READ_DWELL_MS = 500L
+
+/** Share of a comment row that must be on screen before its dwell counts — same as the feed. */
+private const val COMMENT_READ_VISIBLE_FRACTION = 0.6f
 
 /** Lines of a hand-picked quote shown in a comment's quote card. */
 private const val QUOTE_MAX_LINES = 4

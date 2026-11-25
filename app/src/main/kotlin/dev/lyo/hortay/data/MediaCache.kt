@@ -201,8 +201,19 @@ class MediaCache(
          * the inbound UpdateFile stream; otherwise a concurrent UpdateFile
          * landing between the IO-thread `is Ready` peek and the write would
          * be silently clobbered.
+         *
+         * [applied] is completed by the reducer once the event has been handled (flipped
+         * or not). [invalidate] awaits it before re-running ensure: the channel is
+         * UNLIMITED, so `send` never suspends, and an ensure issued right after it would
+         * still read the pre-reset Ready and return — leaving the slot on Idle with
+         * nobody requesting the file. The ack is a completion signal only; the reducer
+         * stays the sole writer of the slot.
          */
-        data class ResetIfReady(val fileId: Int, val to: MediaState) : FileEvent
+        data class ResetIfReady(
+            val fileId: Int,
+            val to: MediaState,
+            val applied: CompletableDeferred<Unit>? = null,
+        ) : FileEvent
         /**
          * Conditional Reset: only flip the slot to [to] if it is currently in
          * [MediaState.Downloading]. The stall watchdog's give-up transition uses
@@ -232,11 +243,13 @@ class MediaCache(
             for (event in fileEvents) when (event) {
                 is FileEvent.FromTdLib -> reduce(event.file)
                 is FileEvent.Reset -> reduceReset(event.fileId, event.to)
-                is FileEvent.ResetIfReady -> {
+                is FileEvent.ResetIfReady -> try {
                     val slot = states[event.fileId]
                     if (slot != null && slot.value is MediaState.Ready) {
                         reduceReset(event.fileId, event.to)
                     }
+                } finally {
+                    event.applied?.complete(Unit)
                 }
                 is FileEvent.ResetIfDownloading -> {
                     val slot = states[event.fileId]
@@ -801,7 +814,14 @@ class MediaCache(
         Log.i(TAG, "invalidate: $fileId — Ready file missing on disk; re-downloading")
         scope.launch(ioDispatcher) {
             postCompletionResync.remove(fileId)?.cancel()
-            fileEvents.send(FileEvent.ResetIfReady(fileId, MediaState.Idle))
+            val applied = CompletableDeferred<Unit>()
+            fileEvents.send(FileEvent.ResetIfReady(fileId, MediaState.Idle, applied))
+            // Wait for the reducer to have handled the reset. `send` on the UNLIMITED
+            // channel returns before the reducer runs, so without this ensure() below
+            // still read the old Ready, returned, and the reducer then parked the slot
+            // on Idle with no DownloadFile issued — the evicted image stayed on its blur
+            // until something happened to re-run the binding's effect.
+            applied.await()
             // ensure() is a no-op when the slot is already Downloading, so a
             // racing UpdateFile that flipped Ready → Downloading between the
             // ResetIfReady event and here just makes ensure() short-circuit

@@ -193,9 +193,9 @@ object MediaShareActions {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            if (send.resolveActivity(context.packageManager) == null) {
-                return Result.Failure(R.string.media_share_error_intent_failed)
-            }
+            // No resolveActivity pre-check: under targetSdk 30+ package visibility it returns
+            // null for ACTION_SEND unless <queries> declares it, even where the system chooser
+            // works. The chooser itself always resolves; a real failure throws into the catch.
             context.startActivity(chooser)
             Result.Success
         } catch (t: Throwable) {
@@ -221,9 +221,7 @@ object MediaShareActions {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, url)
             }
-            if (send.resolveActivity(context.packageManager) == null) {
-                return Result.Failure(R.string.media_share_error_intent_failed)
-            }
+            // See shareMedia: the chooser resolves even when package visibility hides targets.
             val chooser = Intent.createChooser(send, null).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

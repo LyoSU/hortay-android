@@ -1,5 +1,9 @@
 package dev.lyo.hortay.ui.archive
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.archive.ArchiveRepository
@@ -10,16 +14,24 @@ import dev.lyo.hortay.data.archive.ArchivedChannelEntry
 import dev.lyo.hortay.data.archive.ChatRef
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ArchiveSettingsViewModel(
     private val store: ArchiveSettingsStore,
@@ -69,14 +81,15 @@ class ArchiveSettingsViewModel(
     fun setRetentionDays(days: Int) {
         viewModelScope.launch {
             store.setRetentionDays(days)
-            sweep.run()
+            // The stateIn copy above may not have caught the write yet; sweep with the stored value.
+            sweep.run(store.flow.first())
         }
     }
 
     fun setMaxRecords(n: Int) {
         viewModelScope.launch {
             store.setMaxRecords(n)
-            sweep.run()
+            sweep.run(store.flow.first())
         }
     }
 
@@ -90,29 +103,71 @@ class ArchiveSettingsViewModel(
 
     /** Adds [chat] to, or removes it from, the channels the archive skips. */
     fun setExcluded(chat: ChatRef, excluded: Boolean) {
-        val current = settings.value.excludedChats
-        val next = if (excluded) current.add(chat) else current.remove(chat)
-        if (next === current) return
-        viewModelScope.launch { store.setExcludedChats(next) }
+        // Read-modify-write inside one DataStore edit: building the set from [settings] here
+        // let two quick toggles each overwrite the other's change.
+        viewModelScope.launch { store.setChatExcluded(chat, excluded) }
     }
 
     fun clearAll() {
         viewModelScope.launch { repo.clear() }
     }
 
+    private val _exporting = MutableStateFlow(false)
+
+    /** True while an export is being written; a second request is ignored until it ends. */
+    val exporting: StateFlow<Boolean> = _exporting
+
+    private val _exportResults = Channel<ExportResult>(Channel.BUFFERED)
+
+    /** One outcome per finished export, kept until the screen collects it. */
+    val exportResults: Flow<ExportResult> = _exportResults.receiveAsFlow()
+
     /**
-     * Streams the archive into [out] and returns the number of records written.
-     * The caller is responsible for opening / closing the stream — we don't
-     * `.use {}` here because some callers (Storage Access Framework Uri) close
-     * the stream themselves on close.
+     * Writes the archive to the document at [uri] off the main thread.
+     *
+     * Runs in [viewModelScope], not the screen's composition scope, so moving on to another
+     * screen does not stop it; the write itself is [NonCancellable], so even closing this
+     * page lets the file finish instead of leaving it cut off. A failed export deletes the
+     * partial document when the provider allows it.
      */
-    suspend fun exportTo(out: java.io.OutputStream): Int = repo.exportTo(out)
+    fun export(resolver: ContentResolver, uri: Uri) {
+        if (_exporting.value) return
+        _exporting.value = true
+        viewModelScope.launch {
+            val result = try {
+                val count = withContext(NonCancellable + Dispatchers.IO) {
+                    val out = resolver.openOutputStream(uri)
+                        ?: throw java.io.IOException("No output stream for the export document")
+                    out.use { repo.exportTo(it) }
+                }
+                ExportResult.Done(count)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                Log.w(TAG, "Archive export failed", e)
+                withContext(NonCancellable + Dispatchers.IO) {
+                    runCatching { DocumentsContract.deleteDocument(resolver, uri) }
+                }
+                ExportResult.Failed
+            } finally {
+                _exporting.value = false
+            }
+            _exportResults.trySend(result)
+        }
+    }
 
     private companion object {
+        const val TAG = "ArchiveSettings"
         const val COUNTS_DEBOUNCE_MS = 500L
         const val STORAGE_BYTES_DEBOUNCE_MS = 2000L
         const val STOP_TIMEOUT_MS = 5_000L
     }
+}
+
+/** How an archive export ended. */
+sealed interface ExportResult {
+    data class Done(val records: Int) : ExportResult
+    data object Failed : ExportResult
 }
 
 /** The first value passes at once (no placeholder on open); later bursts settle for [ms]. */

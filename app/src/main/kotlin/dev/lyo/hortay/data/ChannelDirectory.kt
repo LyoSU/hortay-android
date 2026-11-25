@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import android.util.Log
 import dev.lyo.hortay.data.posts.isChannel
 import org.drinkless.tdlib.TdApi
 
@@ -109,6 +110,38 @@ class ChannelDirectory(
     }
 
     /**
+     * [resolvePublicChat] for callers that must tell "this handle does not exist" apart
+     * from "the lookup could not be answered right now". [resolvePublicChat] collapses
+     * both into `null`, which is fine for a deep-link tap (the user just sees a fallback)
+     * but wrong for anything that persists the outcome — the guest → account migration
+     * used to read an offline or flood-limited `SearchPublicChat` as "no such channel"
+     * and hid its offer for good.
+     *
+     * Classification is by [TdClient.TdException.code]:
+     *   - 400 / 404 — TDLib's answer for a malformed or unoccupied username
+     *     (`USERNAME_INVALID`, `USERNAME_NOT_OCCUPIED`, "Chat not found") →
+     *     [PublicChatLookup.NotFound], a permanent result.
+     *   - everything else — 420 / 429 FLOOD_WAIT, [TdClient.SEND_TIMEOUT_CODE], 5xx,
+     *     and any non-TDLib throwable (network stack, JNI) → [PublicChatLookup.Failed],
+     *     worth retrying later.
+     *
+     * Cancellation is rethrown, never classified.
+     */
+    suspend fun lookupPublicChat(handle: String): PublicChatLookup {
+        val cleaned = handle.removePrefix("@").trim()
+        if (cleaned.isBlank()) return PublicChatLookup.NotFound
+        val result = suspendRunCatching { td.send(TdApi.SearchPublicChat(cleaned)).id }
+        val error = result.exceptionOrNull() ?: return PublicChatLookup.Found(result.getOrThrow())
+        val code = (error as? TdClient.TdException)?.code
+        return if (code != null && code in PERMANENT_LOOKUP_CODES) {
+            PublicChatLookup.NotFound
+        } else {
+            Log.w(TAG, "lookupPublicChat($cleaned) failed", error)
+            PublicChatLookup.Failed
+        }
+    }
+
+    /**
      * Typed variant of [resolvePublicChat] used by the deep-link dispatcher. Returns:
      *
      *   - [PublicHandleResult.Channel] — the handle resolves to a broadcast channel
@@ -201,7 +234,19 @@ class ChannelDirectory(
 
     private companion object {
         const val TAG = "ChannelDirectory"
+
+        /** TDLib error codes that mean the handle itself is wrong — see [lookupPublicChat]. */
+        val PERMANENT_LOOKUP_CODES = setOf(400, 404)
     }
+}
+
+/** Result of [ChannelDirectory.lookupPublicChat]. See its KDoc for the classification. */
+sealed interface PublicChatLookup {
+    data class Found(val chatId: Long) : PublicChatLookup
+    /** The handle is malformed or not taken — retrying will not help. */
+    data object NotFound : PublicChatLookup
+    /** Network, timeout, FLOOD_WAIT or another transient failure — retry later. */
+    data object Failed : PublicChatLookup
 }
 
 /** Result of [ChannelDirectory.resolvePublicHandle]. See its KDoc for semantics. */

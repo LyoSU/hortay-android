@@ -271,11 +271,11 @@ class TelegramLinkResolver(private val td: TdSender) {
             rawUrl: String,
         ): DeepLink? = when (host) {
             "resolve" -> {
-                val domain = queryParams["domain"]?.takeIf { it.isNotBlank() }
+                val domain = queryParams["domain"]?.let(::publicHandleOrNull)
                 val post = queryParams["post"]?.toLongOrNull()
                 domain?.let {
                     DeepLink.PublicChannel(
-                        handle = it.removePrefix("@"),
+                        handle = it,
                         serverPostId = post,
                         originalUrl = rawUrl,
                     )
@@ -360,7 +360,7 @@ class TelegramLinkResolver(private val td: TdSender) {
             // `t.me/s/<handle>[/<post>]` — the web-preview flavour of a public channel
             // link. Without this case the handle parsed as "s".
             segments[0] == "s" ->
-                segments.getOrNull(1)?.removePrefix("@")?.takeIf { it.isNotBlank() }?.let { handle ->
+                segments.getOrNull(1)?.let(::publicHandleOrNull)?.let { handle ->
                     DeepLink.PublicChannel(
                         handle = handle,
                         serverPostId = segments.getOrNull(2)?.toLongOrNull(),
@@ -368,16 +368,27 @@ class TelegramLinkResolver(private val td: TdSender) {
                     )
                 }
             segments[0] in BLOCKED_PUBLIC_HOSTS -> null
-            else -> {
-                val handle = segments[0]
-                val msg = segments.getOrNull(1)?.toLongOrNull()
+            else -> publicHandleOrNull(segments[0])?.let { handle ->
                 DeepLink.PublicChannel(
-                    handle = handle.removePrefix("@"),
-                    serverPostId = msg,
+                    handle = handle,
+                    serverPostId = segments.getOrNull(1)?.toLongOrNull(),
                     originalUrl = rawUrl,
                 )
             }
         }
+
+        /**
+         * A Telegram public username (optional leading `@` dropped), or null when [raw]
+         * isn't shaped like one. The handle leaves this parser as data that later lands
+         * in URLs (`t.me/s/<handle>` in guest mode) and RPCs, so a decoded query value
+         * such as `../foo?a=b` must not survive as a "handle" — `isNotBlank()` alone let
+         * it through. Same bound as [dev.lyo.hortay.data.web.parseUsernameFromInput]:
+         * a letter first, then ASCII letters / digits / underscores, 2-32 chars.
+         */
+        internal fun publicHandleOrNull(raw: String): String? =
+            raw.trim().removePrefix("@").takeIf { PUBLIC_HANDLE_REGEX.matches(it) }
+
+        private val PUBLIC_HANDLE_REGEX = Regex("""[A-Za-z][A-Za-z0-9_]{1,31}""")
 
         /**
          * Coerce a query-parameter value into a canonical `#tag` token. Returns null

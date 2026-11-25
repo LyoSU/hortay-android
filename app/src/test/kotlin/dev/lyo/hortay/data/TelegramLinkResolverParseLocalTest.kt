@@ -354,4 +354,22 @@ class TelegramLinkResolverParseLocalTest {
             TelegramLinkResolver.messageLinkTarget(-100L, null, { 42L }, raw),
         )
     }
+
+    // ---------- handle shape gate ----------
+
+    @Test
+    fun `tg resolve with a non-handle domain is rejected`() {
+        val raw = "tg://resolve?domain=..%2Ffoo%3Fa%3Db"
+        assertNull(parse("tg", "resolve", query = mapOf("domain" to "../foo?a=b"), rawUrl = raw))
+    }
+
+    @Test
+    fun `t_me s with a non-handle segment is rejected`() {
+        assertNull(parse("https", "t.me", listOf("s", "foo?x"), rawUrl = "https://t.me/s/foo%3Fx"))
+    }
+
+    @Test
+    fun `t_me path with a non-handle segment is rejected`() {
+        assertNull(parse("https", "t.me", listOf("\$abc"), rawUrl = "https://t.me/\$abc"))
+    }
 }

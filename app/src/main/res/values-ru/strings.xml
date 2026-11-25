@@ -741,6 +741,8 @@
     <string name="archive_disable_title">Отключить архив</string>
     <string name="archive_empty_enabled">Пока ничего. Когда канал отредактирует или удалит пост, он появится здесь.</string>
     <string name="archive_export_continue">Экспортировать</string>
+    <string name="archive_export_done">Архив экспортирован</string>
+    <string name="archive_export_failed">Не удалось экспортировать архив. Попробуйте ещё раз</string>
     <string name="archive_export_json">Экспортировать в JSON</string>
     <string name="archive_export_size_warning">Примерный размер: %d МБ. Продолжить?</string>
     <string name="archive_filter_all">Все</string>

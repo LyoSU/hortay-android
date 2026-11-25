@@ -143,6 +143,8 @@ internal fun RenderNavKey(
             },
             bookmarks = graph.bookmarkStore,
             channels = graph.channelDirectory,
+            archiveRepository = graph.archiveRepository,
+            archiveMediaResolver = graph.archivedMediaResolver,
         )
 
         is ArchiveKey -> {

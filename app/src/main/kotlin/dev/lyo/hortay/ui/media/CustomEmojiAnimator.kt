@@ -83,8 +83,19 @@ import android.graphics.Canvas as AndroidCanvas
  *     callback / completion handler / consumer draws.
  *   • **BG thread (`CustomEmojiRenderer`):** [LottieDrawable.progress] writes +
  *     [LottieDrawable.draw] + `Bitmap.eraseColor`. The drawable, back buffer, and
- *     its canvas are this thread's exclusive state between `dispatchRender` (posted
- *     from UI) and `onRenderComplete` (posted back to UI).
+ *     its canvas are this thread's exclusive state between [scheduleRender] (posted
+ *     from UI) and [onRenderComplete] (posted back to UI).
+ *   • The BG thread never touches [entries]: an access-ordered [LinkedHashMap]
+ *     relinks its nodes on `get`, so even a read from the render thread races the
+ *     UI thread's reads/writes. [scheduleRender] resolves the [Entry], back buffer
+ *     and canvas on the UI thread and hands them to the runnable; the completion
+ *     carries the same [Entry] back, so a completion that lands after the entry
+ *     was evicted or [clear]ed (and maybe re-created under the same key) can't
+ *     swap the new entry's buffers.
+ *   • While a render is in flight nothing on the UI thread recycles or replaces
+ *     that entry's buffers: eviction / [clear] mark it [Entry.retired] and leave
+ *     the recycle to [onRenderComplete]; [reportSize] parks the new size in
+ *     [Entry.pendingSizePx] and applies it on completion.
  *
  * Memory: per entry ~ `2 × pixelSize² × 4` bytes for ARGB_8888 buffers, plus Lottie
  * drawable's internal graph. At a typical 80 px inline emoji, ~50 KB / entry; the
@@ -183,7 +194,15 @@ class CustomEmojiAnimator(
         // instead would freeze EVERY custom emoji in the process, not just
         // the broken one.
         var broken: Boolean = false,
+        // Set on the UI thread when the entry leaves [entries] (eviction or [clear]).
+        // Read by the BG thread to skip a queued render; a retired entry's buffers are
+        // recycled by whoever runs last of {retire, in-flight render's completion}.
+        @Volatile var retired: Boolean = false,
+        // Larger size reported while a render was in flight; applied on completion.
+        var pendingSizePx: Int = 0,
     )
+
+    private enum class RenderOutcome { Rendered, Dropped, Broken }
 
     /**
      * Entry cache. We need access-ordered iteration on release+overflow to evict the
@@ -203,9 +222,9 @@ class CustomEmojiAnimator(
             // here; the next put will retry with the new eldest.
             if (entry.refCount > 0) return false
             // Idle entry — recycle its bitmaps and drop. Safe: refCount == 0 means
-            // no consumer is reading bitmapFront.
-            entry.bitmapFront?.recycle()
-            entry.bitmapBack?.recycle()
+            // no consumer is reading bitmapFront. A render may still be in flight
+            // (released after it was scheduled); [retire] defers the recycle to it.
+            retire(entry)
             return true
         }
     }
@@ -285,21 +304,47 @@ class CustomEmojiAnimator(
     }
 
     fun clear() {
-        // Quiesce the BG queue and reclaim bitmaps. We don't tear down the
-        // HandlerThread itself — the animator outlives logout/login and the
+        // Main thread only (it touches [entries] and recycles bitmaps consumers blit).
+        // Retire every entry and reclaim bitmaps. Queued renders are NOT removed from
+        // the BG queue: each one sees its entry retired, skips the draw, and its
+        // completion recycles the buffers — removing them instead would strand the
+        // in-flight entries' buffers with nobody left to recycle them. We don't tear
+        // down the HandlerThread itself — the animator outlives logout/login and the
         // thread can keep idling.
-        renderHandler.removeCallbacksAndMessages(null)
-        for (entry in entries.values) {
-            entry.bitmapFront?.recycle()
-            entry.bitmapBack?.recycle()
-        }
+        for (entry in entries.values) retire(entry)
         entries.clear()
         activeKeys.clear()
+    }
+
+    /**
+     * Main thread. Take [entry] out of service. If a BG render is in flight the render
+     * thread may be drawing into its back buffer right now, so the recycle is deferred
+     * to that render's [onRenderComplete].
+     */
+    private fun retire(entry: Entry) {
+        entry.retired = true
+        entry.pendingProgress = Float.NaN
+        entry.pendingSizePx = 0
+        if (!entry.renderInFlight) recycleBuffers(entry)
+    }
+
+    private fun recycleBuffers(entry: Entry) {
+        entry.bitmapFront?.recycle()
+        entry.bitmapBack?.recycle()
+        entry.bitmapFront = null
+        entry.bitmapBack = null
+        entry.bitmapBackCanvas = null
     }
 
     internal fun reportSize(key: EntryKey, pxSize: Int) {
         val entry = entries[key] ?: return
         if (pxSize <= entry.bitmapSizePx) return
+        if (entry.renderInFlight) {
+            // The BG thread is drawing into bitmapBack; recycling it now would pull the
+            // pixels out from under the draw. Resize once the render completes.
+            if (pxSize > entry.pendingSizePx) entry.pendingSizePx = pxSize
+            return
+        }
         entry.bitmapFront?.recycle()
         entry.bitmapBack?.recycle()
         // ARGB_8888 — TGS stickers have anti-aliased edges + partial alpha that
@@ -387,11 +432,10 @@ class CustomEmojiAnimator(
     private fun scheduleRender(key: EntryKey, snappedProgress: Float) {
         val entry = entries[key] ?: return
         if (entry.broken) return
-        if (entry.bitmapBack == null) {
-            // No back buffer yet — consumer hasn't reported size. Skip; the
-            // reportSize call itself will schedule an initial render.
-            return
-        }
+        // No back buffer yet — consumer hasn't reported size. Skip; the reportSize
+        // call itself will schedule an initial render.
+        val back = entry.bitmapBack ?: return
+        val canvas = entry.bitmapBackCanvas ?: return
         if (entry.renderInFlight) {
             entry.pendingProgress = snappedProgress
             dbgRenderDropped++
@@ -399,45 +443,89 @@ class CustomEmojiAnimator(
         }
         entry.renderInFlight = true
         dbgRenderScheduled++
+        // Everything the render needs is resolved here, on the main thread — the BG
+        // thread must not read [entries] (see the thread-model KDoc).
         renderHandler.post {
-            renderOnBg(key, snappedProgress)
+            renderOnBg(key, entry, back, canvas, snappedProgress)
         }
     }
 
-    /** Runs on the BG render thread. Mutates drawable + back buffer only. */
-    private fun renderOnBg(key: EntryKey, snappedProgress: Float) {
-        val entry = entries[key] ?: return
-        val back = entry.bitmapBack ?: return
-        val canvas = entry.bitmapBackCanvas ?: return
-        // The back buffer can be recycled out from under us on the MAIN thread between this
-        // render being posted and running: eviction (removeEldestEntry), clear(), and reportSize
-        // all recycle bitmaps there while this runs on the render thread. Bail if it's already
-        // gone, and guard the mutating ops so a recycle that slips in mid-render drops the frame
-        // instead of crashing (`eraseColor`/`draw` throw IllegalStateException on a recycled
-        // bitmap). This is NOT a broken TGS — don't mark the entry broken; just reset the
-        // in-flight flag on the main thread so the next tick can reschedule.
-        if (back.isRecycled) {
-            mainHandler.post { entries[key]?.renderInFlight = false }
-            return
+    /**
+     * Runs on the BG render thread. Mutates the drawable + [back] only, never [entries]
+     * or any other [Entry] field, and always posts exactly one [onRenderComplete] so the
+     * main thread can clear `renderInFlight` (and recycle a retired entry's buffers).
+     */
+    private fun renderOnBg(
+        key: EntryKey,
+        entry: Entry,
+        back: Bitmap,
+        canvas: AndroidCanvas,
+        snappedProgress: Float,
+    ) {
+        // Retired while queued (evicted or cleared): skip the draw, the completion
+        // recycles the buffers. The UI thread defers every recycle / resize of an
+        // in-flight entry's buffers to the completion, so [back] can't be recycled
+        // under this render; the isRecycled check and the IllegalStateException guard
+        // stay as a belt-and-braces drop (`eraseColor`/`draw` throw ISE on a recycled
+        // bitmap). A dropped frame is NOT a broken TGS — don't mark the entry broken.
+        val outcome = if (entry.retired || back.isRecycled) {
+            RenderOutcome.Dropped
+        } else {
+            entry.drawable.progress = snappedProgress
+            try {
+                back.eraseColor(0)
+                entry.drawable.setBounds(0, 0, back.width, back.height)
+                entry.drawable.draw(canvas)
+                RenderOutcome.Rendered
+            } catch (_: IllegalStateException) {
+                RenderOutcome.Dropped
+            } catch (t: Throwable) {
+                Log.w("CustomEmojiAnimator", "TGS render failed for id=${key.id}; entry marked broken", t)
+                RenderOutcome.Broken
+            }
         }
-        entry.drawable.progress = snappedProgress
-        try {
-            back.eraseColor(0)
-            entry.drawable.setBounds(0, 0, back.width, back.height)
-            entry.drawable.draw(canvas)
-        } catch (_: IllegalStateException) {
-            mainHandler.post { entries[key]?.renderInFlight = false }
-            return
-        } catch (t: Throwable) {
-            entry.broken = true
-            Log.w("CustomEmojiAnimator", "TGS render failed for id=${key.id}; entry marked broken", t)
-        }
-        mainHandler.post { onRenderComplete(key, snappedProgress) }
+        mainHandler.post { onRenderComplete(key, entry, snappedProgress, outcome) }
     }
 
     /** Runs on the main thread. Swap buffers and publish progress state. */
-    private fun onRenderComplete(key: EntryKey, renderedProgress: Float) {
-        val entry = entries[key] ?: return
+    private fun onRenderComplete(
+        key: EntryKey,
+        entry: Entry,
+        renderedProgress: Float,
+        outcome: RenderOutcome,
+    ) {
+        entry.renderInFlight = false
+        if (entry.retired) {
+            // Evicted or cleared while this render was in flight — [retire] left the
+            // recycle to us. [entries] may already hold a new entry under [key]; this
+            // completion must not touch it.
+            recycleBuffers(entry)
+            return
+        }
+        if (outcome == RenderOutcome.Broken) entry.broken = true
+        if (outcome != RenderOutcome.Dropped) swapAndPublish(entry, renderedProgress)
+
+        // A larger size reported while the render was in flight: reallocate now that
+        // the BG thread has let go of the back buffer. reportSize schedules the next
+        // render itself.
+        val pendingSize = entry.pendingSizePx
+        if (pendingSize > 0) {
+            entry.pendingSizePx = 0
+            entry.pendingProgress = Float.NaN
+            reportSize(key, pendingSize)
+            return
+        }
+
+        // Chained pending render — most-recent snappedProgress that arrived while we
+        // were busy.
+        val pending = entry.pendingProgress
+        if (!pending.isNaN()) {
+            entry.pendingProgress = Float.NaN
+            scheduleRender(key, pending)
+        }
+    }
+
+    private fun swapAndPublish(entry: Entry, renderedProgress: Float) {
         // Atomic swap on main thread. Compose consumers reading `bitmapFront` see
         // the just-painted buffer; the BG thread will pick up the (now stale) old
         // front as its next back. Since we don't draw to back outside scheduleRender
@@ -453,15 +541,6 @@ class CustomEmojiAnimator(
 
         entry.progress.floatValue = renderedProgress
         dbgRenderCompleted++
-        entry.renderInFlight = false
-
-        // Chained pending render — most-recent snappedProgress that arrived while we
-        // were busy.
-        val pending = entry.pendingProgress
-        if (!pending.isNaN()) {
-            entry.pendingProgress = Float.NaN
-            scheduleRender(key, pending)
-        }
     }
 
     private fun maybeEmitStats(nowNanos: Long) {

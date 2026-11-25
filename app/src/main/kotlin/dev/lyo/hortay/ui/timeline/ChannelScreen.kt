@@ -96,6 +96,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
 // kotlinx-coroutines 1.10.1 even though Flow.debounce(Duration) graduated.
@@ -684,14 +686,19 @@ fun ChannelScreen(
                 val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
                 val nowChosen = !item.isChosen
                 repo.applyOptimisticReaction(post.chatId, target, item.kind, nowChosen)
+                // NonCancellable: backing out of the channel mid-request cancels [scope],
+                // which would skip the rollback and leave the optimistic flip in the
+                // shared feed state. The RPC + revert pair always runs to completion.
                 scope.launch {
-                    val ok = channelActions.toggleReaction(
-                        chatId = post.chatId,
-                        messageId = target,
-                        kind = item.kind,
-                        isChosen = item.isChosen,
-                    )
-                    if (!ok) repo.applyOptimisticReaction(post.chatId, target, item.kind, item.isChosen)
+                    withContext(NonCancellable) {
+                        val ok = channelActions.toggleReaction(
+                            chatId = post.chatId,
+                            messageId = target,
+                            kind = item.kind,
+                            isChosen = item.isChosen,
+                        )
+                        if (!ok) repo.applyOptimisticReaction(post.chatId, target, item.kind, item.isChosen)
+                    }
                 }
             },
             availableReactions = { post ->
@@ -713,9 +720,13 @@ fun ChannelScreen(
             onPollVote = { post, indices ->
                 val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
                 repo.applyOptimisticPollAnswer(post.chatId, target, indices)
+                // NonCancellable: see onReactionToggle above — a cancelled [scope] would
+                // skip clearPollPending and strand the poll in its pending state.
                 scope.launch {
-                    val ok = channelActions.setPollAnswer(post.chatId, target, indices)
-                    repo.clearPollPending(post.chatId, target, revert = !ok)
+                    withContext(NonCancellable) {
+                        val ok = channelActions.setPollAnswer(post.chatId, target, indices)
+                        repo.clearPollPending(post.chatId, target, revert = !ok)
+                    }
                 }
             },
             pollVotingEnabled = true,

@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,10 +41,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +63,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.archive.ArchiveSettings
 import dev.lyo.hortay.data.archive.ArchivedChannelEntry
 import dev.lyo.hortay.data.archive.ChatRef
+import dev.lyo.hortay.ui.components.HortaySnackbarHost
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.components.formatByteSize
@@ -80,7 +82,6 @@ import dev.lyo.hortay.ui.theme.tabularFigures
 import dev.lyo.hortay.ui.timeline.READING_WIDTH_CAP
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableSet
-import kotlinx.coroutines.launch
 
 /**
  * Settings → Post archive, in the grouped-block style of the rest of Settings.
@@ -103,7 +104,20 @@ fun ArchiveSettingsScreen(
     val bytes by viewModel.storageBytes.collectAsStateWithLifecycle()
     val channels by viewModel.channels.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val exporting by viewModel.exporting.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val exportDone = stringResource(R.string.archive_export_done)
+    val exportFailed = stringResource(R.string.archive_export_failed)
+    LaunchedEffect(viewModel) {
+        viewModel.exportResults.collect { result ->
+            snackbarHostState.showSnackbar(
+                when (result) {
+                    is ExportResult.Done -> exportDone
+                    ExportResult.Failed -> exportFailed
+                },
+            )
+        }
+    }
     var showOnboarding by remember { mutableStateOf(false) }
     var showDisableDialog by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -114,13 +128,8 @@ fun ArchiveSettingsScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    viewModel.exportTo(out)
-                }
-            }
-        }
+        // The application's resolver: the export can outlive this screen's Activity context.
+        if (uri != null) viewModel.export(context.applicationContext.contentResolver, uri)
     }
 
     val hasData = (counts?.all ?: 0) > 0 || (bytes ?: 0L) > 0L
@@ -144,6 +153,7 @@ fun ArchiveSettingsScreen(
                 },
             )
         },
+        snackbarHost = { HortaySnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -270,7 +280,7 @@ fun ArchiveSettingsScreen(
                                 title = stringResource(R.string.archive_export_json),
                                 chevron = true,
                                 grouped = true,
-                                onClick = { showExportConfirm = true },
+                                onClick = { if (!exporting) showExportConfirm = true },
                             )
                             SettingsRow(
                                 symbol = "delete",

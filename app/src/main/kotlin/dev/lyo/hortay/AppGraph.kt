@@ -504,6 +504,12 @@ class AppGraph(context: Context) {
         processLifecycle = ProcessLifecycleOwner.get().lifecycle,
     )
 
+    init {
+        // Parsed TGS compositions are keyed by TDLib local file paths, which belong to the
+        // outgoing account's database — drop them (and in-flight parses) on logout.
+        session.onEnd("lottieCompositions") { dev.lyo.hortay.ui.media.LottieCompositionStore.clear() }
+    }
+
     // Vector-silhouette cache for the outline → thumb → sticker visual ladder. TDLib's
     // [TdApi.GetStickerOutlineSvgPath] is offline (microseconds over JNI) but we still
     // memoise the parsed Compose Path so repeated viewport entries don't re-parse the
@@ -535,10 +541,13 @@ class AppGraph(context: Context) {
         }
 
     // Decoded-frame LRU cache for VP9+alpha WebM animations (stickers, custom emoji).
-    // Shares appScope so decode coroutines are cancelled with the process; maxBytes
-    // default (24 MB) covers ~100 small sticker frames without measurable heap pressure.
+    // Shares appScope so decode coroutines are cancelled with the process; see the class
+    // KDoc for the maxBytes budget. Keyed by TDLib local file ids, which restart per TDLib
+    // database, so it is wiped on logout — otherwise account B could be served account A's
+    // decoded sticker and the previous session's frames would stay pinned in the budget.
     val webmFrameCache: dev.lyo.hortay.data.media.WebmFrameCache =
         dev.lyo.hortay.data.media.WebmFrameCache(appScope)
+            .also { cache -> session.onEnd("webmFrameCache") { cache.clear() } }
 
     /**
      * Process-wide delivery channel for resolved Telegram deep links. The parser
@@ -888,7 +897,15 @@ class AppGraph(context: Context) {
         runCatching { commentsRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: commentsRepository")
         runCatching { mediaCache.clear() }.warnUnlessCancelled(TAG, "logout cleanup: mediaCache")
         runCatching { customEmoji.clear() }.warnUnlessCancelled(TAG, "logout cleanup: customEmoji")
-        runCatching { customEmojiAnimator.clear() }.warnUnlessCancelled(TAG, "logout cleanup: customEmojiAnimator")
+        // customEmoji.clear() also wiped the stickers the guest-mode bridge had populated, but
+        // the bridge's dedup set still marks those ids as requested — without this reset they
+        // stay blank in guest mode until restart (guest → sign in → sign out).
+        runCatching { webCustomEmojiBridge.reset() }.warnUnlessCancelled(TAG, "logout cleanup: webCustomEmojiBridge")
+        // Main thread: clear() recycles bitmaps the UI thread blits and mutates the
+        // animator's unsynchronized entry map, which the UI thread reads every frame.
+        runCatching {
+            withContext(Dispatchers.Main) { customEmojiAnimator.clear() }
+        }.warnUnlessCancelled(TAG, "logout cleanup: customEmojiAnimator")
         runCatching { stickerOutline.clear() }.warnUnlessCancelled(TAG, "logout cleanup: stickerOutline")
         runCatching { chatFoldersRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: chatFoldersRepository")
         runCatching { translations.clear() }.warnUnlessCancelled(TAG, "logout cleanup: translations")
@@ -913,12 +930,21 @@ class AppGraph(context: Context) {
         // then add() are two separate snapshot mutations, and between them the
         // back stack is momentarily empty — NavDisplay requires a non-empty
         // stack and can crash if it recomposes against the empty frame.
+        // On Main, like every other back-stack writer (scaffold pushes/pops, deep-link
+        // dispatch): a mutable snapshot applied from this background thread can conflict
+        // with a concurrent UI-thread push and fail to apply.
         runCatching {
-            Snapshot.withMutableSnapshot { backStack.apply { clear(); add(HomeKey) } }
+            withContext(Dispatchers.Main) {
+                Snapshot.withMutableSnapshot { backStack.apply { clear(); add(HomeKey) } }
+            }
         }.warnUnlessCancelled(TAG, "logout cleanup: backStack")
         // Archive snapshots belong to the previous account's message ids and
         // chat ids. Wipe on logout so account B doesn't see account A's history
         // in the archive screen.
+        // The early "archiveRecorder" hook already reset the recorder, but posts/comments
+        // repositories are cleared above, after it — an ingest landing in between can
+        // re-arm it with account A's events. Reset again right before the wipe.
+        runCatching { archiveRecorder.reset() }.warnUnlessCancelled(TAG, "logout cleanup: archiveRecorder")
         runCatching { archiveRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: archiveRepository")
         // Per-account preferences in ArchiveSettingsStore (currently: the
         // excluded-chat set, which is keyed on TDLib chatIds). The master

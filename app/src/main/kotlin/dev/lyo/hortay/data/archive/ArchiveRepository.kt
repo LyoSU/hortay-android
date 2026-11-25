@@ -610,9 +610,17 @@ class ArchiveRepository(
      * bounded by one page of message rows plus one message's versions, not by the total
      * archive size.
      *
+     * Runs on [Dispatchers.IO] whatever the caller's context: SQL paging, Base64 and the
+     * stream writes all block. Holds the capture lock for the whole write, so the file is one
+     * consistent snapshot.
+     *
      * @return the number of messages written.
      */
     suspend fun exportTo(out: java.io.OutputStream): Int = writeMutex.withLock {
+        withContext(Dispatchers.IO) { writeExport(out) }
+    }
+
+    private fun writeExport(out: java.io.OutputStream): Int {
         val writer = android.util.JsonWriter(out.writer(Charsets.UTF_8).buffered())
         var count = 0
         writer.beginObject()
@@ -638,7 +646,7 @@ class ArchiveRepository(
         writeJournalArray(writer, journal?.readAll().orEmpty())
         writer.endObject()
         writer.flush()
-        count
+        return count
     }
 
     private fun writeExportMessage(writer: android.util.JsonWriter, m: ArchivedMessage) {

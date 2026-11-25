@@ -738,6 +738,8 @@
     <string name="archive_disable_title">Wyłączyć archiwum</string>
     <string name="archive_empty_enabled">Nic tu jeszcze nie ma. Gdy kanał edytuje lub usuwa wpis, pojawi się tutaj.</string>
     <string name="archive_export_continue">Eksportuj</string>
+    <string name="archive_export_done">Archiwum wyeksportowane</string>
+    <string name="archive_export_failed">Nie udało się wyeksportować archiwum. Spróbuj ponownie</string>
     <string name="archive_export_json">Eksportuj do JSON</string>
     <string name="archive_export_size_warning">Przybliżony rozmiar: %d MB. Kontynuować?</string>
     <string name="archive_filter_all">Wszystkie</string>

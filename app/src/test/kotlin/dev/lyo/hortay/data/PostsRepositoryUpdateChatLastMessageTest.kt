@@ -1,10 +1,12 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class PostsRepositoryUpdateChatLastMessageTest {
@@ -71,5 +73,39 @@ class PostsRepositoryUpdateChatLastMessageTest {
 
         assertEquals(listOf(99L), harness.repo.posts.value.map { it.id },
             "a known-but-evicted chat's last message must reach the feed via the offline GetChat")
+    }
+
+    @Test
+    fun `a cold-start lastMessage whose ingest waits does not stall the update collector`() = runTest {
+        // Before the initial sync, an UpdateChatLastMessage used to be ingested INLINE on
+        // the single update collector. Anything ingest waits on (here the GetChat re-read
+        // of an evicted chat; in production a networked reply GetMessage behind the
+        // FLOOD_WAIT gate) then held back every later update.
+        val harness = PostsRepositoryTestHarness(this)
+        val chat = harness.fakeChannel(id = -1004L, title = "Before", lastMessage = null)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+        harness.td.emitUpdate(TdApi.UpdateChatTitle(chat.id, "After"))
+        harness.advanceUntilIdle()
+
+        val gate = CompletableDeferred<Unit>()
+        harness.td.onAnySuspending("GetChat") {
+            gate.await()
+            harness.fakeChannel(id = chat.id, title = "After")
+        }
+        val msg = harness.fakeChannelMessage(chatId = chat.id, messageId = 77L, date = 1_700_000_000)
+        harness.td.emitUpdate(TdApi.UpdateChatLastMessage(chat.id, msg, emptyArray()))
+        harness.runCurrent()
+        assertTrue(harness.repo.posts.value.isEmpty(), "precondition: the ingest is parked on GetChat")
+
+        harness.td.emitUpdate(TdApi.UpdateChatReadInbox(chat.id, 70L, 3))
+        harness.runCurrent()
+        assertEquals(70L, harness.repo.chatReadCursors.value[chat.id],
+            "updates after the parked lastMessage must still be handled")
+
+        gate.complete(Unit)
+        harness.advanceUntilIdle()
+        assertEquals(listOf(77L), harness.repo.posts.value.map { it.id },
+            "the queued lastMessage still lands once its ingest resumes")
     }
 }

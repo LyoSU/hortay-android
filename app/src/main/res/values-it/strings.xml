@@ -724,6 +724,8 @@
     <string name="archive_disable_title">Disattiva archivio</string>
     <string name="archive_empty_enabled">Ancora niente. Quando un canale modifica o elimina un post, apparirà qui.</string>
     <string name="archive_export_continue">Esporta</string>
+    <string name="archive_export_done">Archivio esportato</string>
+    <string name="archive_export_failed">Impossibile esportare l\'archivio. Riprova</string>
     <string name="archive_export_json">Esporta in JSON</string>
     <string name="archive_export_size_warning">Dimensione approssimativa: %d MB. Continuare?</string>
     <string name="archive_filter_all">Tutti</string>

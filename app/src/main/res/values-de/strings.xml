@@ -709,6 +709,8 @@
     <string name="archive_disable_title">Archiv deaktivieren</string>
     <string name="archive_empty_enabled">Noch nichts. Sobald ein Kanal einen Beitrag bearbeitet oder löscht, erscheint er hier.</string>
     <string name="archive_export_continue">Exportieren</string>
+    <string name="archive_export_done">Archiv exportiert</string>
+    <string name="archive_export_failed">Archiv konnte nicht exportiert werden. Versuche es erneut</string>
     <string name="archive_export_json">Als JSON exportieren</string>
     <string name="archive_export_size_warning">Ungefähre Größe: %d MB. Weiter?</string>
     <string name="archive_filter_all">Alle</string>

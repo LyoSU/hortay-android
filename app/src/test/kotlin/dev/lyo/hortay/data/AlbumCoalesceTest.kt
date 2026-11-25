@@ -688,6 +688,46 @@ class AlbumCoalesceTest {
         assertEquals(0, harness.td.rpcCount("GetChatHistory"))
         assertEquals(3, harness.repo.posts.value.size, "degraded leads still land; Layer-2 repairs them on focus")
     }
+
+    @Test
+    fun `deleting a photo album's anchor moves the card id to the lowest surviving member`() = runTest {
+        // Actions keyed on post.id (report, summarize, bookmark key, album repair) must not
+        // target the deleted message. The new id is the one PostFilterStrategy would pick
+        // when re-merging the survivors (lowest id), so a later re-ingest keeps it.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -9400L
+        val albumId = 950L
+        val stride = 1L shl 20
+        val memberIds = (10L..12L).map { it * stride }
+        harness.td.onAny("GetMessageLocally") { req ->
+            val q = req as TdApi.GetMessageLocally
+            if (q.chatId == chatId && q.messageId in memberIds && q.messageId != memberIds.last()) {
+                harness.fakePhotoAlbumMessage(chatId, q.messageId, date = baseDate, mediaAlbumId = albumId)
+            } else {
+                TdApi.Error(404, "message not found locally")
+            }
+        }
+        harness.td.emitUpdate(
+            TdApi.UpdateNewChat(
+                harness.fakeChannel(
+                    id = chatId,
+                    lastMessage = harness.fakePhotoAlbumMessage(chatId, memberIds.last(), date = baseDate, mediaAlbumId = albumId),
+                ),
+            ),
+        )
+        harness.advanceUntilIdle()
+        val before = harness.repo.posts.value.single()
+        assertEquals(memberIds.first(), before.id, "precondition: the lowest member anchors the card")
+        assertEquals(memberIds, before.albumMessageIds)
+
+        harness.td.emitUpdate(TdApi.UpdateDeleteMessages(chatId, longArrayOf(memberIds.first()), true, false))
+        harness.advanceUntilIdle()
+
+        val after = harness.repo.posts.value.single()
+        assertEquals(memberIds[1], after.id, "the card must not keep the deleted anchor's id")
+        assertEquals(memberIds.drop(1), after.albumMessageIds)
+        assertEquals(2, (after.content as PostContent.PhotoAlbum).items.size)
+    }
 }
 
 /**

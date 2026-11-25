@@ -112,4 +112,38 @@ class MediaCacheLookupTest {
         runCurrent()
         assertEquals(1, td.rpcCount("DownloadFile"))
     }
+
+    @Test
+    fun `invalidate re-downloads a Ready file once the reducer has reset it`() = runTest {
+        val td = FakeTdSender()
+        val readyFile = TdApi.File(
+            fileId,
+            1_000L,
+            1_000L,
+            TdApi.LocalFile("/cache/photos/42.jpg", true, false, false, true, 0L, 1_000L, 1_000L),
+            TdApi.RemoteFile("remote", "unique", false, true, 1_000L),
+        )
+        var lookups = 0
+        // First lookup: the file is on disk. Every later one: TDLib's optimiser evicted it.
+        td.onAny("GetFile") { if (lookups++ == 0) readyFile else coldFile() }
+        td.onAny("DownloadFile") { coldFile() }
+        val cache = newCache(td)
+        val state = cache.observe(fileId)
+        runCurrent()
+
+        launch { cache.ensure(fileId, DownloadPriority.VisibleMedia) }
+        runCurrent()
+        assertTrue(state.value is MediaState.Ready, "seeded Ready: ${state.value}")
+        assertEquals(0, td.rpcCount("DownloadFile"))
+
+        cache.invalidate(fileId)
+        runCurrent()
+
+        assertEquals(
+            1,
+            td.rpcCount("DownloadFile"),
+            "ensure must run after the reducer applied the reset, not see the stale Ready and return",
+        )
+        assertTrue(state.value is MediaState.Downloading, "slot restarts the download: ${state.value}")
+    }
 }

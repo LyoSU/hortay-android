@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -190,6 +191,11 @@ private fun VideoNoteRenderer(
 
     LaunchedEffect(playing) { exoPlayer.playWhenReady = playing }
 
+    // The lifecycle observer below lives as long as [exoPlayer], so it must read the CURRENT
+    // play/pause choice — a captured mount-time value resumes a note the user paused (with the
+    // pause glyph still drawn), or keeps one paused that the user had started again.
+    val latestPlaying by rememberUpdatedState(playing)
+
     LaunchedEffect(readyPath) {
         if (readyPath.isNullOrEmpty()) return@LaunchedEffect
         exoPlayer.setMediaItem(
@@ -213,7 +219,7 @@ private fun VideoNoteRenderer(
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> exoPlayer.pause()
-                Lifecycle.Event.ON_RESUME -> if (playing) exoPlayer.play()
+                Lifecycle.Event.ON_RESUME -> if (latestPlaying) exoPlayer.play()
                 else -> Unit
             }
         }

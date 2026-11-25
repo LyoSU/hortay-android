@@ -330,6 +330,64 @@ class CommentsRepositoryTest {
     }
 
     @Test
+    fun `root-album mirror siblings split across a page boundary are filtered`() = runTest {
+        // Regression: history pages walk ids descending and the root mirror is its album's
+        // LOWEST id, so when the album straddles a page boundary the higher-id siblings land
+        // on an earlier page, before the root mirror reveals the album id. They used to be
+        // appended as ordinary comments and stayed in the thread as phantoms.
+        val chatId = 123L
+        val anchor = 7L
+        val threadChatId = 9999L
+        val rootId = 7L
+        val rootAlbumId = 444L
+
+        fun sibling(id: Long, caption: String = "") = photoMessage(
+            id = id, chatId = threadChatId, fromUserId = 0L,
+            topicRoot = rootId, mediaAlbumId = rootAlbumId, caption = caption,
+        )
+
+        val td = FakeTdSender().apply {
+            onNext { _ ->
+                TdApi.MessageThreadInfo().apply {
+                    this.chatId = threadChatId
+                    this.messageThreadId = rootId
+                }
+            }
+            // OpenChat ×2 — thread chat + host channel via withOpenChats.
+            onNext { _ -> TdApi.Ok() }
+            onNext { _ -> TdApi.Ok() }
+            // Pages keyed on fromMessageId; offset 0 is inclusive of fromMessageId, as in TDLib.
+            onAny("GetMessageThreadHistory") { q ->
+                val from = (q as TdApi.GetMessageThreadHistory).fromMessageId
+                TdApi.Messages().apply {
+                    messages = when (from) {
+                        // Page 1: one real comment, then the two highest album siblings.
+                        0L -> arrayOf(
+                            message(id = 200L, chatId = threadChatId, fromUserId = 22L, topicRoot = rootId),
+                            sibling(11L),
+                            sibling(10L),
+                        )
+                        // Page 2: boundary repeat, the rest of the album, the root mirror last.
+                        10L -> arrayOf(sibling(10L), sibling(9L), sibling(8L), sibling(rootId, caption = "channel post"))
+                        else -> arrayOf(sibling(rootId, caption = "channel post"))
+                    }
+                    totalCount = 6
+                }
+            }
+            onAny("CloseChat") { _ -> TdApi.Ok() }
+        }
+        val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)
+
+        val ready = repo.observeThread(chatId, listOf(anchor)).first {
+            it is CommentsRepository.ThreadState.Ready
+        } as CommentsRepository.ThreadState.Ready
+
+        val ids = ready.rows.map { it.message.id }
+        assertEquals(listOf(200L), ids,
+            "siblings 10 and 11 from the earlier page must be dropped once the root mirror reveals the album")
+    }
+
+    @Test
     fun `reply targeting a mid-album member is reparented to the merged anchor`() = runTest {
         // Telegram-UX reroutes "reply" on any album photo to the canonical (first)
         // member, but Telegram-server still accepts a reply pointing to ANY album

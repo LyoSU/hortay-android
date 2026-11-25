@@ -787,6 +787,8 @@
     <string name="archive_export_json">Export to JSON</string>
     <string name="archive_export_size_warning">Approximate size: %d MB. Continue?</string>
     <string name="archive_export_continue">Export</string>
+    <string name="archive_export_done">Archive exported</string>
+    <string name="archive_export_failed">Couldn\'t export the archive. Try again</string>
 
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Save edits and deletions?</string>

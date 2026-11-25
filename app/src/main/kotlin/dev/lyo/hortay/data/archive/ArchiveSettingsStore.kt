@@ -40,6 +40,16 @@ class ArchiveSettingsStore(private val context: Context) {
     }
 
     /**
+     * Adds [ref] to, or removes it from, the excluded set as one atomic DataStore edit — the
+     * set is read inside the transaction, so concurrent toggles never overwrite each other.
+     */
+    suspend fun setChatExcluded(ref: ChatRef, excluded: Boolean) = update {
+        val current = it[K_EXCLUDED] ?: emptySet()
+        val encoded = encode(ref)
+        it[K_EXCLUDED] = if (excluded) current + encoded else current - encoded
+    }
+
+    /**
      * Drop per-account state on logout. The master `enabled` toggle is a user
      * preference and survives — but the excluded-chat set is keyed on the
      * previous account's TDLib chatIds, which become meaningless (and outright

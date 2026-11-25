@@ -24,6 +24,22 @@ class ArchiveSweepTest {
     private fun keys(f: Fixture): List<String> =
         f.db.archivedMessageQueries.selectPageForExport(0L, Long.MAX_VALUE).executeAsList().map { it.message_key }.sorted()
 
+    /**
+     * The settings screen sweeps right after writing a new retention; the shared StateFlow
+     * may still hold the old value, so the sweep uses the value it is handed.
+     */
+    @Test
+    fun retention_usesThePassedSettingsOverAStaleFlow() = runTest {
+        val f = Fixture(ArchiveSettings(enabled = true, retentionDays = 365))
+        f.now = 0L
+        f.repo.captureTdlibBaseline(chat, "1", null, testMeta("ancient"), originalDateMs = 0L)
+        f.now = 30L * day + 1_000_000L
+
+        f.sweep().run(f.settings.value.copy(retentionDays = 30))
+
+        assertNull(f.db.messageOf(chat, "1"))
+    }
+
     /** Retention keys on the message's newest event, not on Telegram's dates. */
     @Test
     fun retention_dropsMessagesWhoseNewestEventIsOld() = runTest {

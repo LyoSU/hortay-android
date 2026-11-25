@@ -704,6 +704,8 @@
     <string name="archive_disable_title">Arşivi devre dışı bırak</string>
     <string name="archive_empty_enabled">Henüz bir şey yok. Bir kanal gönderi düzenlediğinde veya sildiğinde burada görünür.</string>
     <string name="archive_export_continue">Dışa aktar</string>
+    <string name="archive_export_done">Arşiv dışa aktarıldı</string>
+    <string name="archive_export_failed">Arşiv dışa aktarılamadı. Tekrar dene</string>
     <string name="archive_export_json">JSON olarak dışa aktar</string>
     <string name="archive_export_size_warning">Yaklaşık boyut: %d MB. Devam edilsin mi?</string>
     <string name="archive_filter_all">Tümü</string>

@@ -73,6 +73,19 @@ interface FeedSource {
      * fixed timer. Default: always settled (guest mode has no such sync phase).
      */
     val initialSyncDone: StateFlow<Boolean> get() = ALWAYS_SETTLED
+
+    /**
+     * Monotonic account-session counter: changes exactly when the impl wipes its
+     * per-account state (TDLib mode: `PostsRepository.clear()` on logout), and never
+     * otherwise. Long-lived consumers that hold session-derived state — the feed
+     * ViewModel outlives a logout because `HomeKey` stays on the back stack — reset on
+     * every change. Unlike a true → false edge on [initialSyncDone], it also fires when
+     * the first sync never completed (offline start, logout mid-sync). Default: one
+     * session for the whole process (guest mode has no account to sign out of).
+     */
+    val sessionGeneration: StateFlow<Long> get() = SINGLE_SESSION
 }
 
 private val ALWAYS_SETTLED: StateFlow<Boolean> = MutableStateFlow(true).asStateFlow()
+
+private val SINGLE_SESSION: StateFlow<Long> = MutableStateFlow(0L).asStateFlow()

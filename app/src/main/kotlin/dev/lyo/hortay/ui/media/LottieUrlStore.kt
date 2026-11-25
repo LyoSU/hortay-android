@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
 /**
@@ -55,8 +56,36 @@ internal object LottieUrlStore {
                 Log.w(TAG, "lottie URL HTTP ${response.code}: $url")
                 return null
             }
-            return response.body?.bytes()
+            val body = response.body ?: return null
+            // Refuse an announced oversize payload before reading a byte, then read with a hard
+            // cap anyway: Content-Length may be absent (chunked) or wrong, and `bytes()` would
+            // buffer whatever the server sends.
+            val declared = body.contentLength()
+            if (declared > MAX_DECOMPRESSED_BYTES) {
+                Log.w(TAG, "lottie URL Content-Length exceeds cap ($declared > $MAX_DECOMPRESSED_BYTES)")
+                return null
+            }
+            return body.byteStream().use { readCapped(it, MAX_DECOMPRESSED_BYTES) }
+                ?: run {
+                    Log.w(TAG, "lottie URL body exceeds cap ($MAX_DECOMPRESSED_BYTES bytes)")
+                    null
+                }
         }
+    }
+
+    /** Reads [input] fully, or returns null as soon as more than [maxBytes] arrive. */
+    internal fun readCapped(input: InputStream, maxBytes: Long): ByteArray? {
+        val out = ByteArrayOutputStream(READ_BUFFER_BYTES)
+        val buf = ByteArray(READ_BUFFER_BYTES)
+        var total = 0L
+        while (true) {
+            val read = input.read(buf)
+            if (read < 0) break
+            total += read
+            if (total > maxBytes) return null
+            out.write(buf, 0, read)
+        }
+        return out.toByteArray()
     }
 
     /**
@@ -102,6 +131,7 @@ internal object LottieUrlStore {
     private const val TAG = "LottieUrlStore"
     private const val MAX_ENTRIES = 64
     private const val MAX_DECOMPRESSED_BYTES = 5L * 1024L * 1024L
+    private const val READ_BUFFER_BYTES = 16 * 1024
     private const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
 }

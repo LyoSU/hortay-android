@@ -422,8 +422,18 @@ class CommentsRepository(
                     // (higher ids) appear earlier in the batch iteration order.
                     if (rootAlbumId == 0L) {
                         msgs.firstOrNull { it.id == anchor.rootId }
-                            ?.takeIf { it.mediaAlbumId != 0L }
-                            ?.let { rootAlbumId = it.mediaAlbumId }
+                            ?.mediaAlbumId
+                            ?.takeIf { it != 0L }
+                            ?.let { albumId ->
+                                rootAlbumId = albumId
+                                // The album can straddle a page boundary: its higher-id
+                                // siblings arrived on an EARLIER page, before the root mirror
+                                // revealed the album id, and were appended as ordinary
+                                // comments. Drop them now (they stay in seenIds, so a later
+                                // re-delivery is still a no-op) or they show as phantom
+                                // comments.
+                                live.removeAll { it.mediaAlbumId == albumId }
+                            }
                     }
                     var appended = 0
                     for (m in msgs) {

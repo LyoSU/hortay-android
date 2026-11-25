@@ -149,4 +149,40 @@ class ChannelDirectoryTest {
         assertEquals(PublicHandleResult.User(42L), directory.resolveChatKind(42L))
         assertEquals(PublicHandleResult.NotFound, directory.resolveChatKind(7L))
     }
+
+    // ---------- lookupPublicChat classification ----------
+
+    private suspend fun lookupWith(answer: (TdApi.Function<*>) -> TdApi.Object): PublicChatLookup {
+        val td = FakeTdSender().apply { onAny("SearchPublicChat", answer) }
+        // lookupPublicChat never reads the registry; an unbound one is enough.
+        return ChannelDirectory(td, ChatRegistry(td)).lookupPublicChat("@durov")
+    }
+
+    @Test
+    fun `lookupPublicChat returns Found with the chat id`() = runTest {
+        assertEquals(
+            PublicChatLookup.Found(-1001L),
+            lookupWith { TdApi.Chat().apply { id = -1001L } },
+        )
+    }
+
+    @Test
+    fun `lookupPublicChat maps a 400 username error to NotFound`() = runTest {
+        assertEquals(PublicChatLookup.NotFound, lookupWith { TdApi.Error(400, "USERNAME_NOT_OCCUPIED") })
+    }
+
+    @Test
+    fun `lookupPublicChat maps flood wait and timeout to Failed`() = runTest {
+        assertEquals(PublicChatLookup.Failed, lookupWith { TdApi.Error(420, "FLOOD_WAIT_30") })
+        assertEquals(PublicChatLookup.Failed, lookupWith { TdApi.Error(429, "Too Many Requests: retry after 30") })
+        assertEquals(
+            PublicChatLookup.Failed,
+            lookupWith { TdApi.Error(TdClient.SEND_TIMEOUT_CODE, "timeout") },
+        )
+    }
+
+    @Test
+    fun `lookupPublicChat maps a non-TDLib failure to Failed`() = runTest {
+        assertEquals(PublicChatLookup.Failed, lookupWith { throw java.io.IOException("offline") })
+    }
 }

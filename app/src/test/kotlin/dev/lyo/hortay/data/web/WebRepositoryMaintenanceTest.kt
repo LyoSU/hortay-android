@@ -220,10 +220,33 @@ class WebRepositoryMaintenanceTest {
         repo.subscribe("chan")
         repo.ingestPage(page("chan", post("chan", 5)), null, null, fetchedAtMs = 1_000L)
 
-        repo.refreshExistingPosts(listOf(post("chan", 4), post("chan", 5)), fetchedAtMs = 2_000L)
+        repo.refreshExistingPosts("chan", listOf(post("chan", 4), post("chan", 5)), fetchedAtMs = 2_000L)
 
         assertNull(db.postQueries.selectFingerprint("chan", 4).executeAsOneOrNull())
         assertEquals(2_000L, db.postQueries.selectFingerprint("chan", 5).executeAsOne().fetched_at_ms)
+    }
+
+    @Test
+    fun ingestPage_dropsPostsNamingAnotherChannel() = runTest {
+        val (repo, db) = newRepo()
+        repo.subscribe("chan")
+        repo.subscribe("victim")
+        repo.ingestPage(page("chan", post("chan", 1), post("victim", 2)), null, null, 1_000L)
+
+        assertNotNull(db.postQueries.selectFingerprint("chan", 1).executeAsOneOrNull())
+        assertNull(db.postQueries.selectFingerprint("victim", 2).executeAsOneOrNull())
+    }
+
+    @Test
+    fun ingestOlderPosts_dropsPostsNamingAnotherChannel_ignoringCase() = runTest {
+        val (repo, db) = newRepo()
+        repo.subscribe("chan")
+        repo.subscribe("victim")
+
+        repo.ingestOlderPosts("chan", listOf(post("Chan", 3), post("victim", 4)), fetchedAtMs = 1_000L)
+
+        assertNotNull(db.postQueries.selectFingerprint("Chan", 3).executeAsOneOrNull())
+        assertNull(db.postQueries.selectFingerprint("victim", 4).executeAsOneOrNull())
     }
 
     @Test

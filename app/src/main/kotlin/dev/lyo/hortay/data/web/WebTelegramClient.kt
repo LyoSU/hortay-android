@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.Cache
 import okhttp3.Call
 import okhttp3.Callback
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -100,9 +100,15 @@ class WebTelegramClient(
         useCache: Boolean,
         reportNotModified: Boolean,
     ): FetchResult {
-        awaitGate()
+        // A handle that isn't a plain username can't name a t.me/s/ page — and must
+        // never reach the URL, where `..` or an encoded `/` / `?` would retarget the
+        // request. Refused before the gate: there is nothing to rate-limit.
+        val url = buildTmePreviewUrl(username, before, after) ?: run {
+            Log.w(TAG, "fetchChannelPage: refusing malformed handle")
+            return FetchResult.NotFound
+        }
 
-        val url = buildUrl(username, before, after)
+        awaitGate()
 
         val request = Request.Builder()
             .url(url)
@@ -289,13 +295,6 @@ class WebTelegramClient(
         }
     }
 
-    private fun buildUrl(username: String, before: String?, after: String?): String {
-        val base = "https://t.me/s/$username".toHttpUrl().newBuilder()
-        if (before != null) base.addQueryParameter("before", before)
-        if (after != null) base.addQueryParameter("after", after)
-        return base.build().toString()
-    }
-
     private suspend fun awaitGate() {
         // Loop, not single-shot: with [fetchSemaphore] permitting up to 6 concurrent
         // fetchChannelPage calls, all six can read [gateUntilMs] before the first
@@ -431,6 +430,31 @@ class WebTelegramClient(
         private const val HTTP_CACHE_SIZE_BYTES = 10L * 1024 * 1024
     }
 }
+
+/**
+ * `https://t.me/s/<username>` with optional `before` / `after` cursors, or null when
+ * [username] isn't a plain handle. The handle goes in as one encoded path segment AND
+ * is checked against [WEB_FETCH_HANDLE_REGEX] first: segment encoding alone escapes `/`
+ * and `?`, but OkHttp still resolves a `.` / `..` segment, so only the allowlist
+ * guarantees no input can move the request off the channel's preview page. The bound
+ * is ASCII letters / digits / underscores, 1-32 chars — looser than
+ * [parseUsernameFromInput] so every handle already stored in `web.db` stays fetchable.
+ *
+ * Top-level + internal for unit tests.
+ */
+internal fun buildTmePreviewUrl(username: String, before: String?, after: String?): String? {
+    if (!WEB_FETCH_HANDLE_REGEX.matches(username)) return null
+    val builder = HttpUrl.Builder()
+        .scheme("https")
+        .host("t.me")
+        .addPathSegment("s")
+        .addPathSegment(username)
+    if (before != null) builder.addQueryParameter("before", before)
+    if (after != null) builder.addQueryParameter("after", after)
+    return builder.build().toString()
+}
+
+private val WEB_FETCH_HANDLE_REGEX = Regex("""[A-Za-z0-9_]{1,32}""")
 
 /**
  * Classify a 30x redirect target from a `t.me/s/<u>` probe. Telegram redirects a

@@ -97,13 +97,16 @@ class WebCustomEmojiResolver(
         emojiCache?.let { store ->
             val freshAfterMs = System.currentTimeMillis() - EMOJI_CACHE_TTL_MS
             val persisted = runCatching { store.cachedEmoji(emojiId, freshAfterMs) }.getOrNull()
-            if (persisted != null) {
+            // Rows written before the URL gate existed may hold an unsafe URL; such a row
+            // is skipped and re-resolved over the network.
+            val safeUrl = persisted?.url?.let(::safeAssetUrl)
+            if (persisted != null && safeUrl != null) {
                 typeFromDbValue(persisted.type)?.let { type ->
                     val resolved = ResolvedEmoji(
                         emojiId = emojiId,
                         type = type,
-                        url = persisted.url,
-                        thumbUrl = persisted.thumbUrl,
+                        url = safeUrl,
+                        thumbUrl = persisted.thumbUrl?.let(::safeAssetUrl),
                         sizePx = persisted.sizePx ?: defaultSizeFor(type),
                     )
                     cacheMutex.withLock { cache[emojiId] = resolved }
@@ -188,11 +191,17 @@ class WebCustomEmojiResolver(
             Log.w(TAG, "resolve($emojiId) no emoji url field")
             return null
         }
+        // Both URLs reach Coil / OkHttp / ExoPlayer, which honour file://, content://,
+        // data: and cleartext http:// — only plain https resources get through.
+        val safeUrl = safeAssetUrl(url) ?: run {
+            Log.w(TAG, "resolve($emojiId) rejected non-https emoji url")
+            return null
+        }
         return ResolvedEmoji(
             emojiId = emojiId,
             type = type,
-            url = url,
-            thumbUrl = json.thumb,
+            url = safeUrl,
+            thumbUrl = json.thumb?.let(::safeAssetUrl),
             sizePx = json.size ?: defaultSizeFor(type),
         )
     }
@@ -225,6 +234,15 @@ class WebCustomEmojiResolver(
                 }
             })
         }
+    }
+
+    /** [raw] as a plain https URL, or null. A protocol-relative `//host/…` (the form
+     *  t.me uses in its own HTML) is read as https; anything else goes through
+     *  [TmePageParser.isSafeHttpsUrl] unchanged. */
+    internal fun safeAssetUrl(raw: String): String? {
+        val trimmed = raw.trim()
+        val absolute = if (trimmed.startsWith("//")) "https:$trimmed" else trimmed
+        return absolute.takeIf(TmePageParser::isSafeHttpsUrl)
     }
 
     private fun defaultSizeFor(type: ResolvedEmoji.Type): Int =

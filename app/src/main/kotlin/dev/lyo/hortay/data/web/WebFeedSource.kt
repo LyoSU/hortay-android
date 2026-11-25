@@ -414,56 +414,65 @@ class WebFeedSource(
             return
         }
         try {
-            val nowMs = System.currentTimeMillis()
-            val targets = repository.subscribedUsernames()
-            if (targets.isEmpty()) {
-                _refreshState.value = RefreshState.Idle
-                return
-            }
-            if (!force && nowMs - lastSuccessfulRefreshAtMs < stalenessWindowMs) {
-                _refreshState.value = RefreshState.Idle
-                return
-            }
-
-            val staleMediaSet = repository.channelsWithStaleMedia(nowMs - mediaTtlMs).toSet()
-            _refreshState.value = RefreshState.Refreshing(targets.size)
-
-            try {
-                val outcomes = coroutineScope {
-                    targets.map { username ->
-                        async {
-                            val mediaStale = username in staleMediaSet
-                            fetchOne(
-                                username = username,
-                                forceNetwork = force || mediaStale,
-                                fetchedAtMs = System.currentTimeMillis(),
-                                // Only bypass the ingest fingerprint guard for channels
-                                // whose media aged past the TTL — NOT for a blanket
-                                // pull-to-refresh (force), which would erode the guard's
-                                // ~80% skip rate across every post. A plateaued post whose
-                                // media rotated between plain refreshes still self-heals
-                                // reactively via [refetchForStalePost].
-                                forceMediaRefresh = mediaStale,
-                            )
-                        }
-                    }.awaitAll()
-                }
-                _consecutiveNoOpSweeps.value = nextNoOpStreak(outcomes, _consecutiveNoOpSweeps.value)
-                lastSuccessfulRefreshAtMs = System.currentTimeMillis()
-                _refreshState.value = RefreshState.Idle
-                maybeVacuum()
-            } catch (t: Throwable) {
-                if (t is kotlinx.coroutines.CancellationException) {
-                    // The scheduler cancels a sweep when guest mode ends or the app
-                    // goes to the background; don't leave the indicator spinning.
-                    _refreshState.value = RefreshState.Idle
-                    throw t
-                }
-                Log.w(TAG, "refresh failed: ${t.message}")
-                _refreshState.value = RefreshState.Error(t.message ?: "refresh failed")
-            }
+            refreshLocked(force)
         } finally {
             refreshMutex.unlock()
+        }
+    }
+
+    /**
+     * The sweep body. Caller MUST hold [refreshMutex] — [doRefresh] via `tryLock`,
+     * [clearCacheAndRefresh] via `withLock` (the mutex isn't reentrant, so the latter
+     * can't call [doRefresh] from inside its lock).
+     */
+    private suspend fun refreshLocked(force: Boolean) {
+        val nowMs = System.currentTimeMillis()
+        val targets = repository.subscribedUsernames()
+        if (targets.isEmpty()) {
+            _refreshState.value = RefreshState.Idle
+            return
+        }
+        if (!force && nowMs - lastSuccessfulRefreshAtMs < stalenessWindowMs) {
+            _refreshState.value = RefreshState.Idle
+            return
+        }
+
+        val staleMediaSet = repository.channelsWithStaleMedia(nowMs - mediaTtlMs).toSet()
+        _refreshState.value = RefreshState.Refreshing(targets.size)
+
+        try {
+            val outcomes = coroutineScope {
+                targets.map { username ->
+                    async {
+                        val mediaStale = username in staleMediaSet
+                        fetchOne(
+                            username = username,
+                            forceNetwork = force || mediaStale,
+                            fetchedAtMs = System.currentTimeMillis(),
+                            // Only bypass the ingest fingerprint guard for channels
+                            // whose media aged past the TTL — NOT for a blanket
+                            // pull-to-refresh (force), which would erode the guard's
+                            // ~80% skip rate across every post. A plateaued post whose
+                            // media rotated between plain refreshes still self-heals
+                            // reactively via [refetchForStalePost].
+                            forceMediaRefresh = mediaStale,
+                        )
+                    }
+                }.awaitAll()
+            }
+            _consecutiveNoOpSweeps.value = nextNoOpStreak(outcomes, _consecutiveNoOpSweeps.value)
+            lastSuccessfulRefreshAtMs = System.currentTimeMillis()
+            _refreshState.value = RefreshState.Idle
+            maybeVacuum()
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) {
+                // The scheduler cancels a sweep when guest mode ends or the app
+                // goes to the background; don't leave the indicator spinning.
+                _refreshState.value = RefreshState.Idle
+                throw t
+            }
+            Log.w(TAG, "refresh failed: ${t.message}")
+            _refreshState.value = RefreshState.Error(t.message ?: "refresh failed")
         }
     }
 
@@ -575,7 +584,7 @@ class WebFeedSource(
                     client.fetchChannelPage(username, before = (seq + 1).toString(), useCache = false)
                 }
                 if (result is FetchResult.Page) {
-                    repository.refreshExistingPosts(result.page.posts, System.currentTimeMillis())
+                    repository.refreshExistingPosts(username, result.page.posts, System.currentTimeMillis())
                 } else {
                     Log.w(TAG, "older-page media refetch for $username before ${seq + 1}: $result")
                 }
@@ -659,7 +668,7 @@ class WebFeedSource(
                 repository.markNotModified(username, fetchedAtMs)
                 return if (gotNew) FetchOutcome.Fresh else FetchOutcome.NoOp
             }
-            repository.ingestOlderPosts(posts, fetchedAtMs)
+            repository.ingestOlderPosts(username, posts, fetchedAtMs)
             gotNew = true
             after = newest
         }
@@ -706,7 +715,7 @@ class WebFeedSource(
                     repository.clearGap(username)
                     return
                 }
-                repository.ingestOlderPosts(posts, fetchedAtMs)
+                repository.ingestOlderPosts(username, posts, fetchedAtMs)
                 floor = olderFloor
                 repository.saveGap(username, WebRepository.PendingGap(floor, gap.untilSeq))
             }
@@ -988,6 +997,27 @@ class WebFeedSource(
         // direct callers (deep-link arrivals, curated rows, future code paths)
         // might pass a raw handle — this defends the data layer regardless.
         val normalized = username.lowercase()
+        // NonCancellable, mirroring [unsubscribe]: the caller is a composition scope
+        // (Add-channel sheet), and leaving it between the channel-table write and the
+        // DataStore write left a channel subscribed in web.db but missing from the
+        // DataStore set — invisible to migration, and dropped as "removed" by the next
+        // subscriptions diff. Only the persistent pair is shielded; the network fetch
+        // below stays detached and cancellable.
+        withContext(NonCancellable) {
+            persistSubscription(normalized, placeholderTitle)
+        }
+        // Targeted fetch of just this one channel. Detached from the suspension
+        // chain via scope.launch so the Add-Channel UI can dismiss without
+        // awaiting the network round-trip — see [PostsRepository.refresh]'s
+        // similar fire-and-forget rationale; the user expects "added — feed
+        // updates as content lands" not a blocking spinner.
+        scope.launch {
+            fetchOne(normalized, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
+        }
+    }
+
+    /** The persistent half of [subscribeAndRefresh]: channel table + DataStore. */
+    private suspend fun persistSubscription(normalized: String, placeholderTitle: String) {
         repository.subscribe(normalized, placeholderTitle)
         // Pre-populate [lastKnownSubscriptionsSet] under the same lock that
         // [handleSubscriptionsChanged] takes BEFORE we write DataStore. Without
@@ -1008,14 +1038,6 @@ class WebFeedSource(
             // would suppress the legitimate first-load case. Leave alone.
         }
         subscriptions.add(normalized)
-        // Targeted fetch of just this one channel. Detached from the suspension
-        // chain via scope.launch so the Add-Channel UI can dismiss without
-        // awaiting the network round-trip — see [PostsRepository.refresh]'s
-        // similar fire-and-forget rationale; the user expects "added — feed
-        // updates as content lands" not a blocking spinner.
-        scope.launch {
-            fetchOne(normalized, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
-        }
     }
 
     /**
@@ -1025,13 +1047,43 @@ class WebFeedSource(
      * Subscriptions survive the wipe — they're user intent, not cache. Mirrors
      * the user expectation of a "Clear cache" button: short blank moment,
      * then the same channels re-populate.
+     *
+     * Wipe and refetch run under ONE hold of [refreshMutex]: `withLock` waits for an
+     * in-flight sweep to finish before the wipe, so that sweep can't write its pages
+     * into the freshly emptied DB, and the forced refetch can't be dropped by
+     * [doRefresh]'s `tryLock` skip. The mutex isn't reentrant, hence [refreshLocked]
+     * rather than [doRefresh] inside the lock.
+     *
+     * Runs on the feed source's own [scope]; the caller only awaits it. The caller is
+     * a Settings composition scope, and leaving the screen used to cancel the refetch
+     * half-way, leaving the user with the emptied feed until the next scheduler tick.
      */
     suspend fun clearCacheAndRefresh() {
-        repository.clearAllCache()
-        // Reset the staleness gate so the upcoming refresh isn't bounced by
-        // the 30-second cooldown — the user just asked for fresh data.
-        lastSuccessfulRefreshAtMs = 0L
-        doRefresh(force = true)
+        scope.launch {
+            refreshMutex.withLock {
+                // Now on the feed source's scope, an escaping storage error would crash
+                // the process instead of failing a UI coroutine; log it and refetch
+                // anyway — fresh pages over a partly cleared DB are still an improvement.
+                try {
+                    repository.clearAllCache()
+                } catch (t: Throwable) {
+                    if (t is kotlinx.coroutines.CancellationException) throw t
+                    Log.w(TAG, "clearAllCache failed: ${t.message}")
+                }
+                // In-memory state that described the wiped rows. lastFullFetchMs would
+                // otherwise make the next fetch treat each channel as fully fetched
+                // moments ago; the stale-media cooldowns would hold back repairs for
+                // posts that no longer exist in their cached form.
+                lastFullFetchMs.clear()
+                staleRefetchCooldown.clear()
+                staleUrlCooldown.clear()
+                synchronized(staleOlderPageCooldown) { staleOlderPageCooldown.clear() }
+                // Reset the staleness gate so the refresh below isn't bounced by the
+                // 30-second cooldown — the user just asked for fresh data.
+                lastSuccessfulRefreshAtMs = 0L
+                refreshLocked(force = true)
+            }
+        }.join()
     }
 
     sealed interface RefreshState {

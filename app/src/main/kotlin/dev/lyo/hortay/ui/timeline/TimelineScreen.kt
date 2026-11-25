@@ -74,6 +74,9 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import androidx.lifecycle.viewModelScope
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
 // kotlinx-coroutines 1.10.1 even though Flow.debounce(Duration) graduated.
@@ -1479,13 +1482,17 @@ fun TimelineScreen(
                 hideChannelTarget = null
                 val store = ignoredChannels ?: return@HideChannelSheet
                 val chatId = target.chatId
-                scope.launch {
+                // The ViewModel's scope, not the composition's: the Undo action can be
+                // tapped after a tab switch has disposed this screen, and a launch on the
+                // cancelled composition scope silently did nothing.
+                val actionScope = vm.viewModelScope
+                actionScope.launch {
                     val millis = duration.millis
                     if (millis == null) store.add(chatId) else store.snooze(chatId, System.currentTimeMillis() + millis)
                     bus?.post(
                         text = hiddenText,
                         severity = UserMessageBus.Severity.Info,
-                        action = UserMessageBus.Action.Run(undoLabel) { scope.launch { store.remove(chatId) } },
+                        action = UserMessageBus.Action.Run(undoLabel) { actionScope.launch { store.remove(chatId) } },
                     )
                 }
             },
@@ -1619,14 +1626,19 @@ fun TimelineScreen(
                 val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
                 val nowChosen = !item.isChosen
                 repo.applyOptimisticReaction(post.chatId, target, item.kind, nowChosen)
+                // NonCancellable: leaving the screen mid-request cancels [scope], which
+                // would skip the rollback and leave the optimistic flip in the shared
+                // feed state. The RPC + revert pair always runs to completion.
                 scope.launch {
-                    val ok = ca.toggleReaction(
-                        chatId = post.chatId,
-                        messageId = target,
-                        kind = item.kind,
-                        isChosen = item.isChosen,
-                    )
-                    if (!ok) repo.applyOptimisticReaction(post.chatId, target, item.kind, item.isChosen)
+                    withContext(NonCancellable) {
+                        val ok = ca.toggleReaction(
+                            chatId = post.chatId,
+                            messageId = target,
+                            kind = item.kind,
+                            isChosen = item.isChosen,
+                        )
+                        if (!ok) repo.applyOptimisticReaction(post.chatId, target, item.kind, item.isChosen)
+                    }
                 }
             },
             availableReactions = { post ->
@@ -1655,9 +1667,13 @@ fun TimelineScreen(
                 val repo = tdlibRepo ?: return@PostInteractions
                 val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
                 repo.applyOptimisticPollAnswer(post.chatId, target, indices)
+                // NonCancellable: a cancelled [scope] (screen left mid-request) would skip
+                // clearPollPending and strand the poll in its pending state.
                 scope.launch {
-                    val ok = ca.setPollAnswer(post.chatId, target, indices)
-                    repo.clearPollPending(post.chatId, target, revert = !ok)
+                    withContext(NonCancellable) {
+                        val ok = ca.setPollAnswer(post.chatId, target, indices)
+                        repo.clearPollPending(post.chatId, target, revert = !ok)
+                    }
                 }
             },
             pollVotingEnabled = channelActions != null && tdlibRepo != null,

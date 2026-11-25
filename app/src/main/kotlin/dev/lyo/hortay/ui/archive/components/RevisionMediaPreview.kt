@@ -34,6 +34,7 @@ import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.archive.ArchivedMediaRef
 import dev.lyo.hortay.data.archive.ArchivedMediaResolver
 import dev.lyo.hortay.data.archive.ArchivedMediaSource
+import dev.lyo.hortay.data.archive.archivedCopyIsVideoFrame
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.timeline.DurationChip
@@ -135,7 +136,9 @@ private fun VisualMedia(
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.ArchivedFileImage(media: ArchivedMediaRef, path: String) {
     val context = LocalContext.current
-    val isVideo = media.type != "photo"
+    // Same classification as the archive list: an image-typed animation (image/gif) is a
+    // bitmap, not a video for the frame decoder.
+    val isVideo = archivedCopyIsVideoFrame(media) ?: false
     val request = remember(path, isVideo, context) { archivedFileRequest(context, path, isVideo) }
     var load by remember(path) { mutableStateOf(ArchivedLoad.Loading) }
     if (load != ArchivedLoad.Success) {

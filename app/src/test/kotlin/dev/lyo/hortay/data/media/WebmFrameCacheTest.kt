@@ -83,4 +83,56 @@ class WebmFrameCacheTest {
         assertNotNull(second.value)
         assertEquals(3, decodes)
     }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun clearDropsEntriesAndNullsObservers() = runTest {
+        val frames = 4
+        val side = 16
+        val cache = WebmFrameCache(
+            scope = this,
+            decodeDispatcher = StandardTestDispatcher(testScheduler),
+        ) { _, w, h -> DecodedWebm(List(frames) { fakeFrame }, IntArray(frames) { 33 }, w, h) }
+        val key = WebmFrameCache.Key("1", side, side)
+        val flow = cache.observe(key, "/1.webm")
+        advanceUntilIdle()
+        assertNotNull(flow.value)
+
+        cache.clear()
+
+        assertNull(flow.value, "an observer of a cleared entry must see null")
+        assertEquals(0L, cache.currentBytes())
+        // Same TDLib file id after logout = a different file: it must decode afresh.
+        val again = cache.observe(key, "/other-account/1.webm")
+        assertNull(again.value)
+        advanceUntilIdle()
+        assertNotNull(again.value)
+    }
+
+    // A decode that straddles clear() (logout) must not publish the previous account's frames.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun clearDiscardsInFlightDecode() = runTest {
+        val frames = 4
+        val side = 16
+        val paths = mutableListOf<String>()
+        val cache = WebmFrameCache(
+            scope = this,
+            decodeDispatcher = StandardTestDispatcher(testScheduler),
+        ) { path, w, h ->
+            paths += path
+            DecodedWebm(List(frames) { fakeFrame }, IntArray(frames) { 33 }, w, h)
+        }
+        val key = WebmFrameCache.Key("1", side, side)
+        val stale = cache.observe(key, "/a/1.webm")
+        cache.clear()
+        advanceUntilIdle()
+
+        assertNull(stale.value, "a stale decode must not reach its old observer")
+        assertEquals(0L, cache.currentBytes())
+
+        val fresh = cache.observe(key, "/b/1.webm")
+        advanceUntilIdle()
+        assertNotNull(fresh.value)
+        assertEquals(listOf("/a/1.webm", "/b/1.webm"), paths)
+        assertEquals(frames.toLong() * side * side * 4, cache.currentBytes())
+    }
 }

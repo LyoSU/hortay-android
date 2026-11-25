@@ -45,26 +45,55 @@ class WebmFrameCache(
     private val inFlight = HashSet<Key>()
     private var bytes = 0L
 
+    /** Bumped by [clear] (under [lock]). A decode launched under an older generation discards its
+     *  result instead of publishing it, so a decode that straddles a logout can't put the previous
+     *  account's frames back into the cache. */
+    private var generation = 0L
+
     /** Observe decoded frames for (id, w, h). First observer triggers an off-thread decode of
      *  [path]; emits null until ready, then the [DecodedWebm]. Safe to call from composition. */
     fun observe(key: Key, path: String): StateFlow<DecodedWebm?> {
         val flow: MutableStateFlow<DecodedWebm?>
         val needDecode: Boolean
+        val launchGeneration: Long
         synchronized(lock) {
             flow = flows.getOrPut(key) { MutableStateFlow(lru[key]) }
             needDecode = flow.value == null && key !in inFlight
             if (needDecode) inFlight += key
+            launchGeneration = generation
         }
-        if (needDecode) launchDecode(key, path)
+        if (needDecode) launchDecode(key, path, launchGeneration)
         return flow
     }
 
-    private fun launchDecode(key: Key, path: String) {
+    /**
+     * Drop every decoded loop, observer flow and in-flight marker, and reset the byte counter.
+     * Registered as a logout hook in `AppGraph`: [Key.id] is a TDLib local file id, which restarts
+     * per TDLib database, so after a sign-out another account's sticker could otherwise hit the
+     * previous account's decoded frames. Live observers see their flow go null (the same contract
+     * as eviction) and re-observe. Decodes still running finish but discard their result.
+     */
+    fun clear() {
+        synchronized(lock) {
+            generation++
+            for (flow in flows.values) flow.value = null
+            flows.clear()
+            lru.clear()
+            inFlight.clear()
+            bytes = 0L
+        }
+    }
+
+    private fun launchDecode(key: Key, path: String, launchGeneration: Long) {
         scope.launch(decodeDispatcher) {
             val decoded = runCatching { decode(path, key.widthPx, key.heightPx) }
                 .onFailure { Log.w(TAG, "decode failed for $path", it) }
                 .getOrNull()
             synchronized(lock) {
+                // Stale: a clear() ran while this decode was in flight. Its inFlight marker was
+                // already dropped (a newer decode of the same key may own it now), so leave the
+                // maps alone and let the result go.
+                if (launchGeneration != generation) return@synchronized
                 inFlight -= key
                 if (decoded == null) {
                     Log.w(TAG, "decode returned null for $path (${key.widthPx}x${key.heightPx})")

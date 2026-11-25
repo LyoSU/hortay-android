@@ -391,15 +391,26 @@ class TimelineViewModel(
         // Session end: this ViewModel outlives the signed-in account, so every
         // session-derived field above would otherwise carry account A's high-water
         // marks, latched cursor flag and scroll anchors into account B's feed (B's posts
-        // all classified against A's marks; B landing on A's anchor keys). The feed
-        // source's [FeedSource.initialSyncDone] goes true → false only when its session
-        // state is wiped on logout, so that edge is the reset signal. Guest mode's
-        // source never flips it, which is correct — it has no account session.
+        // all classified against A's marks; B landing on A's anchor keys). Every change
+        // of [FeedSource.sessionGeneration] is the reset signal — the source bumps it when
+        // it wipes its session state on logout.
+        //
+        // Tried before: a true → false edge on [FeedSource.initialSyncDone]. It never
+        // fired when the first sync had not completed (offline start, logout mid-sync),
+        // so the next account inherited all of the above. A `session.onEnd` hook is not
+        // an option either: a ViewModel can't unregister it, so it would outlive this VM.
+        //
+        // The baseline is read here, synchronously in `init`, so a logout racing the
+        // collector's first subscription still counts as a change. Guest mode's source
+        // exposes a constant — it has no account session to end.
+        val startGeneration = repo.sessionGeneration.value
         viewModelScope.launch {
-            var wasDone = repo.initialSyncDone.value
-            repo.initialSyncDone.collect { done ->
-                if (wasDone && !done) resetSessionState()
-                wasDone = done
+            var seen = startGeneration
+            repo.sessionGeneration.collect { generation ->
+                if (generation != seen) {
+                    seen = generation
+                    resetSessionState()
+                }
             }
         }
     }

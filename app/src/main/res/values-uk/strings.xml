@@ -796,6 +796,8 @@
     <string name="archive_export_json">Експортувати в JSON</string>
     <string name="archive_export_size_warning">Приблизний розмір: %d МБ. Продовжити?</string>
     <string name="archive_export_continue">Експортувати</string>
+    <string name="archive_export_done">Архів експортовано</string>
+    <string name="archive_export_failed">Не вдалося експортувати архів. Спробуй ще раз</string>
 
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Зберігати редагування й видалення?</string>

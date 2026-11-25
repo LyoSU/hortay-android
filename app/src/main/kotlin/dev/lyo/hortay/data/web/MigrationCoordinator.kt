@@ -4,6 +4,7 @@ import android.util.Log
 import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChannelDirectory
+import dev.lyo.hortay.data.PublicChatLookup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -133,7 +134,7 @@ class MigrationCoordinator(
         val migrated = mutableListOf<String>()
         // Track failures separately. Successful joins go through `addMigrated` so
         // they're never re-offered; a failure (FLOOD_WAIT, transient network,
-        // SearchPublicChat returning null on a temporarily-unreachable handle) is
+        // a SearchPublicChat that could not be answered — PublicChatLookup.Failed) is
         // intentionally NOT recorded — markProposalShown() at the bottom would
         // otherwise strand them forever, with no UI path to retry. By gating
         // markProposalShown on "every requested handle resolved AND joined",
@@ -153,36 +154,35 @@ class MigrationCoordinator(
             val cleaned = username.removePrefix("@").trim().lowercase()
             if (cleaned.isEmpty()) continue
             _progress.value = Progress(total = usernames.size, processed = i, lastUsername = cleaned)
-            val chatId = try {
-                channels.resolvePublicChat(cleaned)
-            } catch (cancellation: kotlinx.coroutines.CancellationException) {
-                throw cancellation
-            } catch (t: Throwable) {
-                Log.w(TAG, "migration: SearchPublicChat($cleaned) failed: ${t.message}")
-                anyFailure.set(true)
-                null
-            }
-            if (chatId == null) {
-                if (!anyFailure.get()) {
-                    // null without exception = TDLib reports no such public chat.
-                    // That's a permanent classification (handle was wrong, channel
-                    // was deleted) — don't re-offer.
-                    Log.w(TAG, "migration: SearchPublicChat($cleaned) returned null (skip, won't retry)")
+            // lookupPublicChat, not resolvePublicChat: the latter swallows every
+            // exception into null, so an offline or flood-limited SearchPublicChat
+            // read as "no such channel" and markProposalShown() below hid the offer
+            // for good although nothing was joined.
+            when (val lookup = channels.lookupPublicChat(cleaned)) {
+                PublicChatLookup.NotFound -> {
+                    // TDLib says the handle is malformed or not taken (handle was
+                    // wrong, channel was deleted) — permanent, don't re-offer.
+                    Log.w(TAG, "migration: SearchPublicChat($cleaned) found no chat (skip, won't retry)")
                 }
-            } else {
-                // joinChat swallows (and surfaces) its own failure and reports it as
-                // false — a failed join must not count as migrated, or the handle would
-                // be dropped from the guest subscriptions below without a TDLib join.
-                if (channelActions.joinChat(chatId)) {
-                    migrated += cleaned
-                    // Book-keep each success the moment it lands, not after the loop:
-                    // a run cancelled mid-way (sheet swipe-down, sign-out) used to drop
-                    // the whole `migrated` list — already-joined channels were re-offered
-                    // and stayed duplicated as guest-mode subscriptions.
-                    recordMigrated(cleaned)
-                } else {
-                    Log.w(TAG, "migration: JoinChat($cleaned) failed")
+                PublicChatLookup.Failed -> {
+                    Log.w(TAG, "migration: SearchPublicChat($cleaned) failed transiently")
                     anyFailure.set(true)
+                }
+                is PublicChatLookup.Found -> {
+                    // joinChat swallows (and surfaces) its own failure and reports it as
+                    // false — a failed join must not count as migrated, or the handle would
+                    // be dropped from the guest subscriptions below without a TDLib join.
+                    if (channelActions.joinChat(lookup.chatId)) {
+                        migrated += cleaned
+                        // Book-keep each success the moment it lands, not after the loop:
+                        // a run cancelled mid-way (sheet swipe-down, sign-out) used to drop
+                        // the whole `migrated` list — already-joined channels were re-offered
+                        // and stayed duplicated as guest-mode subscriptions.
+                        recordMigrated(cleaned)
+                    } else {
+                        Log.w(TAG, "migration: JoinChat($cleaned) failed")
+                        anyFailure.set(true)
+                    }
                 }
             }
             if (i < usernames.lastIndex) delay(THROTTLE_MS)
@@ -200,8 +200,8 @@ class MigrationCoordinator(
         // it right after a 50-channel batch JoinChat would amplify
         // FLOOD_WAIT risk during the post-auth storm window for no gain.
         // Only suppress future proposals when EVERY requested handle either
-        // succeeded (in `migrated`) or was conclusively a no-op (null without
-        // throw — wrong handle / deleted channel). Any transient failure leaves
+        // succeeded (in `migrated`) or was conclusively a no-op
+        // (PublicChatLookup.NotFound — wrong handle / deleted channel). Any transient failure leaves
         // the proposal pending so the user gets another bite at the apple.
         if (!anyFailure.get()) {
             migrationStore.markProposalShown()

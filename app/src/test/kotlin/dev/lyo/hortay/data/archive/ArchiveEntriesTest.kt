@@ -121,6 +121,39 @@ class ArchiveEntriesTest {
         assertEquals(2, e.messageIds.size)
     }
 
+    /** The row stands for a deletion: it opens and previews the deleted member, not a live sibling. */
+    @Test
+    fun partlyDeletedAlbum_anchorsOnTheDeletedMember() = runTest {
+        val (repo, db) = newDb()
+        val liveThumb = byteArrayOf(1)
+        val goneThumb = byteArrayOf(2)
+        db.version("1", 100, "caption", album = "alb", thumb = liveThumb)
+        db.version("2", 100, "gone text", album = "alb", thumb = goneThumb)
+        db.deleted(500, "2")
+
+        val e = repo.observeEntries().first().single()
+        assertEquals(ArchiveEntryStatus.Deleted, e.status)
+        assertEquals("2", e.messageKey)
+        assertEquals("gone text", e.textPreview)
+        assertArrayEquals(goneThumb, e.mediaMinithumb)
+        assertEquals(2, e.messageIds.size)
+    }
+
+    @Test
+    fun partlyDeletedAlbum_fallsBackToALiveMemberForTheMissingPreview() {
+        fun row(id: Long, key: String, deletedAt: Long?, text: String) = ArchiveEntryRow(
+            messageId = id, chat = chat, messageKey = key, albumKey = "a", isComment = false,
+            deletedAtMs = deletedAt, versionCount = 1, latestAtMs = 10L, textPreview = text,
+            thumbVersionId = null,
+        )
+        val draft = buildArchiveEntries(
+            listOf(row(1, "1", null, "caption"), row(2, "2", 500L, "")),
+            emptyMap(),
+        ).single()
+        assertEquals("2", draft.entry.messageKey)
+        assertEquals("caption", draft.entry.textPreview)
+    }
+
     @Test
     fun entriesCarryChannelMetadataAndComeNewestFirst() = runTest {
         val (repo, db) = newDb()
@@ -193,6 +226,16 @@ class ArchiveEntriesTest {
         assertEquals(true, thumbnailCopyOf(CONTENT_KIND_TDLIB, mediaBlob("animation", "video/mp4"), "/a")?.isVideoFrame)
         assertEquals(false, thumbnailCopyOf(CONTENT_KIND_TDLIB, mediaBlob("animation", "image/gif"), "/a")?.isVideoFrame)
         assertEquals(true, thumbnailCopyOf(CONTENT_KIND_TDLIB, mediaBlob("videoNote"), "/a")?.isVideoFrame)
+    }
+
+    /** The revision sheet classifies through the same function as the list. */
+    @Test
+    fun archivedCopyClassification_matchesTheList() {
+        assertEquals(false, archivedCopyIsVideoFrame(ArchivedMediaRef(type = "animation", mimeType = "image/gif")))
+        assertEquals(true, archivedCopyIsVideoFrame(ArchivedMediaRef(type = "animation", mimeType = "video/mp4")))
+        assertEquals(false, archivedCopyIsVideoFrame(ArchivedMediaRef(type = "photo")))
+        assertEquals(true, archivedCopyIsVideoFrame(ArchivedMediaRef(type = "video")))
+        assertNull(archivedCopyIsVideoFrame(ArchivedMediaRef(type = "document")))
     }
 
     /** No copy on the previewed version, or a copy that is not a picture: minithumb only. */

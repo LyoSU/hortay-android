@@ -192,6 +192,101 @@ class RevisionHistoryTest {
         assertTrue(diff.spans.any { it.style == FormattedText.Style.DiffInserted && it.start == 14 && it.end == 21 })
     }
 
+    private val tappable = setOf(
+        FormattedText.Style.Url::class, FormattedText.Style.Mention::class, FormattedText.Style.Hashtag::class,
+        FormattedText.Style.TextUrl::class, FormattedText.Style.MentionName::class,
+    )
+
+    private fun FormattedText.tappableSpans() = spans.filter { it.style::class in tappable }
+
+    private fun FormattedText.removedRanges() =
+        spans.filter { it.style == FormattedText.Style.DiffRemoved }.map { it.start until it.end }
+
+    /** No tap target covers a character of a removed fragment. */
+    private fun assertNoTappableOverRemoved(diff: FormattedText) {
+        val removed = diff.removedRanges()
+        for (span in diff.tappableSpans()) {
+            for (r in removed) {
+                assertTrue(span.end <= r.first || span.start > r.last, "$span overlaps removed $r in '${diff.text}'")
+            }
+        }
+    }
+
+    @Test
+    fun `an edited url opens the new target, not a splice of both`() {
+        val old = FormattedText("https://a.com", listOf(FormattedText.Span(0, 13, FormattedText.Style.Url)))
+        val new = FormattedText("https://b.com", listOf(FormattedText.Span(0, 13, FormattedText.Style.Url)))
+        val diff = composeDiff(old, new)
+
+        assertEquals("https://ab.com", diff.text)
+        assertNoTappableOverRemoved(diff)
+        val links = diff.tappableSpans()
+        assertTrue(links.isNotEmpty())
+        assertTrue(links.all { it.style == FormattedText.Style.TextUrl("https://b.com") }, "$links")
+    }
+
+    @Test
+    fun `an edited mention opens the new handle`() {
+        val old = FormattedText("hi @alice", listOf(FormattedText.Span(3, 9, FormattedText.Style.Mention)))
+        val new = FormattedText("hi @bob", listOf(FormattedText.Span(3, 7, FormattedText.Style.Mention)))
+        val diff = composeDiff(old, new)
+
+        assertEquals("hi @alicebob", diff.text)
+        assertNoTappableOverRemoved(diff)
+        val links = diff.tappableSpans()
+        assertTrue(links.isNotEmpty())
+        assertTrue(links.all { it.style == FormattedText.Style.TextUrl("https://t.me/bob") }, "$links")
+    }
+
+    @Test
+    fun `an edited hashtag split by a removed fragment is not tappable`() {
+        val old = FormattedText("#foo", listOf(FormattedText.Span(0, 4, FormattedText.Style.Hashtag)))
+        val new = FormattedText("#bar", listOf(FormattedText.Span(0, 4, FormattedText.Style.Hashtag)))
+        val diff = composeDiff(old, new)
+
+        assertEquals("#foobar", diff.text)
+        assertTrue(diff.tappableSpans().isEmpty(), "${diff.spans}")
+    }
+
+    @Test
+    fun `a removed link keeps its look but is not tappable`() {
+        val old = FormattedText(
+            "read https://a.com now",
+            listOf(
+                FormattedText.Span(5, 18, FormattedText.Style.Url),
+                FormattedText.Span(5, 18, FormattedText.Style.Bold),
+            ),
+        )
+        val new = FormattedText("read now", emptyList())
+        val diff = composeDiff(old, new)
+
+        assertTrue(diff.tappableSpans().isEmpty(), "${diff.spans}")
+        assertTrue(diff.spans.any { it.style == FormattedText.Style.Bold })
+    }
+
+    @Test
+    fun `a masked link split by a removed fragment keeps its target on the new text only`() {
+        val style = FormattedText.Style.TextUrl("https://example.com")
+        val old = FormattedText("open old page", listOf(FormattedText.Span(0, 13, style)))
+        val new = FormattedText("open new page", listOf(FormattedText.Span(0, 13, style)))
+        val diff = composeDiff(old, new)
+
+        assertNoTappableOverRemoved(diff)
+        assertTrue(diff.tappableSpans().all { it.style == style })
+        assertTrue(diff.tappableSpans().size >= 2)
+    }
+
+    @Test
+    fun `an untouched link stays a plain url`() {
+        val old = FormattedText("see https://a.com", listOf(FormattedText.Span(4, 17, FormattedText.Style.Url)))
+        val new = FormattedText("look https://a.com", listOf(FormattedText.Span(5, 18, FormattedText.Style.Url)))
+        val diff = composeDiff(old, new)
+
+        val link = diff.tappableSpans().single()
+        assertEquals(FormattedText.Style.Url, link.style)
+        assertEquals("https://a.com", diff.text.substring(link.start, link.end))
+    }
+
     @Test
     fun `unchanged text has no diff marks`() {
         val ft = FormattedText("same", emptyList())

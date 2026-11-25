@@ -14,7 +14,8 @@ enum class ArchiveEntryStatus { Deleted, Edited }
  * on this model only, never on the stored rows, so the storage schema can change under it.
  *
  * @property messageKey the message whose revision history the sheet opens — for an album
- *   deletion, its lowest-numbered member that holds a version.
+ *   deletion, its lowest-numbered deleted member that holds a version (a live member only
+ *   when no deleted one holds any).
  * @property eventAtMs deletion time, or the history position of the latest version.
  * @property versionCount versions the archive holds of [messageKey] (guest mode: plus the
  *   current one, which lives in the feed). Phantom duplicates are folded at the source
@@ -159,13 +160,21 @@ internal fun ArchiveDatabase.toArchiveEntries(rows: List<SelectEntryMessages>): 
 internal fun thumbnailCopyOf(contentKind: String, blob: ByteArray, path: String): ArchivedThumbnailCopy? {
     if (contentKind != CONTENT_KIND_TDLIB) return null
     val ref = runCatching { ContentBlobCodec.decode(blob).mediaRef }.getOrNull() ?: return null
-    val isVideoFrame = when (ref.type) {
-        "photo" -> false
-        "video", "videoNote" -> true
-        "animation" -> ref.mimeType?.startsWith("image/") != true
-        else -> return null
-    }
+    val isVideoFrame = archivedCopyIsVideoFrame(ref) ?: return null
     return ArchivedThumbnailCopy(path, isVideoFrame)
+}
+
+/**
+ * How an archived copy of [ref]'s media decodes: true for a video, GIF-as-video or round
+ * video (a decoded frame), false for a photo or an image-typed animation such as image/gif
+ * (a bitmap), null when the media is not a picture (document, audio, voice …). The archive
+ * list and the revision sheet both classify through this, so they never disagree.
+ */
+internal fun archivedCopyIsVideoFrame(ref: ArchivedMediaRef): Boolean? = when (ref.type) {
+    "photo" -> false
+    "video", "videoNote" -> true
+    "animation" -> ref.mimeType?.startsWith("image/") != true
+    else -> null
 }
 
 /**
@@ -173,8 +182,9 @@ internal fun thumbnailCopyOf(contentKind: String, blob: ByteArray, path: String)
  *
  *  - A deleted message is one entry; the deleted messages of one album (same album key in
  *    the same chat) form a single entry, together with the album's members that were not
- *    deleted. Its preview text / thumbnail come from the first member, lowest key first,
- *    that has one. A deletion none of whose messages holds a version is not listed.
+ *    deleted. It opens, and takes its preview text / thumbnail from, the first member that
+ *    has one — deleted members before live ones, lowest key first within each. A deletion
+ *    none of whose messages holds a version is not listed.
  *  - Any other message is an entry only when it holds at least two versions (guest mode:
  *    one, since guest captures store only the versions a change replaced). A message that
  *    never changed is never listed.
@@ -190,7 +200,10 @@ internal fun buildArchiveEntries(
     for (deleted in rows.filter { it.deletedAtMs != null }.sortedByDescending { it.deletedAtMs }) {
         val members = deleted.albumKey?.let { byAlbum[deleted.chat to it] } ?: listOf(deleted)
         val ordered = members.filter { it.messageId !in claimed }.sortedWith(memberOrder)
-        val withVersions = ordered.filter { it.versionCount > 0 }
+        // Deleted members first (stable sort keeps member order within each group): the row
+        // stands for a deletion, so it opens and previews a member that is gone, not a
+        // sibling that is still live in the feed.
+        val withVersions = ordered.filter { it.versionCount > 0 }.sortedBy { it.deletedAtMs == null }
         // Already folded into a later deletion of its album, or nothing archived to show.
         val anchor = withVersions.firstOrNull()?.takeIf { deleted.messageId !in claimed } ?: continue
         claimed += ordered.map { it.messageId }

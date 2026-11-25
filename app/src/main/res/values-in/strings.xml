@@ -689,6 +689,8 @@
     <string name="archive_disable_title">Nonaktifkan arsip</string>
     <string name="archive_empty_enabled">Belum ada apa-apa. Kalau ada kanal yang mengedit atau menghapus kiriman, akan muncul di sini.</string>
     <string name="archive_export_continue">Ekspor</string>
+    <string name="archive_export_done">Arsip diekspor</string>
+    <string name="archive_export_failed">Gagal mengekspor arsip. Coba lagi</string>
     <string name="archive_export_json">Ekspor ke JSON</string>
     <string name="archive_export_size_warning">Perkiraan ukuran: %d MB. Lanjutkan?</string>
     <string name="archive_filter_all">Semua</string>

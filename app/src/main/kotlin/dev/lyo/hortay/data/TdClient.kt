@@ -386,6 +386,12 @@ class TdClient private constructor(
                 // client emits its first auth state.
                 _authStage.value = AuthStage.Loading
                 lastAttemptedPhone = ""
+                // The FLOOD_WAIT deadline was earned by the client that just died (and, after
+                // a logout, by the outgoing account). The fresh client starts with no known
+                // sanction; leaving the gate armed would silently stall the next sign-in's
+                // auth RPCs for up to FLOOD_WAIT_CAP_SECONDS. A real sanction on the new
+                // session re-arms it on the first 420/429.
+                _floodWaitUntilMs.value = 0L
                 spawnClient()
             }
             // States we don't have dedicated UI for yet — surface a clear message instead

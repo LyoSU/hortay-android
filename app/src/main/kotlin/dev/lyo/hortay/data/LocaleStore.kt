@@ -92,12 +92,22 @@ object LocaleStore {
      * Wrap a base [Context] with the persisted locale. No-op on API 33+ (LocaleManager
      * already applied the override before [attachBaseContext] fires) and when the user
      * picked "follow system".
+     *
+     * [Locale.setDefault] is process-wide and outlives the activity: switching back to
+     * "follow system" used to return early and leave `Locale.getDefault()` — number and
+     * date formatting, anything not read through resources — on the previous language
+     * until the process died. The default in force before the first override is kept in
+     * [defaultBeforeOverride] and restored when no language is selected.
      */
     fun wrap(base: Context): Context {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return base
-        val tag = read(base) ?: return base
+        val tag = read(base)
+        if (tag == null) {
+            restoreDefaultLocale()
+            return base
+        }
         val locale = Locale.forLanguageTag(tag)
-        Locale.setDefault(locale)
+        overrideDefaultLocale(locale)
         // An EMPTY Configuration, not a copy of the current one: createConfigurationContext
         // treats it as an override that is re-applied on every later configuration update,
         // and only the fields set here are defined. A full copy pinned uiMode, orientation,
@@ -109,5 +119,21 @@ object LocaleStore {
             setLayoutDirection(locale)
         }
         return base.createConfigurationContext(config)
+    }
+
+    /** Process default before the first [wrap] override; null while none is active. */
+    @Volatile
+    private var defaultBeforeOverride: Locale? = null
+
+    private fun overrideDefaultLocale(locale: Locale) = synchronized(this) {
+        if (defaultBeforeOverride == null) defaultBeforeOverride = Locale.getDefault()
+        Locale.setDefault(locale)
+    }
+
+    private fun restoreDefaultLocale() = synchronized(this) {
+        // Cleared after restoring, so a later override captures the then-current
+        // default afresh (a system language change in between is picked up).
+        defaultBeforeOverride?.let { Locale.setDefault(it) }
+        defaultBeforeOverride = null
     }
 }

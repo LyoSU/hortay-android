@@ -36,10 +36,15 @@ class ArchiveSweep(
 ) {
     private val runLock = Mutex()
 
-    suspend fun run() = runLock.withLock {
+    /**
+     * @param current the settings to sweep with. A caller that has just written a new retention
+     *   or cap passes the stored value, since [settings] may not have caught that write yet and
+     *   would sweep with the old limits; null uses [settings].
+     */
+    suspend fun run(current: ArchiveSettings? = null) = runLock.withLock {
         withContext(Dispatchers.IO) {
             if (!available()) return@withContext
-            val s = settings.value
+            val s = current ?: settings.value
             writeLock.withLock {
                 db.dedupeVersions()
                 if (s.retentionDays != Int.MAX_VALUE) {

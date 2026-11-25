@@ -258,6 +258,16 @@ private fun styleOf(e: StoredEntity): FormattedText.Style? = when (e.type) {
  *
  * Block entities (quote / code) of removed fragments are not carried over: two block
  * ranges may not overlap, and the new version's block already spans the spot.
+ *
+ * Links are kept tappable only on the new version's own characters, with the new version's
+ * target. The renderer derives a [FormattedText.Style.Url] / [FormattedText.Style.Mention] /
+ * [FormattedText.Style.Hashtag] target from the displayed substring, so a link whose range
+ * took in a removed fragment pointed somewhere neither version did: `https://a.com` edited
+ * to `https://b.com` opened `https://ab.com`, `@alice` → `@bob` opened `alicebob`. Now a
+ * tappable span of the new text is split around removed fragments; when that splits it, a
+ * Url or Mention becomes an explicit [FormattedText.Style.TextUrl] carrying the unmodified
+ * new target, and a Hashtag (no explicit-target form) stops being tappable. Removed
+ * fragments carry no link at all — a deleted link is history, not a destination.
  */
 fun composeDiff(old: FormattedText, new: FormattedText): FormattedText {
     val runs = TextDiff.compute(old.text, new.text)
@@ -286,12 +296,9 @@ fun composeDiff(old: FormattedText, new: FormattedText): FormattedText {
         }
     }
     val spans = ArrayList<FormattedText.Span>(new.spans.size + marks.size)
-    for (s in new.spans) {
-        if (s.start < 0 || s.end > new.text.length || s.start >= s.end) continue
-        spans += FormattedText.Span(newMap[s.start], newMap[s.end - 1] + 1, s.style)
-    }
+    for (s in new.spans) spans += mapNewSpan(s, new.text, newMap)
     val inlineOldSpans = old.spans.filterNot {
-        it.style is FormattedText.Style.BlockQuote || it.style is FormattedText.Style.Pre
+        it.style is FormattedText.Style.BlockQuote || it.style is FormattedText.Style.Pre || it.style.isTappable()
     }
     for (s in inlineOldSpans) {
         for (r in removedRuns) {
@@ -304,6 +311,71 @@ fun composeDiff(old: FormattedText, new: FormattedText): FormattedText {
     }
     spans += marks
     return FormattedText(sb.toString(), spans)
+}
+
+/**
+ * Maps one span of the new version into the composed text. A tappable span split by the
+ * diff into several pieces keeps its tap target only when the target is explicit; an
+ * out-of-range span, or a split one whose target depends on its own text, maps to nothing.
+ */
+private fun mapNewSpan(s: FormattedText.Span, text: String, newMap: IntArray): List<FormattedText.Span> {
+    if (s.start < 0 || s.end > text.length || s.start >= s.end) return emptyList()
+    if (!s.style.isTappable()) return listOf(FormattedText.Span(newMap[s.start], newMap[s.end - 1] + 1, s.style))
+    val pieces = contiguousPieces(newMap, s.start, s.end)
+    val pieceStyle = if (pieces.size == 1) {
+        s.style
+    } else {
+        explicitTarget(s.style, text.substring(s.start, s.end)) ?: return emptyList()
+    }
+    return pieces.map { (from, to) -> FormattedText.Span(from, to, pieceStyle) }
+}
+
+/** Styles the renderer turns into a tap target that navigates somewhere. */
+private fun FormattedText.Style.isTappable(): Boolean = when (this) {
+    is FormattedText.Style.TextUrl,
+    FormattedText.Style.Url,
+    FormattedText.Style.Mention,
+    is FormattedText.Style.MentionName,
+    FormattedText.Style.Hashtag,
+    -> true
+    else -> false
+}
+
+/**
+ * The composed-text ranges `[from, to)` that new-text characters `[start, end)` occupy, one
+ * per stretch not interrupted by a spliced-in removed fragment.
+ */
+private fun contiguousPieces(newMap: IntArray, start: Int, end: Int): List<Pair<Int, Int>> {
+    val pieces = mutableListOf<Pair<Int, Int>>()
+    var from = newMap[start]
+    for (k in start + 1 until end) {
+        if (newMap[k] != newMap[k - 1] + 1) {
+            pieces += from to newMap[k - 1] + 1
+            from = newMap[k]
+        }
+    }
+    pieces += from to newMap[end - 1] + 1
+    return pieces
+}
+
+/**
+ * [style] with its target fixed from [raw], the span's text in the new version, so it no
+ * longer depends on the displayed substring; null when the style has no such form.
+ * Mirrors the renderer's own derivation (whitespace-trimmed, `https://` added to a bare
+ * host, a mention opening `t.me/<handle>`).
+ */
+private fun explicitTarget(style: FormattedText.Style, raw: String): FormattedText.Style? = when (style) {
+    is FormattedText.Style.TextUrl, is FormattedText.Style.MentionName -> style
+    FormattedText.Style.Url -> raw.trim().takeIf { it.isNotEmpty() }?.let { url ->
+        val normalized = when {
+            url.contains("://") || url.startsWith("mailto:") || url.startsWith("tel:") -> url
+            else -> "https://$url"
+        }
+        FormattedText.Style.TextUrl(normalized)
+    }
+    FormattedText.Style.Mention -> raw.trim().trimStart('@').takeIf { it.isNotEmpty() }
+        ?.let { FormattedText.Style.TextUrl("https://t.me/$it") }
+    else -> null
 }
 
 // ---- Picker labels ----------------------------------------------------------------------

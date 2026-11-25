@@ -703,6 +703,8 @@
     <string name="archive_disable_title">غیرفعال کردن آرشیو</string>
     <string name="archive_empty_enabled">هنوز چیزی نیست. وقتی کانالی پستی را ویرایش یا حذف کند، اینجا ظاهر می‌شود.</string>
     <string name="archive_export_continue">خروجی بگیر</string>
+    <string name="archive_export_done">آرشیو خروجی گرفته شد</string>
+    <string name="archive_export_failed">خروجی گرفتن از آرشیو انجام نشد. دوباره امتحان کنید</string>
     <string name="archive_export_json">خروجی به JSON</string>
     <string name="archive_export_size_warning">حجم تقریبی: %d MB. ادامه می‌دهی؟</string>
     <string name="archive_filter_all">همه</string>

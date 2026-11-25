@@ -31,6 +31,28 @@
 // untouched.
 #define TARGET_FRAMES 80
 
+// Hard ceiling on the kept frames' total size (count*W*H*4 bytes). Sized to the normal worst case
+// on the Kotlin side — TARGET_FRAMES at the 320 px decode cap (MAX_DECODE_SIDE in WebmAlphaImage.kt)
+// is ~31 MiB — and a third of WebmFrameCache's 96 MB budget. The same bytes exist up to three times
+// at the peak (this native buffer, the Java int[] copy, the per-frame Bitmaps), so an uncapped
+// intrinsic-size decode of one sticker could otherwise spike ~200 MB native + ~200 MB Java. The
+// keep-stride is derived from this cap too, so a large box keeps fewer, evenly spaced frames over
+// the whole loop instead of truncating it; MAX_DECODE_BYTES then stops decoding as a backstop.
+#define MAX_DECODE_BYTES (32LL * 1024 * 1024)
+
+// Largest accepted output side. Anything above is not a sticker; also keeps W*H*4 far from int
+// overflow in every size computation below.
+#define MAX_SIDE 4096
+
+// Upper bound for the source frame-count estimate, applied before any arithmetic on it so a
+// hostile nb_frames / duration / frame rate can't overflow the keep-stride computation.
+#define MAX_FRAME_ESTIMATE (1LL << 20)
+
+// Bounds for a single frame's delay (ms). Out-of-range or non-monotonic timestamps fall back to
+// DEFAULT_DELAY_MS.
+#define DEFAULT_DELAY_MS 33
+#define MAX_DELAY_MS 10000
+
 typedef struct { int *pixels; int *delays; int count; int w; int h; } Decoded;
 
 static void free_decoded(Decoded *d) {
@@ -38,6 +60,26 @@ static void free_decoded(Decoded *d) {
     free(d->pixels);
     free(d->delays);
     free(d);
+}
+
+// Source frame-count estimate, clamped to [0, MAX_FRAME_ESTIMATE]. nb_frames is often unset for
+// matroska/VP9, so fall back to duration * average frame rate. 0 means unknown.
+static int64_t estimate_frames(const AVFormatContext *fmt, const AVStream *st) {
+    int64_t est = st->nb_frames;
+    if (est > MAX_FRAME_ESTIMATE) return MAX_FRAME_ESTIMATE;
+    if (est > 0) return est;
+    double dur_s = 0.0;
+    if (st->duration != AV_NOPTS_VALUE && st->duration > 0 && st->time_base.den)
+        dur_s = (double)st->duration * av_q2d(st->time_base);
+    else if (fmt->duration != AV_NOPTS_VALUE && fmt->duration > 0)
+        dur_s = (double)fmt->duration / AV_TIME_BASE;
+    double fps = av_q2d(st->avg_frame_rate);
+    // Comparison form also rejects NaN; the double product is checked before the int64 cast so the
+    // cast can't be undefined behaviour.
+    if (!(dur_s > 0.0) || !(fps > 0.0)) return 0;
+    double frames = dur_s * fps + 0.5;
+    if (!(frames < (double)MAX_FRAME_ESTIMATE)) return MAX_FRAME_ESTIMATE;
+    return (int64_t)frames;
 }
 
 // Returns malloc'd Decoded* or NULL. outW/outH<=0 means intrinsic size.
@@ -56,31 +98,45 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
     if (!codec) codec = avcodec_find_decoder(st->codecpar->codec_id);
     if (!codec) { avformat_close_input(&fmt); return NULL; }
     AVCodecContext *ctx = avcodec_alloc_context3(codec);
-    avcodec_parameters_to_context(ctx, st->codecpar);
-    if (avcodec_open2(ctx, codec, NULL) < 0) { avcodec_free_context(&ctx); avformat_close_input(&fmt); return NULL; }
+    if (!ctx) { avformat_close_input(&fmt); return NULL; }
+    if (avcodec_parameters_to_context(ctx, st->codecpar) < 0 || avcodec_open2(ctx, codec, NULL) < 0) {
+        avcodec_free_context(&ctx);
+        avformat_close_input(&fmt);
+        return NULL;
+    }
 
     int W = outW > 0 ? outW : ctx->width;
     int H = outH > 0 ? outH : ctx->height;
-    size_t frameStride = (size_t)W * H;
-
-    // Estimate the source frame count to derive a keep-stride that caps cached frames at
-    // ~TARGET_FRAMES (see the #define). nb_frames is often unset for matroska/VP9, so fall back to
-    // duration * average frame rate. Unknown -> stride 1 (keep all, MAX_FRAMES still bounds it).
-    int64_t est = st->nb_frames;
-    if (est <= 0) {
-        double dur_s = 0.0;
-        if (st->duration != AV_NOPTS_VALUE && st->time_base.den)
-            dur_s = (double)st->duration * av_q2d(st->time_base);
-        else if (fmt->duration != AV_NOPTS_VALUE)
-            dur_s = (double)fmt->duration / AV_TIME_BASE;
-        double fps = av_q2d(st->avg_frame_rate);
-        if (dur_s > 0.0 && fps > 0.0) est = (int64_t)(dur_s * fps + 0.5);
+    if (W <= 0 || H <= 0 || W > MAX_SIDE || H > MAX_SIDE) {
+        avcodec_free_context(&ctx);
+        avformat_close_input(&fmt);
+        return NULL;
     }
+    size_t frameStride = (size_t)W * H;
+    int64_t frameBytes = (int64_t)frameStride * 4;
+    // Frames that fit MAX_DECODE_BYTES, further bounded by MAX_FRAMES. A single frame over the
+    // budget means nothing can be returned at all.
+    int64_t budgetFrames = MAX_DECODE_BYTES / frameBytes;
+    if (budgetFrames > MAX_FRAMES) budgetFrames = MAX_FRAMES;
+    if (budgetFrames < 1) {
+        avcodec_free_context(&ctx);
+        avformat_close_input(&fmt);
+        return NULL;
+    }
+    int maxKeep = (int)budgetFrames;
+
+    // Keep-stride capping cached frames at ~min(TARGET_FRAMES, maxKeep), evenly spaced over the
+    // whole loop. Unknown estimate -> stride 1 (keep all; maxKeep still bounds it).
+    int64_t est = estimate_frames(fmt, st);
+    int64_t targetKeep = maxKeep < TARGET_FRAMES ? maxKeep : TARGET_FRAMES;
     int keepStride = 1;
-    if (est > TARGET_FRAMES) keepStride = (int)((est + TARGET_FRAMES - 1) / TARGET_FRAMES);
-    int rawIdx = 0; // counts every decoded frame; we keep 1 in every keepStride
-    struct SwsContext *sws = NULL; // created once the source pix_fmt is known
+    if (est > targetKeep) keepStride = (int)((est + targetKeep - 1) / targetKeep);
+    if (keepStride < 1) keepStride = 1;
+
+    int64_t rawIdx = 0; // counts every decoded frame; we keep 1 in every keepStride
+    struct SwsContext *sws = NULL; // re-validated per frame via sws_getCachedContext
     int cap = 16, count = 0;
+    if (cap > maxKeep) cap = maxKeep;
     int *pixels = NULL;
     int *delays = malloc(sizeof(int) * cap);
 
@@ -95,36 +151,43 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
     rgba->height = H;
     if (av_frame_get_buffer(rgba, 0) < 0) goto done;
 
-    int prev_pts = 0;
-    while (count < MAX_FRAMES && av_read_frame(fmt, pkt) >= 0) {
+    int64_t prev_pts = 0;
+    int full = 0; // set once maxKeep frames are kept; stops both loops
+    while (!full && av_read_frame(fmt, pkt) >= 0) {
         if (pkt->stream_index == vs && avcodec_send_packet(ctx, pkt) == 0) {
             while (avcodec_receive_frame(ctx, frm) == 0) {
+                // Re-checked per frame: one packet can yield several frames.
+                if (count >= maxKeep) { full = 1; break; }
                 // Decimate: decode every frame (libvpx needs the full stream) but keep only every
                 // keepStride-th. Dropped frames' durations fold into the next kept frame because
                 // prev_pts only advances on kept frames, so the loop keeps its full wall-clock
                 // length at a lower fps.
                 if ((rawIdx++ % keepStride) != 0) continue;
-                if (!sws) {
-                    // yuva420p -> RGBA preserves the alpha plane.
-                    sws = sws_getContext(frm->width, frm->height, frm->format,
-                                         W, H, AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
-                    if (!sws) { av_packet_unref(pkt); goto done; }
-                }
-                sws_scale(sws, (const uint8_t * const *)frm->data, frm->linesize, 0,
-                          frm->height, rgba->data, rgba->linesize);
+                // VP9 may change resolution mid-stream and a frame may arrive without the alpha
+                // plane (a different pix_fmt), so the scaler is matched to THIS frame's geometry
+                // and format. sws_getCachedContext returns the same context when nothing changed,
+                // and on failure has already freed the old one and returns NULL.
+                if (frm->width <= 0 || frm->height <= 0 || frm->format < 0 || !frm->data[0]) continue;
+                sws = sws_getCachedContext(sws, frm->width, frm->height, frm->format,
+                                           W, H, AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
+                if (!sws) continue;
+                // yuva420p -> BGRA preserves the alpha plane.
+                if (sws_scale(sws, (const uint8_t * const *)frm->data, frm->linesize, 0,
+                              frm->height, rgba->data, rgba->linesize) != H) continue;
                 if (!pixels) {
                     pixels = malloc(sizeof(int) * frameStride * cap);
-                    if (!pixels) { av_packet_unref(pkt); goto done; }
+                    if (!pixels) { full = 1; break; }
                 } else if (count == cap) {
                     // realloc into temps and assign back only on success, so a failure leaves the
                     // already-decoded `count` frames intact in the original buffers (realloc keeps
-                    // the old block on NULL return). Then bail with the partial loop.
+                    // the old block on NULL return). Then stop with the partial loop.
                     int newCap = cap * 2;
+                    if (newCap > maxKeep) newCap = maxKeep;
                     int *np = realloc(pixels, sizeof(int) * frameStride * newCap);
-                    if (!np) { av_packet_unref(pkt); goto done; }
+                    if (!np) { full = 1; break; }
                     pixels = np;
                     int *nd = realloc(delays, sizeof(int) * newCap);
-                    if (!nd) { av_packet_unref(pkt); goto done; }
+                    if (!nd) { full = 1; break; }
                     delays = nd;
                     cap = newCap;
                 }
@@ -132,9 +195,11 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
                     memcpy((uint8_t *)(pixels + (size_t)count * frameStride + (size_t)y * W),
                            rgba->data[0] + (size_t)y * rgba->linesize[0], (size_t)W * 4);
                 }
-                int pts = (int)(av_rescale_q(frm->best_effort_timestamp, st->time_base,
-                                             (AVRational){1, 1000}));
-                delays[count] = count == 0 ? 33 : (pts - prev_pts > 0 ? pts - prev_pts : 33);
+                int64_t pts = av_rescale_q(frm->best_effort_timestamp, st->time_base,
+                                           (AVRational){1, 1000});
+                int64_t delta = pts - prev_pts;
+                delays[count] = (count == 0 || delta <= 0 || delta > MAX_DELAY_MS)
+                        ? DEFAULT_DELAY_MS : (int)delta;
                 prev_pts = pts;
                 count++;
             }
@@ -146,7 +211,7 @@ done:
     av_frame_free(&rgba);
     av_frame_free(&frm);
     av_packet_free(&pkt);
-    if (sws) sws_freeContext(sws);
+    sws_freeContext(sws);
     avcodec_free_context(&ctx);
     avformat_close_input(&fmt);
 
@@ -161,19 +226,35 @@ done:
     return d;
 }
 
+// Clears a pending Java exception (typically OutOfMemoryError from an array allocation) and reports
+// whether there was one. The Kotlin caller already treats a null result as "no frames", so a failed
+// allocation degrades to the static thumb instead of aborting the process on the next JNI call.
+static int clear_pending(JNIEnv *env) {
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        return 1;
+    }
+    return 0;
+}
+
 JNIEXPORT jobject JNICALL
 Java_dev_lyo_hortay_webm_WebmAlphaNative_nativeDecode(JNIEnv *env, jclass clazz,
         jstring jpath, jint outW, jint outH) {
     (void)clazz;
+    if (!jpath) return NULL;
     const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
+    if (!path) { clear_pending(env); return NULL; }
     Decoded *d = decode_all(path, outW, outH);
     (*env)->ReleaseStringUTFChars(env, jpath, path);
     if (!d) return NULL;
 
+    // Bounded by MAX_DECODE_BYTES / 4, so it fits a jsize.
     jsize total = (jsize)((size_t)d->count * d->w * d->h);
     jintArray pixels = (*env)->NewIntArray(env, total);
+    if (!pixels || clear_pending(env)) { free_decoded(d); return NULL; }
     (*env)->SetIntArrayRegion(env, pixels, 0, total, d->pixels);
     jintArray delays = (*env)->NewIntArray(env, d->count);
+    if (!delays || clear_pending(env)) { free_decoded(d); return NULL; }
     (*env)->SetIntArrayRegion(env, delays, 0, d->count, d->delays);
 
     jclass holder = (*env)->FindClass(env, "dev/lyo/hortay/webm/WebmAlphaNative$Raw");
@@ -183,11 +264,12 @@ Java_dev_lyo_hortay_webm_WebmAlphaNative_nativeDecode(JNIEnv *env, jclass clazz,
     // Degrade gracefully on any JNI lookup miss: clear the pending exception and return null
     // (callers fall back to the static thumb) rather than letting NewObject abort the process.
     if (!holder || !ctor) {
-        (*env)->ExceptionClear(env);
+        clear_pending(env);
         free_decoded(d);
         return NULL;
     }
     jobject obj = (*env)->NewObject(env, holder, ctor, pixels, delays, d->count, d->w, d->h);
     free_decoded(d);
+    if (!obj || clear_pending(env)) return NULL;
     return obj;
 }

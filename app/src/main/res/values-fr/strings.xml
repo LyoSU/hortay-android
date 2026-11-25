@@ -725,6 +725,8 @@
     <string name="archive_disable_title">Désactiver l\'archive</string>
     <string name="archive_empty_enabled">Rien encore. Quand une chaîne modifie ou supprime une publication, elle apparaît ici.</string>
     <string name="archive_export_continue">Exporter</string>
+    <string name="archive_export_done">Archive exportée</string>
+    <string name="archive_export_failed">Impossible d\'exporter l\'archive. Réessaie</string>
     <string name="archive_export_json">Exporter en JSON</string>
     <string name="archive_export_size_warning">Taille approximative : %d Mo. Continuer ?</string>
     <string name="archive_filter_all">Tout</string>

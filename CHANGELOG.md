@@ -215,6 +215,24 @@
 - Guest-mode search opens again after you leave it with the system Back gesture.
 - Swiping away the offer to move guest-mode channels to your account closes it for good instead of leaving the screen unresponsive.
 - Signing in from a guest-mode post lands on your feed instead of a broken comments screen.
+- Signing out while animated emoji are on screen no longer crashes the app.
+- Exporting the post archive no longer freezes the screen, and tells you whether it worked.
+- In a post's edit history, links inside changed text open the right address.
+- A photo album keeps its remaining photos when its first photo is deleted.
+- A partly deleted album in the post archive shows the photo that was deleted.
+- Comments you only scroll past are no longer marked as read, and reading is tracked again after a Retry.
+- A post's own album photos no longer show up as separate comments while its thread loads.
+- The list of people who reacted keeps loading as you scroll.
+- Hiding a channel, its Undo, a reaction or a poll vote still go through if you leave the screen right away.
+- Guest-mode channels that couldn't be checked while moving them to your account are offered again instead of being skipped.
+- Clearing the cache in guest mode during a refresh no longer brings the cleared posts back.
+- A guest-mode channel page can no longer slip another channel's posts into your feed.
+- A broken or oversized animated sticker shows as a still image instead of crashing the app or exhausting memory.
+- A Telegram rate limit from a previous session no longer delays signing in again.
+- The preview frame no longer stays over a playing video in the fullscreen viewer.
+- Round video messages show the right play or pause state.
+- Switching the app language back to the system default works on Android 12 and older.
+- Sharing a photo or video no longer fails on phones that hide the list of installed apps.
 
 ### Performance
 - Idle video players are released when the app goes to the background.

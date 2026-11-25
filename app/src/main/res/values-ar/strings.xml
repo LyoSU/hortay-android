@@ -773,6 +773,8 @@
     <string name="archive_disable_title">تعطيل الأرشيف</string>
     <string name="archive_empty_enabled">لا شيء بعد. حين تُعدّل قناة منشوراً أو تحذفه سيظهر هنا.</string>
     <string name="archive_export_continue">تصدير</string>
+    <string name="archive_export_done">تم تصدير الأرشيف</string>
+    <string name="archive_export_failed">تعذّر تصدير الأرشيف. حاول مرة أخرى</string>
     <string name="archive_export_json">تصدير إلى JSON</string>
     <string name="archive_export_size_warning">الحجم التقريبي: %d ميغابايت. هل تريد المتابعة؟</string>
     <string name="archive_filter_all">الكل</string>

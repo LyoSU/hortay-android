@@ -370,7 +370,18 @@ fun WebModeScaffold(graph: AppGraph) {
                     messageId != null && messageId > 0L -> "https://t.me/$handle/$messageId"
                     else -> "https://t.me/$handle"
                 }
-                systemUriHandler.openUri(url)
+                // Same path as DeepLink.External above: a bare openUri on a t.me link
+                // can hand it straight back to Hortay (it registers for t.me), and with
+                // no handler at all it throws out of the click.
+                val opened = runCatching {
+                    dev.lyo.hortay.ui.main.openUriOutsideHortay(context, systemUriHandler, url)
+                }.getOrDefault(false)
+                if (!opened) {
+                    graph.userMessages.post(
+                        text = context.resources.getString(R.string.link_unsupported_other),
+                        severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                    )
+                }
             }
         }
     }

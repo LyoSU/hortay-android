@@ -853,7 +853,7 @@ private fun MediaPage(
             // voice note / audio track first so the two never talk over each other.
             val audioSession = LocalAudioPlaybackSession.current
             LaunchedEffect(isActive) { if (isActive) audioSession.yieldToVideo() }
-            VideoSurfaceWithPoster(item) {
+            VideoSurfaceWithPoster(item) { onFirstFrame ->
                 TdVideoPlayer(
                     fileId = quality.fileId,
                     remoteUrl = item.remoteVideoUrl,
@@ -869,6 +869,7 @@ private fun MediaPage(
                     showControls = showChrome,
                     priority = DownloadPriority.Foreground,
                     initialAspect = item.posterAspect(),
+                    onFirstFrameRendered = onFirstFrame,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -878,7 +879,7 @@ private fun MediaPage(
                 LaunchedEffect(item.playbackFileId, item.qualities) { onQualityPick(quality) }
             }
         }
-        is AlbumItem.Animation -> VideoSurfaceWithPoster(item) {
+        is AlbumItem.Animation -> VideoSurfaceWithPoster(item) { onFirstFrame ->
             TdVideoPlayer(
                 fileId = item.playbackFileId,
                 remoteUrl = item.remoteVideoUrl,
@@ -888,6 +889,7 @@ private fun MediaPage(
                 muted = true,
                 priority = DownloadPriority.Foreground,
                 initialAspect = item.posterAspect(),
+                onFirstFrameRendered = onFirstFrame,
                 modifier = Modifier.fillMaxSize(),
             )
         }

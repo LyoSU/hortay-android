@@ -2,6 +2,8 @@ package dev.lyo.hortay.data
 
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -119,5 +121,30 @@ class PostsRepositorySnapshotRestoreTest {
 
         val ids = harness.repo.posts.value.map { it.id }.toSet()
         assertEquals(setOf(1L, 2L, 3L), ids, "empty-feed restore must paint the full snapshot")
+    }
+
+    @Test
+    fun `a logout during the restore does not write the previous account's posts back`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -500L
+        harness.snapshotStore.seed((1L..3L).map { chatId to it })
+        val gate = CompletableDeferred<Unit>()
+        harness.td.onAnySuspending("GetMessage") { req ->
+            gate.await()
+            val q = req as TdApi.GetMessage
+            harness.fakeChannelMessage(q.chatId, q.messageId, date = 1_700_000_000 + q.messageId.toInt())
+        }
+
+        val restore = launch { harness.repo.restoreFromSnapshot() }
+        harness.runCurrent()
+        // Logout lands while the restore is parked on its GetMessage batch.
+        harness.repo.clear()
+        assertEquals(1L, harness.repo.sessionGeneration.value, "clear() starts a new session generation")
+        gate.complete(Unit)
+        restore.join()
+        harness.advanceUntilIdle()
+
+        assertTrue(harness.repo.posts.value.isEmpty(),
+            "a restore that started before clear() must not refill the wiped feed: ${harness.repo.posts.value.map { it.id }}")
     }
 }

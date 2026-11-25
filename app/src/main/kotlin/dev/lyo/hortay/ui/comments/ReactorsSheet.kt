@@ -177,13 +177,22 @@ internal fun ReactorsSheet(
     val opener = LocalUserProfileOpener.current
     val listState = rememberLazyListState()
     LaunchedEffect(listState, state) {
+        // Emits the row count (plus the in-flight flag) while the reader is near the end,
+        // not a plain "near the end" boolean: a boolean latched `true` on the empty first
+        // frame and never changed again when a short page left the list still near its
+        // end, so paging stalled after page one. Keying on the count re-fires after every
+        // page that lands; the loading flag re-fires after a page that added no new rows
+        // (all duplicates) so paging still moves on. The empty list (before the first
+        // page, or right after a filter switch) is skipped — [ReactorsListState.select]
+        // and the initial effect load that page themselves.
         snapshotFlow {
+            val size = state.rows.size
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            last >= state.rows.size - PAGE_PREFETCH_DISTANCE
+            if (size > 0 && last >= size - PAGE_PREFETCH_DISTANCE) size to state.loading else null
         }
             .distinctUntilChanged()
-            .filter { it }
-            .collect { if (state.rows.isNotEmpty()) state.loadMore() }
+            .filter { it != null && !it.second }
+            .collect { state.loadMore() }
     }
     val filterKinds = remember(request.reactions) {
         request.reactions.items.filter { it.kind !is ReactionKind.Paid }

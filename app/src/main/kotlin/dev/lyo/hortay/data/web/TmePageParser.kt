@@ -490,8 +490,11 @@ object TmePageParser {
      * attacker's HTTP server. Five lines of protocol-allowlist neutralise that
      * entire class of attack without restricting hosts (web previews legitimately
      * embed og:image from arbitrary HTTPS sites).
+     *
+     * Internal so the other guest-mode URL sources (e.g. [WebCustomEmojiResolver]'s
+     * `t.me/i/emoji` JSON) apply the same gate before a URL reaches a loader.
      */
-    private fun isSafeHttpsUrl(url: String): Boolean {
+    internal fun isSafeHttpsUrl(url: String): Boolean {
         if (!url.startsWith("https://", ignoreCase = true)) return false
         // A real host, with no `user@` part and nothing that isn't a URL character:
         // these URLs are loaded automatically (Coil, ExoPlayer), so anything that isn't

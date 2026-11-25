@@ -286,7 +286,7 @@ class WebRepository(
                 olderCursor = page.olderCursor,
             )
             for (post in page.posts) {
-                ingestPost(post, fetchedAtMs, forceMediaRefresh)
+                ingestPost(post, ch.username, fetchedAtMs, forceMediaRefresh)
             }
             dropDeletedPosts(ch.username, page.listedSeqs)
         }
@@ -312,12 +312,17 @@ class WebRepository(
      * fetched to close a gap, or an `?after=` page of newer posts (see
      * `WebFeedSource.fillGap` / `fetchNewerOnly`). Posts are inserted like on a normal
      * sweep; the channel row is left alone — its validators and `older_cursor` describe
-     * the NEWEST full page.
+     * the NEWEST full page. [channelUsername] is the channel the page was fetched for;
+     * posts naming any other channel are dropped (see [ingestPost]).
      */
-    suspend fun ingestOlderPosts(posts: List<WebPost>, fetchedAtMs: Long) = withContext(ioDispatcher) {
+    suspend fun ingestOlderPosts(
+        channelUsername: String,
+        posts: List<WebPost>,
+        fetchedAtMs: Long,
+    ) = withContext(ioDispatcher) {
         db.transaction {
             for (post in posts) {
-                ingestPost(post, fetchedAtMs, forceMediaRefresh = false)
+                ingestPost(post, channelUsername, fetchedAtMs, forceMediaRefresh = false)
             }
         }
     }
@@ -329,22 +334,39 @@ class WebRepository(
      * expired post, not to back-fill older history into the feed. The channel row
      * is deliberately left alone — its validators and `older_cursor` describe the
      * channel's NEWEST page, and the stale-media path relies on that cursor.
+     * [channelUsername] is the channel the page was fetched for.
      */
-    suspend fun refreshExistingPosts(posts: List<WebPost>, fetchedAtMs: Long) = withContext(ioDispatcher) {
+    suspend fun refreshExistingPosts(
+        channelUsername: String,
+        posts: List<WebPost>,
+        fetchedAtMs: Long,
+    ) = withContext(ioDispatcher) {
         db.transaction {
             for (post in posts) {
-                ingestPost(post, fetchedAtMs, forceMediaRefresh = true, onlyExisting = true)
+                ingestPost(post, channelUsername, fetchedAtMs, forceMediaRefresh = true, onlyExisting = true)
             }
         }
     }
 
+    /**
+     * [expectedChannel] is the channel whose page carried [post]. The post's own key
+     * comes from the page's raw `data-post` attribute (`<channel>/<seq>`), which
+     * nothing else ties to the fetched channel — a page for one channel naming
+     * another would otherwise write posts under that other subscription. A mismatch
+     * (compared case-insensitively; handles are case-insensitive) drops the post.
+     */
     private fun ingestPost(
         post: WebPost,
+        expectedChannel: String,
         fetchedAtMs: Long,
         forceMediaRefresh: Boolean,
         onlyExisting: Boolean = false,
     ) {
         val channelUsername = post.id.substringBefore('/')
+        if (!channelUsername.equals(expectedChannel, ignoreCase = true)) {
+            Log.w(TAG, "ingest: dropping post ${post.id} from a page of $expectedChannel")
+            return
+        }
         // Fingerprint guard: most posts are unchanged between sweeps. Skip the
         // four JSON serialises + UPDATE when text_html + views match the
         // existing row exactly. text_html captures edits (Telegram rewrites the

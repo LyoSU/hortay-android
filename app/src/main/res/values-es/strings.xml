@@ -727,6 +727,8 @@
     <string name="archive_disable_title">Desactivar archivo</string>
     <string name="archive_empty_enabled">Nada aún. Cuando un canal edite o elimine una publicación, aparecerá aquí.</string>
     <string name="archive_export_continue">Exportar</string>
+    <string name="archive_export_done">Archivo exportado</string>
+    <string name="archive_export_failed">No se pudo exportar el archivo. Inténtalo de nuevo</string>
     <string name="archive_export_json">Exportar a JSON</string>
     <string name="archive_export_size_warning">Tamaño aproximado: %d MB. ¿Continuar?</string>
     <string name="archive_filter_all">Todo</string>

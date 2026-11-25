@@ -360,6 +360,14 @@ class PostsRepository(
     private val sessionEpoch = AtomicLong(0L)
 
     /**
+     * Observable mirror of [sessionEpoch] for [FeedSource.sessionGeneration], written only
+     * in [clear] right after the bump. Kept separate so the write paths keep their
+     * lock-free `AtomicLong` read.
+     */
+    private val _sessionGeneration = MutableStateFlow(0L)
+    override val sessionGeneration: StateFlow<Long> = _sessionGeneration.asStateFlow()
+
+    /**
      * Per-message single-flight guard for [ensureFullRichMessage]. A partial
      * [PostContent.RichMessage] (`document.isFull == false`) carries only a truncated block
      * prefix; the full document is fetched lazily via [TdApi.GetFullRichMessage] on explicit
@@ -618,10 +626,13 @@ class PostsRepository(
     )
     val newArrivals: SharedFlow<TimelinePost> = _newArrivals.asSharedFlow()
 
-    // Declared before `init`, which launches its consumer. Ingest of an UpdateNewChat's lastMessage runs on its own single consumer, in TDLib
-    // order, instead of inline on the update collector: after the initial sync, ingest
-    // can coalesce an album over the network and wait out a FLOOD_WAIT, which inline
-    // would hold every other update type (new posts, deletes, edits) behind it.
+    // Declared before `init`, which launches its consumer. Ingest of an UpdateNewChat's
+    // lastMessage — and of an UpdateChatLastMessage that lands before the initial sync is
+    // done ([handleChatLastMessage]) — runs on its own single consumer, in TDLib order,
+    // instead of inline on the update collector: ingest can map a reply through a
+    // networked GetMessage and, after the initial sync, coalesce an album over the
+    // network; either can wait out a FLOOD_WAIT or the send timeout, which inline would
+    // hold every other update type (new posts, deletes, edits, files) behind it.
     //
     // Every item is coalesced OFFLINE-only (`localAlbumsOnly = true`), whatever
     // [_initialSyncDone] says at dequeue. Deciding at dequeue time let a consumer that
@@ -807,20 +818,31 @@ class PostsRepository(
      * Album completeness is still owned by the Layer-1 local rehydration in
      * [AlbumCoalescer.coalesce] plus the Layer-2 visibility repair ([requestAlbumRepair]);
      * the fold's partial-album guard only keeps it from regressing here.
+     *
+     * Session-guarded like every other suspend-then-write path: the epoch is captured
+     * before the snapshot load, and a [clear] (logout) landing during the load / GetMessage
+     * batch / mapping drops the write — otherwise the previous account's snapshot posts
+     * were folded back into the freshly wiped feed.
      */
     suspend fun restoreFromSnapshotInternal(): Int {
+        val epoch = sessionEpoch.get()
         val snapshot = runCatching { snapshotStore.load() }
             .warnUnlessCancelled(TAG, "loadSnapshot")
             .getOrDefault(emptyList())
         if (snapshot.isEmpty()) return 0
-        return mergeSnapshotIntoFeed(snapshot)
+        return mergeSnapshotIntoFeed(snapshot, epoch)
     }
 
-    private suspend fun mergeSnapshotIntoFeed(snapshot: List<Pair<Long, Long>>): Int {
+    private suspend fun mergeSnapshotIntoFeed(snapshot: List<Pair<Long, Long>>, epoch: Long): Int {
+        if (sessionEpoch.get() != epoch) return 0
         val messages = fetchSnapshotMessages(snapshot)
         if (messages.isEmpty()) return 0
         val mapped = mapSnapshotMessages(messages).withoutRecentlyDeleted()
         if (mapped.isEmpty()) return 0
+        // A logout landed while the GetMessage batch / mapper was suspended. No suspend
+        // point between this check and the write below, so the two agree (same shape as
+        // [ingest]).
+        if (sessionEpoch.get() != epoch) return 0
 
         val mappedFeed = mapped.toPersistentList()
         var added = 0
@@ -1702,11 +1724,13 @@ class PostsRepository(
 
     /**
      * Routes one TDLib update to its handler. Runs on the single update collector in
-     * `init`, so updates are handled in the order TDLib emitted them; a handler that
-     * suspends (only [handleNewChat] and the cold-start [ingest] below) holds back the
-     * next update until it returns.
+     * `init`, so updates are handled in the order TDLib emitted them. Deliberately not
+     * `suspend`: anything that waited here would hold back every later update until it
+     * returned. [ingest] can wait on the network, so [handleNewChat] and the cold-start
+     * branch of [handleChatLastMessage] hand their message to the [newChatIngests]
+     * queue, and live arrivals launch their own coroutine ([handleNewMessage]).
      */
-    private suspend fun onUpdate(update: TdApi.Update) {
+    private fun onUpdate(update: TdApi.Update) {
         when (update) {
             // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
             is TdApi.UpdateNewMessage -> handleNewMessage(update.message)
@@ -1813,7 +1837,7 @@ class PostsRepository(
      * regression the lastMessage-harvest rework was specifically built to
      * avoid (ARCHITECTURE.md "Load-bearing" — "Cold-start contract").
      */
-    private suspend fun handleChatLastMessage(update: TdApi.UpdateChatLastMessage) {
+    private fun handleChatLastMessage(update: TdApi.UpdateChatLastMessage) {
         recordMainOrder(update.chatId, update.positions)
         recordLastMessageDate(update.chatId, update.lastMessage)
         val msg = update.lastMessage ?: return
@@ -1830,13 +1854,23 @@ class PostsRepository(
         // that coalesce was served from a not-yet-complete local history.
         // One flush now handles all members (the buffer dedupes by id).
         //
-        // During the cold-start drain keep the direct ingest: a debounced
-        // flush would land AFTER [_initialSyncDone] flips and take the
-        // NETWORKED coalesce path for every album lastMessage in the storm
-        // — the GetChatHistory × N fan-out the cold-start contract forbids.
-        // The direct call stays on the offline (onlyLocal) path instead.
+        // During the cold-start drain bypass the debounce: a debounced flush
+        // would land AFTER [_initialSyncDone] flips and take the NETWORKED
+        // coalesce path for every album lastMessage in the storm — the
+        // GetChatHistory × N fan-out the cold-start contract forbids. The
+        // message joins the [newChatIngests] queue instead, which always
+        // coalesces offline (`localAlbumsOnly = true`) and is stamped with
+        // [sessionEpoch] like the UpdateNewChat leads it queues behind.
+        //
+        // Not inline on the update collector: [ingest] maps the reply through
+        // MessageMapper.mapReply, which can send a networked `GetMessage` that
+        // waits on the FLOOD_WAIT gate or the 60 s send timeout. Inline, that
+        // stalled the single collector and with it every update type this
+        // repository handles — the same reason [handleNewChat] queues its lead.
+        // The queue is FIFO and shared with [handleNewChat], so lastMessages are
+        // still ingested in the order TDLib emitted them.
         if (_initialSyncDone.value) handleNewMessage(msg)
-        else ingest(update.chatId, listOf(msg))
+        else newChatIngests.trySend(NewChatIngest(sessionEpoch.get(), update.chatId, msg))
     }
 
     /**
@@ -1856,11 +1890,11 @@ class PostsRepository(
      *
      *  3. **Lead-message ingest.** Prefer a payload buffered by
      *     UpdateChatLastMessage that raced this update; fall back to
-     *     `chat.lastMessage`. When non-null and the chat is a channel, route
-     *     through [ingest] — no waiting, no harvest, no semaphore.
+     *     `chat.lastMessage`. When non-null and the chat is a channel, queue it
+     *     for [ingest] on [newChatIngests] — no waiting, no harvest, no semaphore.
      *
-     * Called from the [TdApi.UpdateNewChat] listener; suspending because [ingest]
-     * may suspend on its own GetChat fallback or on the [_posts] CAS loop.
+     * Called from the [TdApi.UpdateNewChat] listener. Not suspending: [ingest] may wait
+     * on the network, so it runs on the [newChatIngests] consumer, off the collector.
      */
     private fun handleNewChat(chat: TdApi.Chat) {
         registry.rememberChat(chat)
@@ -2306,11 +2340,9 @@ class PostsRepository(
                             .toSet()
                         val content = post.content
                         if (content is PostContent.PhotoAlbum) {
-                            val newItems = content.items.filterIndexed { idx, _ -> idx in keepIdx }
-                            list[i] = post.copy(
-                                content = content.copy(items = newItems),
-                                albumMessageIds = survivedIds,
-                            )
+                            // Nothing left to draw → same as a fully deleted album.
+                            list[i] = post.trimmedPhotoAlbum(content, keepIdx, survivedIds)
+                                ?: post.copy(isDeleted = true)
                         } else if (post.id in survivedIds) {
                             // Document / audio media group: the card renders its anchor's
                             // content, so with the anchor alive only the member list shrinks.
@@ -2352,11 +2384,9 @@ class PostsRepository(
                             .toSet()
                         val content = post.content
                         if (content is PostContent.PhotoAlbum) {
-                            val newItems = content.items.filterIndexed { idx, _ -> idx in keepIdx }
-                            list[i] = post.copy(
-                                content = content.copy(items = newItems),
-                                albumMessageIds = survivedIds,
-                            )
+                            val trimmed = post.trimmedPhotoAlbum(content, keepIdx, survivedIds)
+                            // Nothing left to draw → same as a fully deleted album.
+                            if (trimmed == null) toRemove += i else list[i] = trimmed
                         } else if (post.id in survivedIds) {
                             // Document / audio media group: the card renders its anchor's
                             // content, so with the anchor alive only the member list shrinks.
@@ -2373,6 +2403,32 @@ class PostsRepository(
             }
         }
         if (orphanedAlbumMembers.isNotEmpty()) reingestAlbumSurvivors(update.chatId, orphanedAlbumMembers)
+    }
+
+    /**
+     * A photo album card trimmed to the members that survived a delete, or null when no
+     * item is left to draw (the caller then treats the card as fully deleted). Pure — it
+     * runs inside [handleDeleted]'s `_posts.update` CAS lambda.
+     *
+     * When the deleted members include the anchor, the card's id moves to the lowest
+     * surviving member. Keeping the deleted id left every action keyed on `post.id` —
+     * report, summarize, the bookmark key, the Layer-2 album repair — aimed at a message
+     * that no longer exists. The feed row key is `(chatId, mediaAlbumId)` for albums
+     * (`feedItemKey`), so the row keeps its identity and does not remount; read state
+     * keys on the highest member id, which a trim never raises.
+     */
+    private fun TimelinePost.trimmedPhotoAlbum(
+        content: PostContent.PhotoAlbum,
+        keepIdx: Set<Int>,
+        survivedIds: List<Long>,
+    ): TimelinePost? {
+        val newItems = content.items.filterIndexed { idx, _ -> idx in keepIdx }
+        if (newItems.isEmpty() || survivedIds.isEmpty()) return null
+        return copy(
+            id = if (id in survivedIds) id else survivedIds.min(),
+            content = content.copy(items = newItems),
+            albumMessageIds = survivedIds,
+        )
     }
 
     /**
@@ -2781,7 +2837,9 @@ class PostsRepository(
             _initialSyncDone.value = false
             // Bump last, inside the mutex: any ingest that captured the old epoch and
             // is parked on a suspend point will see the change and bail before writing.
-            sessionEpoch.incrementAndGet()
+            // The flow mirror follows, so a consumer reacting to it (TimelineViewModel's
+            // session reset) already sees the wiped state.
+            _sessionGeneration.value = sessionEpoch.incrementAndGet()
         }
         runCatching { snapshotStore.clear() }
             .warnUnlessCancelled(TAG, "snapshotStore.clear")

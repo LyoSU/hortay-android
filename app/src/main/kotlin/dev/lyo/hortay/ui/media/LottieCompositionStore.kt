@@ -79,6 +79,30 @@ internal object LottieCompositionStore {
     private val inFlight = HashMap<String, CompletableDeferred<LottieComposition?>>()
 
     /**
+     * Bumped by [clear] (under `synchronized(this)`). A parse that started under an older
+     * generation still completes its own awaiters but does not publish into [lru] /
+     * [failedPaths], so a parse straddling a logout can't re-seed the previous account's
+     * composition under a TDLib local path the next account may reuse.
+     */
+    private var generation = 0L
+
+    /**
+     * Drop every cached composition, negative-cache entry and in-flight marker. Registered as a
+     * logout hook in `AppGraph`: keys are TDLib local file paths, which belong to the outgoing
+     * account's database. Parses still running finish for their current awaiters only.
+     */
+    fun clear() {
+        synchronized(this) {
+            generation++
+            inFlight.clear()
+            synchronized(lru) {
+                lru.clear()
+                failedPaths.clear()
+            }
+        }
+    }
+
+    /**
      * Returns the parsed composition for [path] (a .tgs file on disk), parsing it on
      * first access. Subsequent calls hit the LRU. The decompression and parse run on
      * [Dispatchers.IO] — never block the Compose thread. Concurrent callers for the
@@ -101,12 +125,14 @@ internal object LottieCompositionStore {
 
         // Get or create the in-flight deferred — first caller does the work, others
         // await the same result.
+        var ownerGeneration = 0L
         val (deferred, weAreTheOwner) = synchronized(this) {
             val existing = inFlight[path]
             if (existing != null) existing to false
             else {
                 val fresh = CompletableDeferred<LottieComposition?>()
                 inFlight[path] = fresh
+                ownerGeneration = generation
                 fresh to true
             }
         }
@@ -134,7 +160,7 @@ internal object LottieCompositionStore {
                 // still want the result. Complete with null so concurrent awaiters
                 // unblock; the negative cache decision below is based on a deterministic
                 // null, not cancellation.
-                synchronized(this) { inFlight.remove(path) }
+                synchronized(this) { if (inFlight[path] === deferred) inFlight.remove(path) }
                 deferred.complete(null)
                 throw t
             }
@@ -147,12 +173,16 @@ internal object LottieCompositionStore {
         // the negative cache (deterministic failure) rather than re-enrolling a fresh
         // deferred.
         synchronized(this) {
-            if (composition != null) {
-                synchronized(lru) { lru[path] = composition }
-            } else {
-                synchronized(lru) { failedPaths[path] = Unit }
+            // A clear() since this parse started: don't publish, and don't remove a marker that
+            // a post-clear owner of the same path may have registered.
+            if (ownerGeneration == generation) {
+                if (composition != null) {
+                    synchronized(lru) { lru[path] = composition }
+                } else {
+                    synchronized(lru) { failedPaths[path] = Unit }
+                }
+                inFlight.remove(path)
             }
-            inFlight.remove(path)
         }
         deferred.complete(composition)
         return composition
