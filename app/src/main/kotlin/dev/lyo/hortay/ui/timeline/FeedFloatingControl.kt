@@ -72,13 +72,21 @@ import kotlinx.collections.immutable.toImmutableList
  *     user was reading. Replaced.
  *  5. Current: ONE compact split button in the trailing corner. The "↓ N"
  *     segment is the stable trailing half — it never changes meaning under the
- *     finger (the objection to #1); the arrivals segment (2 avatars + "↓ N")
+ *     finger (the objection to #1); the arrivals segment (2 avatars + "+N")
  *     joins on its leading side while posts are pending. Two tap targets, one
  *     silhouette, one corner. Newest-on-top keeps the arrivals segment alone,
  *     centred under the header.
+ *  6. The arrivals segment used to read "↓ N" too, so in "Newest at the bottom" the
+ *     two halves were "↓ 24 | ↓ 93" — two identical-looking counts with different
+ *     meanings. Arrivals now read "+N" (new on top of what you have) next to the
+ *     avatars, unread keeps "↓ N" (that many below you). No extra words, so
+ *     nothing grows at long locales; the spoken labels are unchanged.
  *
- *  - [pendingCount] > 0 → arrivals stadium: avatar stack + "N нових постів" +
- *    direction arrow. Tap = [onArrivalsClick] (the proven arrivals-commit path:
+ * Elevation is 2 dp on both halves: the control floats right above the frosted nav
+ * bar, and the former 6 dp shadow stacked a second dark band onto the bar's own.
+ *
+ *  - [pendingCount] > 0 → arrivals stadium: avatar stack + "+N". [arrowGlyph]
+ *    still decides placement (upward = newest-on-top, centred). Tap = [onArrivalsClick] (the proven arrivals-commit path:
  *    `acceptIds → awaitRowsCommitted → smartScrollTo`).
  *  - [unreadCount] > 0 → circular "↓ N". Tap = [onUnreadClick] (scroll to the
  *    live read→unread boundary). A plain circle with a pressed-scale cue — the
@@ -138,7 +146,6 @@ fun FeedFloatingControl(
                     ArrivalsSegment(
                         channels = pendingChannels,
                         count = pendingCount,
-                        arrowGlyph = arrowGlyph,
                         joinedToUnread = showUnread,
                         onClick = onArrivalsClick,
                     )
@@ -181,7 +188,6 @@ private fun segmentShape(roundStart: Boolean, roundEnd: Boolean): Shape {
 private fun ArrivalsSegment(
     channels: ImmutableList<ChannelBadge>,
     count: Int,
-    arrowGlyph: String,
     joinedToUnread: Boolean,
     onClick: () -> Unit,
 ) {
@@ -191,7 +197,7 @@ private fun ArrivalsSegment(
         shape = segmentShape(roundStart = true, roundEnd = !joinedToUnread),
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
-        shadowElevation = 6.dp,
+        shadowElevation = SEGMENT_ELEVATION,
         // Polite live region: this segment only exists while `pendingCount > 0`, so its
         // very appearance IS the "new posts arrived" announcement — TalkBack users get
         // the same signal sighted users get from it sliding into view.
@@ -205,17 +211,15 @@ private fun ArrivalsSegment(
             },
     ) {
         Row(
-            modifier = Modifier.padding(start = if (channels.isNotEmpty()) 6.dp else 14.dp, end = 14.dp),
+            modifier = Modifier.padding(start = if (channels.isNotEmpty()) 6.dp else 16.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (channels.isNotEmpty()) {
                 AvatarStack(channels = channels.take(MAX_AVATARS).toImmutableList())
                 Spacer(Modifier.width(8.dp))
             }
-            Symbol(name = arrowGlyph, size = 18.dp)
-            Spacer(Modifier.width(4.dp))
             Text(
-                text = countText(count),
+                text = arrivalsCountText(count),
                 style = MaterialTheme.typography.labelLarge.tabularFigures(),
                 fontWeight = FontWeight.SemiBold,
             )
@@ -244,7 +248,7 @@ private fun UnreadSegment(
         shape = segmentShape(roundStart = !joinedToArrivals, roundEnd = true),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shadowElevation = 6.dp,
+        shadowElevation = SEGMENT_ELEVATION,
         interactionSource = interactionSource,
         modifier = Modifier
             .heightIn(min = SEGMENT_HEIGHT)
@@ -306,9 +310,17 @@ private fun newPostsLabel(res: android.content.res.Resources, n: Int): String {
 
 private fun countText(n: Int): String = if (n > 99) "99+" else n.toString()
 
+/**
+ * "+N" for the arrivals half. The leading LEFT-TO-RIGHT MARK pins the run's direction:
+ * "+24" has no strong character, so in an RTL layout the paragraph would resolve RTL and
+ * render it as "24+".
+ */
+private fun arrivalsCountText(n: Int): String = if (n > 99) "\u200E99+" else "\u200E+$n"
+
 private val AVATAR_SIZE = 32.dp
 private val AVATAR_OFFSET = 20.dp
 private const val MAX_AVATARS = 2
 private val SEGMENT_HEIGHT = 44.dp
 private val INNER_CORNER = 6.dp
 private val SEGMENT_GAP = 2.dp
+private val SEGMENT_ELEVATION = 2.dp

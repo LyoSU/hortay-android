@@ -193,7 +193,7 @@
     <string name="timeline_empty">Tu cicho. Zasubskrybuj kanały w Telegramie, a pojawią się w feedzie</string>
     <string name="timeline_empty_default_helper">Zasubskrybuj kanały w Telegramie, a pojawią się w feedzie</string>
     <string name="timeline_empty_saved_title">Nic jeszcze nie zapisano</string>
-    <string name="timeline_empty_saved_helper">Dotknij zakładki pod wpisem, żeby wrócić do niego później</string>
+    <string name="timeline_empty_saved_helper">Otwórz menu ⋯ wpisu i dotknij Zapisz wpis, żeby wrócić do niego później</string>
     <string name="timeline_empty_default_title">Tu cicho</string>
     <string name="timeline_empty_caught_up_title">Wszystko przeczytane</string>
     <string name="timeline_empty_caught_up_helper">Przeczytałeś wszystkie wpisy. Odśwież, żeby sprawdzić nowe.</string>
@@ -230,6 +230,9 @@
     <string name="post_translate">Przetłumacz</string>
     <string name="post_save">Zapisz wpis</string>
     <string name="post_unsave">Usuń z zapisanych</string>
+    <string name="post_action_save_short">Zapisz</string>
+    <string name="post_action_saved_short">Zapisano</string>
+    <string name="post_action_link_short">Link</string>
     <string name="post_copy_text">Kopiuj tekst</string>
     <string name="post_select_text">Zaznacz tekst</string>
     <string name="post_share">Udostępnij</string>
@@ -333,6 +336,8 @@
     <string name="channels_subscribers">Subskrybenci: %1$s</string>
     <string name="channels_unmute">Włącz powiadomienia</string>
     <string name="channels_mute">Wycisz powiadomienia</string>
+    <string name="channels_tile_mute">Wycisz</string>
+    <string name="channels_tile_unmute">Odcisz</string>
     <string name="channels_leave">Opuść kanał</string>
     <string name="channels_join">Dołącz</string>
     <string name="channels_hide_from_feed">Ukryj z feedu</string>

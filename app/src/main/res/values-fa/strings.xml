@@ -185,7 +185,7 @@
     <string name="timeline_empty">اینجا ساکت است. در Telegram مشترک کانال‌ها شوید تا در فید نمایش داده شوند</string>
     <string name="timeline_empty_default_helper">در Telegram مشترک کانال‌ها شوید تا در فید نمایش داده شوند</string>
     <string name="timeline_empty_saved_title">هنوز چیزی ذخیره نشده</string>
-    <string name="timeline_empty_saved_helper">روی نشانک زیر پست بزنید تا بعداً سراغش بروید</string>
+    <string name="timeline_empty_saved_helper">منوی ⋯ پست را باز کنید و «ذخیره پست» را بزنید تا بعداً سراغش بروید</string>
     <string name="timeline_empty_default_title">اینجا ساکت است</string>
     <string name="timeline_empty_caught_up_title">همه چیز را خواندید</string>
     <string name="timeline_empty_caught_up_helper">همه پست‌های فید را خواندید. برای دریافت جدیدها بکشید و رها کنید.</string>
@@ -220,6 +220,9 @@
     <string name="post_translate">ترجمه</string>
     <string name="post_save">ذخیره پست</string>
     <string name="post_unsave">حذف از ذخیره‌شده‌ها</string>
+    <string name="post_action_save_short">ذخیره</string>
+    <string name="post_action_saved_short">ذخیره شد</string>
+    <string name="post_action_link_short">لینک</string>
     <string name="post_copy_text">کپی متن</string>
     <string name="post_select_text">انتخاب متن</string>
     <string name="post_share">اشتراک‌گذاری</string>
@@ -315,6 +318,8 @@
     <string name="channels_subscribers">مشترکان: %1$s</string>
     <string name="channels_unmute">روشن کردن اعلان‌ها</string>
     <string name="channels_mute">خاموش کردن اعلان‌ها</string>
+    <string name="channels_tile_mute">بی‌صدا</string>
+    <string name="channels_tile_unmute">باصدا</string>
     <string name="channels_leave">ترک کانال</string>
     <string name="channels_join">عضویت</string>
     <string name="channels_hide_from_feed">پنهان کردن از فید</string>

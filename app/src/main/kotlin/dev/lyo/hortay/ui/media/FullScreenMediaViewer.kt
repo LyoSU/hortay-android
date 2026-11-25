@@ -76,7 +76,14 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import android.view.Window
 import android.view.WindowManager
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.foundation.border
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.core.view.WindowCompat
 import android.widget.Toast
 import dev.lyo.hortay.R
 import androidx.compose.runtime.State
@@ -262,6 +269,7 @@ fun FullScreenMediaViewer(
             dialogWindow?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             dialogWindow?.setWindowAnimations(0)
         }
+        LightSystemBarIcons(dialogWindow)
         val draggable = rememberDraggableState { delta ->
             scope.launch { offsetY.snapTo(offsetY.value + delta) }
         }
@@ -384,6 +392,10 @@ fun FullScreenMediaViewer(
                     // Lambda, so a speed pick recomposes only the player's speed effect,
                     // not every composed page.
                     playbackSpeed = { if (page == speedPage) speed else 1f },
+                    onSpeedPick = { picked ->
+                        speedPage = page
+                        speed = picked
+                    },
                     onZoomedChange = { zoomed -> zoomedPages[page] = zoomed },
                     // Player chrome would ride the transform as a shrinking overlay.
                     showChrome = settled && !closing,
@@ -403,7 +415,7 @@ fun FullScreenMediaViewer(
             // staying glued to the top edge as a dark sheet riding the gesture.
             //
             // Height = status-bar inset + TOP_SCRIM_HEIGHT, so the band reaches past the
-            // bottom of the full right-hand tool column (quality chip + save/share/copy).
+            // bottom of the full right-hand tool column (save / share / copy).
             // A fixed 120 dp band measured from the screen top was swallowed by the
             // status bar on tall-inset devices and faded to zero before the second tool
             // button, leaving share/copy on bare image. The plateau stop keeps the band
@@ -426,8 +438,9 @@ fun FullScreenMediaViewer(
             // Expressive close affordance: Cookie9-shaped backdrop instead of a perfect
             // circle. Reads as "deliberate close" rather than a generic system 'X' —
             // signature shape vocabulary shared with the failed-media retry disc, so media
-            // chrome speaks one shape. Bigger touch target padding compensates
-            // for the polygon's narrower visual weight.
+            // chrome speaks one shape. It is the viewer's one expressive silhouette: the
+            // same 44 dp size and [viewerChromeBackdrop] as the round save / share / mute
+            // discs, only the outline differs.
             val closeShape = HortayExpressive.ViewerCloseBackdrop.asComposeShape()
             // Polygon backdrop only — clipping the IconButton to a Cookie polygon
             // would cut the close glyph at the polygon ridges. The default circular
@@ -446,18 +459,13 @@ fun FullScreenMediaViewer(
                     .padding(6.dp),
             )
 
-            // Top-right tool column for the active page: QualityChip (videos
-            // with alternativeVideos) and SpeedChip (videos) over Save / Copy buttons. One vertical
-            // stack avoids the playback chrome conflict the bottom-right
-            // placement had — [VideoPlayerControls] owns the entire bottom
-            // band (scrim, BottomBar slider+mute, navigationBarsPadding) and
-            // any chrome anchored to BottomEnd would land on the slider or
-            // mute toggle. Top-right is uncontested in both photo and video
-            // pages. We keep the chrome chrome-coloured (CHROME_BACKDROP_ALPHA black, 44 dp
-            // CircleShape) so the column reads as one "tools for this item"
-            // affordance with the same vocabulary as the close button.
+            // Top-right tool column for the active page: Save / Share (+ Copy for photos).
+            // The video playback settings (quality, speed) live in the bottom control row
+            // next to mute instead — [VideoPlayerControls] owns that band and its auto-hide,
+            // and the chips sit within thumb reach there; they used to stack here above
+            // Save, out of reach at the top of a tall phone. Same 44 dp chrome discs as the
+            // close button, so the column reads as one "tools for this item" affordance.
             val activeItem = items.getOrNull(pagerState.currentPage)
-            val activeQualities = (activeItem as? AlbumItem.Video)?.qualities
 
             val actionContext = LocalContext.current
             val saveLabel = stringResource(R.string.action_save_to_gallery)
@@ -525,14 +533,10 @@ fun FullScreenMediaViewer(
             // URL to ACTION_SEND text/plain — recipients open the link or
             // resolve it via their own HTTP stack.
             val webShareUrl: String? = activeItem?.webShareFallbackUrl()
-            val showQuality = activeQualities?.hasOptions == true
-            // Speed applies to real videos only: GIF-style animations loop silently and
-            // photos don't play, so neither gets the chip.
-            val showSpeed = activeItem is AlbumItem.Video
             val persistableItem = activeItem.takeIf { readyPath != null && !protectedContent }
             val shareCapable = !protectedContent && (readyPath != null || !webShareUrl.isNullOrBlank())
 
-            if (showQuality || showSpeed || persistableItem != null || shareCapable) {
+            if (persistableItem != null || shareCapable) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -545,23 +549,6 @@ fun FullScreenMediaViewer(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.End,
                 ) {
-                    if (showQuality && activeQualities != null) {
-                        val current = qualityChoices[pagerState.currentPage] ?: activeQualities.defaultPick
-                        QualityChip(
-                            current = current,
-                            qualities = activeQualities,
-                            onPick = { qualityChoices[pagerState.currentPage] = it },
-                        )
-                    }
-                    if (showSpeed) {
-                        SpeedChip(
-                            current = if (speedPage == pagerState.currentPage) speed else 1f,
-                            onPick = {
-                                speedPage = pagerState.currentPage
-                                speed = it
-                            },
-                        )
-                    }
                     val chromeShape = CircleShape
                     if (persistableItem != null && readyPath != null) {
                         val activeItem = persistableItem // smart-cast bridge for lambdas
@@ -682,7 +669,7 @@ fun FullScreenMediaViewer(
                         .graphicsLayer { alpha = transitionProgress.value.coerceIn(0f, 1f) }
                         .statusBarsPadding()
                         .padding(top = 12.dp)
-                        .background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), counterShape)
+                        .viewerChromeBackdrop(counterShape)
                         .padding(horizontal = 16.dp, vertical = 6.dp),
                 )
             }
@@ -691,9 +678,9 @@ fun FullScreenMediaViewer(
 }
 
 /**
- * Chrome icon button for the viewer (close · save · share · copy). A 44 dp disc with a
- * black-translucent polygon backdrop and a white glyph — the established viewer chrome
- * vocabulary. Adds an instant pressed-scale acknowledgement on top of the default ripple
+ * Chrome icon button for the viewer (close · save · share · copy). A [VIEWER_CHROME_DISC]
+ * disc on the shared [viewerChromeBackdrop] with a white glyph — the established viewer
+ * chrome vocabulary, also used by the video controls' mute disc. Adds an instant pressed-scale acknowledgement on top of the default ripple
  * (doctrine rule 1: every tap answers within ~100 ms) so a save/share that does its work
  * off the main thread still feels responsive the moment the finger lands. The scale rides
  * the same MotionScheme spatial spring as the rest of the app and collapses to an instant
@@ -722,12 +709,12 @@ private fun ChromeActionButton(
         interactionSource = interactionSource,
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .size(44.dp)
+            .size(VIEWER_CHROME_DISC)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), shape),
+            .viewerChromeBackdrop(shape),
     ) {
         Symbol(name = glyph, contentDescription = contentDescription, tint = Color.White)
     }
@@ -877,6 +864,7 @@ private fun MediaPage(
     onZoomedChange: (Boolean) -> Unit,
     showChrome: Boolean,
     playbackSpeed: () -> Float,
+    onSpeedPick: (Float) -> Unit,
 ) {
     when (item) {
         is AlbumItem.Photo -> ZoomableImage(item, onZoomedChange)
@@ -904,6 +892,25 @@ private fun MediaPage(
                     initialAspect = item.posterAspect(),
                     onFirstFrameRendered = onFirstFrame,
                     playbackSpeed = playbackSpeed(),
+                    // Playback settings ride the controls' bottom row, next to mute, and
+                    // hold the chrome's auto-hide while their picker is open. Speed shows
+                    // on every video (GIF-style animations and photos never get here);
+                    // quality only when the video ships alternative encodes.
+                    controlsExtras = { holdChrome ->
+                        if (item.qualities.hasOptions) {
+                            QualityChip(
+                                current = quality,
+                                qualities = item.qualities,
+                                onPick = onQualityPick,
+                                holdChrome = holdChrome,
+                            )
+                        }
+                        SpeedChip(
+                            current = playbackSpeed(),
+                            onPick = onSpeedPick,
+                            holdChrome = holdChrome,
+                        )
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1259,20 +1266,89 @@ private fun AlbumItem.webShareFallbackUrl(): String? = when (this) {
 // deeper 0→55 % scrim for the seek bar.
 private const val TOP_SCRIM_ALPHA = 0.35f
 
-// Band height BELOW the status-bar inset: 6 dp column inset + four 48 dp touch targets
-// (the tallest column: a video's quality and speed chips over save / share; a photo
-// stacks only save / share / copy) + gaps ≈ 216 dp, plus a fall-off tail so
-// the last button still sits on the dense part of the gradient.
-private val TOP_SCRIM_HEIGHT = 260.dp
+// Band height BELOW the status-bar inset: 6 dp column inset + three 48 dp touch targets
+// (the tallest column: a photo's save / share / copy; a video stacks save / share, its
+// quality and speed chips sit in the bottom control row) + gaps ≈ 162 dp, plus a fall-off
+// tail so the last button still sits on the dense part of the gradient.
+private val TOP_SCRIM_HEIGHT = 200.dp
 
 // Fraction of the band that holds near-full density before fading to transparent.
 private const val TOP_SCRIM_PLATEAU = 0.75f
 
-// Backdrop disc / pill alpha for every viewer control (close, save, share, copy,
+// Backdrop disc / pill alpha for every viewer control (close, save, share, copy, mute,
 // counter, quality and speed chips). Over a pure-white image 55 % black gives a #737373 plate — ~4.7:1 against
 // the white glyph, above WCAG's 3:1 for icons with margin for the scrim fading out
 // during the dismiss drag. The former 45 % (#8C8C8C, ~3.4:1) sat right at the floor.
 internal const val CHROME_BACKDROP_ALPHA = 0.55f
+
+// One size for every round viewer control (close, save, share, copy, mute) and the height
+// of the quality / speed capsules beside mute; minimumInteractiveComponentSize adds the
+// 48 dp touch target around it.
+internal val VIEWER_CHROME_DISC = 44.dp
+
+// Hairline rim around every chrome plate: over a black letterbox bar the 55 % black plate
+// alone vanishes, and the controls read as glyphs floating in nothing.
+private val CHROME_RIM_WIDTH = 0.5.dp
+private const val CHROME_RIM_ALPHA = 0.16f
+
+/**
+ * The shared backdrop of every viewer chrome control: black at [CHROME_BACKDROP_ALPHA]
+ * with a white hairline rim, in [shape]. Fixed white/black rather than theme roles on
+ * purpose — the viewer is always a dark canvas regardless of the app theme.
+ */
+internal fun Modifier.viewerChromeBackdrop(shape: Shape): Modifier =
+    background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), shape)
+        .border(CHROME_RIM_WIDTH, Color.White.copy(alpha = CHROME_RIM_ALPHA), shape)
+
+/**
+ * Light status- and navigation-bar icons for as long as the viewer is composed. The viewer
+ * is a dark canvas in every app theme, while [dev.lyo.hortay.ui.theme.HortayTheme] tints the
+ * bar icons for the app's surfaces — dark in a light theme, where they vanished on black.
+ *
+ * Applied to the viewer's own dialog window (which draws behind the bars) and to the
+ * activity window underneath, whichever one the system reads the appearance from. The
+ * activity's values are captured once on entry and restored when the viewer leaves; the
+ * effect is keyed on the Configuration like HortayTheme's own bar effect, so a rotation
+ * (which re-runs enableEdgeToEdge and that effect) re-applies light icons while the viewer
+ * is still open instead of leaving the theme's dark ones. Navigation-bar icons are touched
+ * on API 29+ only, matching HortayTheme: below that the system paints its own scrim.
+ */
+@Composable
+private fun LightSystemBarIcons(dialogWindow: Window?) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    val configuration = LocalConfiguration.current
+    val activityWindow = remember(view) { view.context.findActivity()?.window }
+    val initial = remember(activityWindow) {
+        activityWindow?.let { w ->
+            val c = WindowCompat.getInsetsController(w, w.decorView)
+            c.isAppearanceLightStatusBars to c.isAppearanceLightNavigationBars
+        }
+    }
+    DisposableEffect(dialogWindow, activityWindow, configuration) {
+        val controllers = listOfNotNull(
+            dialogWindow?.let { WindowCompat.getInsetsController(it, it.decorView) },
+            activityWindow?.let { WindowCompat.getInsetsController(it, it.decorView) },
+        )
+        controllers.forEach { c ->
+            c.isAppearanceLightStatusBars = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) c.isAppearanceLightNavigationBars = false
+        }
+        onDispose {
+            val w = activityWindow ?: return@onDispose
+            val (lightStatus, lightNav) = initial ?: return@onDispose
+            val c = WindowCompat.getInsetsController(w, w.decorView)
+            c.isAppearanceLightStatusBars = lightStatus
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) c.isAppearanceLightNavigationBars = lightNav
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 // Backdrop: blur applied to the minithumb stretched fullscreen, and the black veil over it.
 // 82 % black caps the backdrop at ~18 % of the source brightness: at 65 % a white photo's

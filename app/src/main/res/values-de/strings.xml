@@ -187,7 +187,7 @@
     <string name="timeline_empty">Hier ist es noch ruhig. Abonniere Kanäle in Telegram, damit sie im Feed erscheinen</string>
     <string name="timeline_empty_default_helper">Abonniere Kanäle in Telegram, damit sie im Feed erscheinen</string>
     <string name="timeline_empty_saved_title">Noch nichts gespeichert</string>
-    <string name="timeline_empty_saved_helper">Tippe unter einem Beitrag auf das Lesezeichen, um ihn für später aufzuheben</string>
+    <string name="timeline_empty_saved_helper">Öffne das ⋯-Menü eines Beitrags und tippe auf „Beitrag speichern“, um ihn für später aufzuheben</string>
     <string name="timeline_empty_default_title">Hier ist es noch ruhig</string>
     <string name="timeline_empty_caught_up_title">Alles gelesen</string>
     <string name="timeline_empty_caught_up_helper">Du hast alle Beiträge in deinem Feed gelesen. Zum Aktualisieren nach unten ziehen.</string>
@@ -222,6 +222,9 @@
     <string name="post_translate">Übersetzen</string>
     <string name="post_save">Beitrag speichern</string>
     <string name="post_unsave">Aus Gespeichert entfernen</string>
+    <string name="post_action_save_short">Speichern</string>
+    <string name="post_action_saved_short">Gespeichert</string>
+    <string name="post_action_link_short">Link</string>
     <string name="post_copy_text">Text kopieren</string>
     <string name="post_select_text">Text auswählen</string>
     <string name="post_share">Teilen</string>
@@ -317,6 +320,8 @@
     <string name="channels_subscribers">Abonnenten: %1$s</string>
     <string name="channels_unmute">Benachrichtigungen einschalten</string>
     <string name="channels_mute">Benachrichtigungen stummschalten</string>
+    <string name="channels_tile_mute">Stumm</string>
+    <string name="channels_tile_unmute">Ton an</string>
     <string name="channels_leave">Kanal verlassen</string>
     <string name="channels_join">Abonnieren</string>
     <string name="channels_hide_from_feed">Aus Feed ausblenden</string>

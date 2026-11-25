@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.ui.graphics.Color
+import dev.lyo.hortay.ui.theme.LocalHortayDarkTheme
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -302,7 +305,7 @@ fun ChannelsScreen(
                 text = { Text(fabLabel) },
             )
         },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = channelsCanvasColor(),
     ) { padding ->
         if (channels.isEmpty()) {
             EmptyChannels(
@@ -498,6 +501,7 @@ private fun ChannelRow(
         channel.title,
     )
     val dim = if (isHidden) 0.5f else 1f
+    val hasSupportingLine = isHidden || channel.lastPostExcerpt.isNotBlank()
     // At large font scale the title and excerpt may wrap to a second line instead of
     // truncating after a word or two.
     val textLines = if (LocalDensity.current.fontScale > LARGE_FONT_SCALE) 2 else 1
@@ -540,6 +544,7 @@ private fun ChannelRow(
         SegmentedListItem(
             onClick = onClick,
             shapes = shapes,
+            colors = ListItemDefaults.colors(containerColor = channelsRowColor()),
             leadingContent = {
                 Box(Modifier.alpha(dim)) {
                     TdAvatar(
@@ -599,11 +604,19 @@ private fun ChannelRow(
                         color = if (unreadCount > 0 && !isHidden) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(6.dp))
                     when {
-                        unreadCount > 0 -> UnreadBadge(count = unreadCount, muted = isHidden)
-                        isUnread -> UnreadDot()
-                        else -> Spacer(Modifier.height(20.dp))
+                        unreadCount > 0 -> {
+                            Spacer(Modifier.height(6.dp))
+                            UnreadBadge(count = unreadCount, muted = isHidden)
+                        }
+                        isUnread -> {
+                            Spacer(Modifier.height(6.dp))
+                            UnreadDot()
+                        }
+                        // A two-line row keeps the badge slot so the time stays level with
+                        // the title. A one-line row (no excerpt) drops it: the reserved 26 dp
+                        // pushed the time above the centred title.
+                        hasSupportingLine -> Spacer(Modifier.height(26.dp))
                     }
                 }
                 }
@@ -686,7 +699,7 @@ private fun ChannelsHeader(
 ) {
     val background by animateColorAsState(
         targetValue = if (scrolled) MaterialTheme.colorScheme.surfaceContainer
-        else MaterialTheme.colorScheme.background,
+        else channelsCanvasColor(),
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "channels-header-tint",
     )
@@ -829,8 +842,30 @@ internal enum class ChannelsFilter(@param:StringRes val label: Int) {
 }
 
 /**
+ * Canvas behind the channel list. Rows must separate from it in every theme:
+ *  - light: `surfaceContainerLow` canvas under `surfaceContainerLowest` (white) rows;
+ *  - dark: `background` canvas under `surfaceContainer` rows. The light pairing inverted in
+ *    dark would sink the rows below the canvas, and in pure black `surfaceContainerLowest`
+ *    IS the canvas (see `withPureBlack`), so rows would vanish into it. Pure black keeps a
+ *    #000 canvas with the container-toned rows on top.
+ */
+@Composable
+private fun channelsCanvasColor(): Color =
+    if (LocalHortayDarkTheme.current) MaterialTheme.colorScheme.background
+    else MaterialTheme.colorScheme.surfaceContainerLow
+
+/** Row tile colour paired with [channelsCanvasColor]. */
+@Composable
+private fun channelsRowColor(): Color =
+    if (LocalHortayDarkTheme.current) MaterialTheme.colorScheme.surfaceContainer
+    else MaterialTheme.colorScheme.surfaceContainerLowest
+
+/**
  * Filter chips with live counts. An empty filter other than All is left out instead of
  * offered as a dead end, so with nothing hidden there is no "Hidden" chip.
+ *
+ * Borderless tonal pills: an outlined chip per filter drew four extra frames right above a
+ * list of tiles. Unselected `surfaceContainerHigh`, selected `primaryContainer`.
  */
 @Composable
 private fun ChannelsFilterChips(
@@ -851,6 +886,14 @@ private fun ChannelsFilterChips(
             FilterChip(
                 selected = f == selected,
                 onClick = { onSelect(f) },
+                shape = CircleShape,
+                border = null,
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
                 label = {
                     Text(
                         text = if (f == ChannelsFilter.All) stringResource(f.label) else "${stringResource(f.label)} · $count",

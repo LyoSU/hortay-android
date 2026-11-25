@@ -190,7 +190,7 @@
     <string name="timeline_empty">Niente qui per ora. Iscriviti ai canali su Telegram e appariranno nel feed</string>
     <string name="timeline_empty_default_helper">Iscriviti ai canali su Telegram e appariranno nel feed</string>
     <string name="timeline_empty_saved_title">Niente ancora salvato</string>
-    <string name="timeline_empty_saved_helper">Tocca il segnalibro sotto un post per ritrovarlo dopo</string>
+    <string name="timeline_empty_saved_helper">Apri il menu ⋯ di un post e tocca Salva post per ritrovarlo dopo</string>
     <string name="timeline_empty_default_title">Niente qui per ora</string>
     <string name="timeline_empty_caught_up_title">Sei in pari</string>
     <string name="timeline_empty_caught_up_helper">Hai letto tutti i post del tuo feed. Scorri verso il basso per aggiornare.</string>
@@ -226,6 +226,9 @@
     <string name="post_translate">Traduci</string>
     <string name="post_save">Salva post</string>
     <string name="post_unsave">Rimuovi dai salvati</string>
+    <string name="post_action_save_short">Salva</string>
+    <string name="post_action_saved_short">Salvato</string>
+    <string name="post_action_link_short">Link</string>
     <string name="post_copy_text">Copia testo</string>
     <string name="post_select_text">Seleziona testo</string>
     <string name="post_share">Condividi</string>
@@ -325,6 +328,8 @@
     <string name="channels_subscribers">Iscritti: %1$s</string>
     <string name="channels_unmute">Riattiva notifiche</string>
     <string name="channels_mute">Silenzia notifiche</string>
+    <string name="channels_tile_mute">Silenzia</string>
+    <string name="channels_tile_unmute">Riattiva</string>
     <string name="channels_leave">Abbandona canale</string>
     <string name="channels_join">Iscriviti</string>
     <string name="channels_hide_from_feed">Nascondi dal feed</string>

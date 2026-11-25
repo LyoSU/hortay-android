@@ -1,7 +1,6 @@
 package dev.lyo.hortay.ui.media
 
 import dev.lyo.hortay.ui.components.formatByteSize
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -13,6 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -41,23 +44,20 @@ import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
-import dev.lyo.hortay.ui.theme.HortayExpressive
-import dev.lyo.hortay.ui.theme.asComposeShape
 
 /**
- * Compact quality indicator that lives on the full-screen viewer's overlay row.
- * Single label like "720p" inside a translucent backdrop. Tap opens
- * [VideoQualityPickerSheet] with the full ladder of available re-encodes (and
- * the original).
+ * Compact quality indicator in the fullscreen video's bottom control row, next to
+ * [SpeedChip] and the mute disc. Single label like "720p" on the viewer's chrome capsule.
+ * Tap opens [VideoQualityPickerSheet] with the full ladder of available re-encodes (and the
+ * original). Quality keeps the sheet rather than [SpeedChip]'s compact segment strip: each
+ * option carries a resolution and file-size subtitle, and the ladder can run to five or
+ * more steps, which one row of segments can't hold at large font scale.
  *
  * Visible only when [VideoQualities.hasOptions] is true — single-quality videos
  * never see this UI.
  *
- * Backdrop uses the canonical M3 Expressive `Pill` polygon (`MaterialShapes.Pill`)
- * so the chip speaks the same shape vocabulary as the close button (Cookie9),
- * the page counter (Pill) and `NewPostsPill` elsewhere in the app — every
- * piece of viewer chrome reads as part of one expressive system instead of
- * a stock-Material round-rect carved into the polygon language.
+ * [holdChrome] is called with true while the sheet is open and false once it closes, so the
+ * playback chrome's auto-hide doesn't remove the chip under the open sheet.
  */
 @Composable
 fun QualityChip(
@@ -65,6 +65,7 @@ fun QualityChip(
     qualities: VideoQualities,
     onPick: (VideoQuality) -> Unit,
     modifier: Modifier = Modifier,
+    holdChrome: (Boolean) -> Unit = {},
 ) {
     var open by remember { mutableStateOf(false) }
     ViewerPillChip(
@@ -74,6 +75,10 @@ fun QualityChip(
         modifier = modifier,
     )
     if (open) {
+        DisposableEffect(Unit) {
+            holdChrome(true)
+            onDispose { holdChrome(false) }
+        }
         VideoQualityPickerSheet(
             qualities = qualities,
             current = current,
@@ -87,13 +92,16 @@ fun QualityChip(
 }
 
 /**
- * The translucent `Pill` label shared by the viewer's playback-setting chips ([QualityChip],
- * [SpeedChip]). The visible pill stays ~28 dp tall; minimumInteractiveComponentSize reserves
- * a 48 dp touch target around it, and the pill grows with the font scale instead of clipping.
- * Clip before clickable so the ripple follows the pill. The plate uses the viewer-wide
- * [CHROME_BACKDROP_ALPHA] (was 45 %): the chip carries small text, which needs ~4.5:1 over
- * a white frame, not the 3:1 an icon gets away with. [contentDescription], when set,
- * replaces the visible text for screen readers (e.g. "Playback speed 1.5×" over "1.5×").
+ * The capsule label shared by the viewer's playback-setting chips ([QualityChip],
+ * [SpeedChip]). Same height ([VIEWER_CHROME_DISC], 44 dp) and backdrop as the round chrome
+ * discs beside it (mute, save, share), with a stadium outline, so the bottom row reads as
+ * one set of controls; a [VIEWER_CHIP_MIN_WIDTH] floor keeps "1×" and "720p" the same
+ * width class. minimumInteractiveComponentSize reserves the 48 dp touch target around it,
+ * and heightIn lets the capsule grow with the font scale instead of clipping. Clip before
+ * clickable so the ripple follows the capsule. The plate uses the viewer-wide
+ * [CHROME_BACKDROP_ALPHA]: the chip carries small text, which needs ~4.5:1 over a white
+ * frame, not the 3:1 an icon gets away with. [contentDescription], when set, replaces the
+ * visible text for screen readers (e.g. "Playback speed 1.5×" over "1.5×").
  */
 @Composable
 internal fun ViewerPillChip(
@@ -103,12 +111,13 @@ internal fun ViewerPillChip(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
 ) {
-    val chipShape = HortayExpressive.Pill.asComposeShape()
     Row(
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .clip(chipShape)
-            .background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), chipShape)
+            .heightIn(min = VIEWER_CHROME_DISC)
+            .widthIn(min = VIEWER_CHIP_MIN_WIDTH)
+            .clip(CircleShape)
+            .viewerChromeBackdrop(CircleShape)
             .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
             .then(
                 if (contentDescription != null) {
@@ -117,13 +126,14 @@ internal fun ViewerPillChip(
                     Modifier
                 },
             )
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+            .padding(horizontal = 14.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
         Text(
             text = text,
             color = Color.White,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             // With a description the visible text is redundant for TalkBack ("1.5×").
@@ -131,6 +141,9 @@ internal fun ViewerPillChip(
         )
     }
 }
+
+/** Narrowest playback chip, so a one-glyph "1×" doesn't shrink below the round discs' weight. */
+private val VIEWER_CHIP_MIN_WIDTH = 56.dp
 
 /**
  * Material3 modal bottom sheet listing all available qualities. Highlights the

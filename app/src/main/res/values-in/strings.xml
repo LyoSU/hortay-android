@@ -181,7 +181,7 @@
     <string name="timeline_empty">Sepi di sini. Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
     <string name="timeline_empty_default_helper">Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
     <string name="timeline_empty_saved_title">Belum ada yang tersimpan</string>
-    <string name="timeline_empty_saved_helper">Ketuk penanda di bawah kiriman untuk membacanya nanti</string>
+    <string name="timeline_empty_saved_helper">Buka menu ⋯ kiriman dan ketuk Simpan kiriman untuk membacanya nanti</string>
     <string name="timeline_empty_default_title">Sepi di sini</string>
     <string name="timeline_empty_caught_up_title">Semua sudah dibaca</string>
     <string name="timeline_empty_caught_up_helper">Kamu sudah membaca semua kiriman di feed-mu. Tarik untuk memuat yang baru.</string>
@@ -215,6 +215,9 @@
     <string name="post_translate">Terjemahkan</string>
     <string name="post_save">Simpan kiriman</string>
     <string name="post_unsave">Hapus dari tersimpan</string>
+    <string name="post_action_save_short">Simpan</string>
+    <string name="post_action_saved_short">Tersimpan</string>
+    <string name="post_action_link_short">Tautan</string>
     <string name="post_copy_text">Salin teks</string>
     <string name="post_select_text">Pilih teks</string>
     <string name="post_share">Bagikan</string>
@@ -306,6 +309,8 @@
     <string name="channels_subscribers">Pelanggan: %1$s</string>
     <string name="channels_unmute">Aktifkan notifikasi</string>
     <string name="channels_mute">Bisukan notifikasi</string>
+    <string name="channels_tile_mute">Bisukan</string>
+    <string name="channels_tile_unmute">Suarakan</string>
     <string name="channels_leave">Keluar dari kanal</string>
     <string name="channels_join">Ikuti</string>
     <string name="channels_hide_from_feed">Sembunyikan dari feed</string>

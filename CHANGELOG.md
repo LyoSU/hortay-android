@@ -66,7 +66,15 @@
 - Swipeable photo albums in the feed show their position dots under the photos instead of in a dark pill that blended into them.
 - Photos in a swipeable album travel to the screen edge as you swipe instead of being cut off at the text margin.
 - A long formatted post ends with a plain “Read full post” link, like any other long post, instead of a wide button.
-- Folder tabs above the feed are now plain labels with an underline under the selected one.
+- Folder tabs above the feed are now plain labels with an underline that slides to the selected one.
+- Inside a channel, its own posts show just the time instead of repeating the channel's photo and name above every post.
+- A post's menu puts Save, Share and Link in one row of buttons at the top, so it is shorter.
+- The view count keeps its place at the end of the line under a post instead of being cut off behind a long row of reactions.
+- A channel's info card shows the channel's photo, makes links in the description tappable and puts Media, notifications and Copy link in a row of buttons.
+- Fullscreen video has a slim seek bar, the quality and speed buttons sit at the bottom next to the sound button, and speed is picked from a small strip instead of a half-screen sheet.
+- The "new posts" button shows "+N", so it no longer looks the same as the unread button next to it.
+- The pinned-message bar in a channel has its own background and a segmented marker showing which pin is on screen.
+- The Channels tab has softer filter buttons and clearer rows.
 - Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.
 - Replies in a comments thread are linked to the comment they answer by a thin line, and new comments slide into place instead of jumping.
 - Reaction chips are easier to tap without hitting a neighbouring one.

@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -69,6 +70,11 @@ private val BarShape = RoundedCornerShape(percent = 50)
  * flashed three nested rounded shapes. Presses now answer with a small scale-down of the
  * tab instead of a ripple; the selected tab adds a filled, accent-tinted icon and label.
  *
+ * Depth: a light 3 dp shadow with softened ambient/spot colours, plus the hairline border.
+ * The earlier 10 dp default shadow pooled a heavy dark band under the pill that read as a
+ * second bar. The frosted tint is the shared [rememberGlassStyle] glass, the same material as
+ * the audio mini-player stacked above the bar; its density is set there for label contrast.
+ *
  * Large font scales: the bar renders under [CappedFontScale] (labels top out at the chrome
  * cap), and a label that still does not fit its cell steps its size down instead of
  * ellipsizing — at font scale 2.0 "Стрічка" / "Збережене" read "Стріч…" / "Збер…" with the
@@ -81,8 +87,10 @@ fun FloatingNavBar(
     modifier: Modifier = Modifier,
 ) {
     val backdrop = LocalGlassBackdrop.current
-    val glass = rememberGlassStyle()
     val fallback = MaterialTheme.colorScheme.surfaceContainer
+    val glass = rememberGlassStyle()
+    // M3's ColorScheme has no shadow role; the platform shadow is black, softened by alpha.
+    val shadowTint = Color.Black
     val hairline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     val capsule = MaterialTheme.colorScheme.primary.copy(alpha = CAPSULE_ALPHA)
     val tabs = NavTab.entries
@@ -102,7 +110,13 @@ fun FloatingNavBar(
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .widthIn(max = BAR_MAX_WIDTH)
                 .fillMaxWidth()
-                .shadow(elevation = 10.dp, shape = BarShape, clip = false)
+                .shadow(
+                    elevation = BAR_ELEVATION,
+                    shape = BarShape,
+                    clip = false,
+                    ambientColor = shadowTint.copy(alpha = SHADOW_AMBIENT_ALPHA),
+                    spotColor = shadowTint.copy(alpha = SHADOW_SPOT_ALPHA),
+                )
                 .clip(BarShape)
                 .then(
                     if (backdrop != null) Modifier.hazeBlur(input = HazeInput.Sources(backdrop), style = glass)
@@ -233,6 +247,13 @@ private val BAR_MAX_WIDTH = 480.dp
 
 /** Gap between the bar's edge and the sliding capsule. */
 private val BAR_INSET = 5.dp
+
+/** Elevation of the pill's shadow — enough to lift it off the feed, not a dark band. */
+private val BAR_ELEVATION = 3.dp
+
+/** Softened shadow colours (the platform default is opaque black for both). */
+private const val SHADOW_AMBIENT_ALPHA = 0.10f
+private const val SHADOW_SPOT_ALPHA = 0.16f
 
 /** Capsule tint over the glass — enough to read as a lens, light enough to keep the blur. */
 private const val CAPSULE_ALPHA = 0.14f

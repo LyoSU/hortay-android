@@ -15,6 +15,8 @@ import dev.lyo.hortay.ui.components.ContextMenuCapsule
 import dev.lyo.hortay.ui.components.ContextMenuCard
 import dev.lyo.hortay.ui.components.ContextMenuDivider
 import dev.lyo.hortay.ui.components.ContextMenuItem
+import dev.lyo.hortay.ui.components.ContextMenuTile
+import dev.lyo.hortay.ui.components.ContextMenuTiles
 import dev.lyo.hortay.ui.components.contextMenuAnchor
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
@@ -57,14 +59,17 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.layout.MultiContentMeasurePolicy
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -169,7 +174,9 @@ fun PostCard(
     /**
      * Whether a personal-author post names its host channel ("in <Channel>" + avatar badge).
      * The channel screen passes `false`: every post there has the same host, already named
-     * in the screen's own header.
+     * in the screen's own header. For the same reason a post the channel published under its
+     * own name gets the quiet one-line header there (time and marks, then "⋯") instead of
+     * repeating the channel's avatar and name on every card — see [isQuietChannelHeader].
      */
     showHostChannel: Boolean = true,
 ) {
@@ -465,6 +472,23 @@ fun PostCard(
                     Spacer(Modifier.height(HortaySpacing.sm))
                 }
                 val onHeaderClick = if (source != null) onSourceClick ?: {} else onSenderClick
+                if (!showHostChannel && post.isQuietChannelHeader()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            HeaderMeta(
+                                date = post.date,
+                                editDate = post.editDate,
+                                pinned = post.isPinned,
+                                isDeleted = post.isDeleted,
+                                revisionCount = post.revisionCount,
+                                onTapRevisions = { onTapRevisions(post) },
+                            )
+                        }
+                        if (actionsEnabled && !post.isDeleted) {
+                            PostMoreButton(onClick = { sheetOpen = true })
+                        }
+                    }
+                } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Avatar(
                     name = source?.name ?: post.senderName,
@@ -515,19 +539,8 @@ fun PostCard(
                 // and most readers never found it. Nudged into the card's end padding so the
                 // dots, not their invisible button slack, line up with the content edge.
                 if (actionsEnabled && !post.isDeleted) {
-                    IconButton(
-                        onClick = { sheetOpen = true },
-                        modifier = Modifier
-                            .offset(x = HortaySpacing.sm)
-                            .size(36.dp),
-                    ) {
-                        Symbol(
-                            name = "more_horiz",
-                            contentDescription = stringResource(R.string.post_more_actions),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            size = 20.dp,
-                        )
-                    }
+                    PostMoreButton(onClick = { sheetOpen = true })
+                }
                 }
                 }
 
@@ -992,7 +1005,6 @@ private fun HeaderRow(
     hostChannel: ChannelContext? = null,
     onHostChannelClick: () -> Unit = {},
 ) {
-    val metaColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET)
     NameAndMetaLayout(
         name = {
             Row(
@@ -1024,63 +1036,133 @@ private fun HeaderRow(
             }
         },
         meta = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (hostChannel != null) {
-                    Text(
-                        text = stringResource(R.string.post_in_channel, hostChannel.name),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .clip(InlineChipCorner)
-                            .clickable(role = Role.Button, onClick = onHostChannelClick),
-                    )
-                    Text(
-                        text = " · ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = metaColor,
-                    )
-                }
-                TimestampText(date)
-                // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
-                // chip subsumes the pencil — tapping opens the revision sheet AND
-                // communicates "edited". When archive is off or this post was edited before
-                // the feature was enabled (editDate > 0 but no captured versions), we keep
-                // the original non-interactive pencil so the indicator never disappears for
-                // existing users.
-                when {
-                    isDeleted -> {
-                        Spacer(Modifier.width(6.dp))
-                        DeletedBadge()
-                    }
-                    revisionCount > 0 -> {
-                        Spacer(Modifier.width(6.dp))
-                        EditedChip(count = revisionCount, onClick = onTapRevisions)
-                    }
-                    editDate > 0L -> {
-                        Spacer(Modifier.width(6.dp))
-                        Symbol(
-                            name = "line_edit",
-                            contentDescription = stringResource(R.string.post_badge_edited),
-                            tint = metaColor,
-                            size = HEADER_MARK_SIZE,
-                        )
-                    }
-                }
-                if (pinned) {
-                    Spacer(Modifier.width(6.dp))
-                    Symbol(
-                        name = "line_pin",
-                        contentDescription = stringResource(R.string.post_badge_pinned),
-                        tint = MaterialTheme.colorScheme.primary,
-                        size = HEADER_MARK_SIZE,
-                    )
-                }
-            }
+            HeaderMeta(
+                date = date,
+                editDate = editDate,
+                pinned = pinned,
+                isDeleted = isDeleted,
+                revisionCount = revisionCount,
+                onTapRevisions = onTapRevisions,
+                hostChannel = hostChannel,
+                onHostChannelClick = onHostChannelClick,
+            )
         },
     )
+}
+
+/**
+ * Inside a channel's own screen, whether this post's header would only repeat the screen's
+ * top bar: a post the channel published under its own name, unsigned, not a comment, with no
+ * scam/fake warning. Such a post gets the quiet one-line header — time and marks, then "⋯" —
+ * instead of the avatar and the bold channel name the top bar already shows on every card.
+ * Anything whose header says something the top bar does not keeps the full header: a named
+ * author (personal-author mode, `senderUserId` / `channelContext`), a post sent as another
+ * chat (`senderChatId`), a signature, a forward (its header names the source, or its chip
+ * does). The merged feed never asks: it always shows the full header.
+ */
+private fun TimelinePost.isQuietChannelHeader(): Boolean =
+    parentId == null &&
+        forwardOrigin == null &&
+        senderUserId == null &&
+        senderChatId == null &&
+        channelContext == null &&
+        authorSignature.isNullOrBlank() &&
+        (verification == null || verification == SenderVerification.Verified)
+
+/**
+ * Visible entry to the post's actions. Nudged into the card's end padding so the dots, not
+ * their invisible button slack, line up with the content edge; the IconButton keeps its
+ * 48 dp touch target around the 36 dp visual.
+ */
+@Composable
+private fun PostMoreButton(onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .offset(x = HortaySpacing.sm)
+            .size(36.dp),
+    ) {
+        Symbol(
+            name = "more_horiz",
+            contentDescription = stringResource(R.string.post_more_actions),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            size = 20.dp,
+        )
+    }
+}
+
+/**
+ * The header's metadata run: optional "in <Channel>" host, the time, then the deleted /
+ * edited / pinned marks. Shared by the full header ([HeaderRow]) and the quiet one-line header
+ * a channel's own posts get inside its screen, so both stay in lockstep.
+ */
+@Composable
+private fun HeaderMeta(
+    date: Long,
+    editDate: Long,
+    pinned: Boolean,
+    isDeleted: Boolean,
+    revisionCount: Int,
+    onTapRevisions: () -> Unit,
+    hostChannel: ChannelContext? = null,
+    onHostChannelClick: () -> Unit = {},
+) {
+    val metaColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (hostChannel != null) {
+            Text(
+                text = stringResource(R.string.post_in_channel, hostChannel.name),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .clip(InlineChipCorner)
+                    .clickable(role = Role.Button, onClick = onHostChannelClick),
+            )
+            Text(
+                text = " · ",
+                style = MaterialTheme.typography.bodyMedium,
+                color = metaColor,
+            )
+        }
+        TimestampText(date)
+        // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
+        // chip subsumes the pencil — tapping opens the revision sheet AND
+        // communicates "edited". When archive is off or this post was edited before
+        // the feature was enabled (editDate > 0 but no captured versions), we keep
+        // the original non-interactive pencil so the indicator never disappears for
+        // existing users.
+        when {
+            isDeleted -> {
+                Spacer(Modifier.width(6.dp))
+                DeletedBadge()
+            }
+            revisionCount > 0 -> {
+                Spacer(Modifier.width(6.dp))
+                EditedChip(count = revisionCount, onClick = onTapRevisions)
+            }
+            editDate > 0L -> {
+                Spacer(Modifier.width(6.dp))
+                Symbol(
+                    name = "line_edit",
+                    contentDescription = stringResource(R.string.post_badge_edited),
+                    tint = metaColor,
+                    size = HEADER_MARK_SIZE,
+                )
+            }
+        }
+        if (pinned) {
+            Spacer(Modifier.width(6.dp))
+            Symbol(
+                name = "line_pin",
+                contentDescription = stringResource(R.string.post_badge_pinned),
+                tint = MaterialTheme.colorScheme.primary,
+                size = HEADER_MARK_SIZE,
+            )
+        }
+    }
 }
 
 /** Edited / pinned marks after the header time: the post card's line glyphs at text height. */
@@ -1456,16 +1538,18 @@ private val REPLY_THUMB_SIZE = 36.dp
 // share one source of truth — keeps icons and wording in lockstep across surfaces.
 
 /**
- * The post's action line: the action items at the start, the reaction chips and the view count
- * at the END of the same line ([ActionLineMeasurePolicy]). The end group sits in a horizontally
- * scrolling strip that rests against the end edge when it fits and scrolls sideways when it
- * doesn't; only when the actions leave less than [REACTION_STRIP_MIN_WIDTH] does the strip drop
- * to a line of its own. History: reactions used to be a separate [FlowRow] above the action line, wrapping onto
+ * The post's action line: the action items at the start, the reaction chips and then the view
+ * count at the END of the same line ([ActionLineMeasurePolicy]). The reactions sit in a
+ * horizontally scrolling strip that rests against the views when it fits and scrolls sideways
+ * when it doesn't; only when the actions and views leave less than [REACTION_STRIP_MIN_WIDTH]
+ * does the strip (with the views) drop to a line of its own. History: reactions used to be a
+ * separate [FlowRow] above the action line, wrapping onto
  * as many lines as they needed (a single scrolling line before that had clipped the last chip
  * at the screen edge with no cue, which read as broken). Sharing one line keeps the card one
  * compact line shorter, and a post with twenty reactions is exactly as tall as one with two;
  * the strip marks its start edge with a hairline while chips are scrolled under it, so a
- * half-hidden chip reads as "more this way".
+ * half-hidden chip reads as "more this way", and fades its end edge ([STRIP_END_FADE]) while
+ * more chips wait there.
  *
  * The action items are ONE evenly spaced run from the leading edge, Threads-style: comments
  * (tappable, opens the thread) · forward (the share control, carrying the forward count) ·
@@ -1479,9 +1563,11 @@ private val REPLY_THUMB_SIZE = 36.dp
  * rare next to reading and reacting, and that glyph took the width the reactions now use;
  * saving stays one tap away in the "⋯" and long-press menus.
  *
- * Views close the END group, after the reactions: the one item that is never a control, so it
- * is the lowest-priority piece of the line — right-aligned beside a few chips, the tail you
- * scroll to behind many, alone at the end when there are none. History: views used to trail the
+ * Views close the END group, after the reactions, in a fixed trailing slot OUTSIDE the
+ * scrolling strip: the count is always on screen at the end edge, and the reactions take what
+ * is left. Until 2026-11 views were the last item INSIDE the strip — "the tail you scroll to
+ * behind many" — and on a busy post the count sat clipped at the screen edge or was missing
+ * entirely, which read as broken, not as "scroll for more". History: views used to trail the
  * action run; on 2026-11-20 they briefly moved next to the time in the post header, which read
  * poorly there and crashed release builds ("LayoutNode not found in RectList": their
  * AnimatedContent count sat in a header slot that was measured but not always placed).
@@ -1569,10 +1655,16 @@ private fun ActionRow(
     val paidExplainer = res.getString(R.string.reactions_paid_explainer)
     val stripState = rememberScrollState()
     val stripEdgeColor = MaterialTheme.colorScheme.outlineVariant
-    // One line, two groups: the action items at the start, the reactions and then the view
-    // count at the end. The end group never wraps — past the free width it scrolls sideways
-    // inside its own strip, so a post with twenty reactions is exactly as tall as a post with
-    // two. See [ActionLineMeasurePolicy] for how the two groups share the width.
+    // Read in composition only to install the end fade's offscreen layer while the strip
+    // actually overflows; a strip that fits (the common case) stays layer-free. `maxValue`
+    // is Int.MAX_VALUE until the strip's first measure — that is "unknown", not "overflows",
+    // or every card would install the layer for one frame and recompose to drop it.
+    val stripOverflows by remember { derivedStateOf { stripState.maxValue in 1 until Int.MAX_VALUE } }
+    // One line, three slots: the action items at the start, the reactions and then the view
+    // count at the end. The reactions never wrap — past the free width they scroll sideways
+    // inside their own strip, so a post with twenty reactions is exactly as tall as a post with
+    // two — and the views keep a fixed trailing slot that the strip never pushes off screen.
+    // See [ActionLineMeasurePolicy] for how the slots share the width.
     Layout(
         modifier = Modifier
             .bleedHorizontal(ACTION_ITEM_H_PADDING)
@@ -1580,7 +1672,8 @@ private fun ActionRow(
             .smoothHeight()
             .trimBottom(ACTION_ROW_BOTTOM_OVERHANG),
         measurePolicy = ActionLineMeasurePolicy,
-        content = {
+        contents = listOf<@Composable () -> Unit>(
+        {
         FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
             if (hasComments) {
                 ActionItem(
@@ -1634,9 +1727,43 @@ private fun ActionRow(
                 )
             }
         }
-        if (reactions.items.isNotEmpty() || views > 0) {
+        },
+        {
+        if (reactions.items.isNotEmpty()) {
             Row(
                 modifier = Modifier
+                    // The end edge fades out while chips wait past it, so the last visible chip
+                    // slides under a soft edge just before the views slot instead of being cut
+                    // by a hard line. DstIn needs an offscreen layer; it is installed only while
+                    // the strip overflows. The fade eases away over the last [STRIP_END_FADE] of
+                    // scroll, so the final chip ends crisp.
+                    .then(
+                        if (stripOverflows) {
+                            Modifier
+                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                .drawWithContent {
+                                    drawContent()
+                                    val fade = STRIP_END_FADE.toPx().coerceAtMost(size.width)
+                                    val remaining = (stripState.maxValue - stripState.value).toFloat()
+                                    val strength = (remaining / fade).coerceIn(0f, 1f)
+                                    if (fade <= 0f || strength <= 0f) return@drawWithContent
+                                    val rtl = layoutDirection == LayoutDirection.Rtl
+                                    val solidX = if (rtl) fade else size.width - fade
+                                    val edgeX = if (rtl) 0f else size.width
+                                    drawRect(
+                                        brush = Brush.horizontalGradient(
+                                            0f to Color.Black,
+                                            1f to Color.Black.copy(alpha = 1f - strength),
+                                            startX = solidX,
+                                            endX = edgeX,
+                                        ),
+                                        topLeft = Offset(minOf(solidX, edgeX), 0f),
+                                        size = Size(fade, size.height),
+                                        blendMode = BlendMode.DstIn,
+                                    )
+                                }
+                        } else Modifier,
+                    )
                     // A hairline at the strip's start edge while chips are scrolled under it,
                     // so a half-hidden chip reads as "more this way", not as a clipped glyph
                     // glued to the last action item.
@@ -1654,8 +1781,9 @@ private fun ActionRow(
                         }
                     }
                     .horizontalScroll(stripState)
-                    // The views item carries its own end padding (the bleed); without it the
-                    // last chip needs this padding to end on the content edge.
+                    // The views slot carries its own padding (the gap before it and the end
+                    // bleed); without views the last chip needs this padding to end on the
+                    // content edge.
                     .padding(end = if (views > 0) 0.dp else ACTION_ITEM_H_PADDING),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1663,8 +1791,8 @@ private fun ActionRow(
             // reader watches. Inside this lookahead scope each chip glides to its new slot
             // instead of teleporting. The scope is local to the chips: scrolling the feed
             // moves the scope with them and starts nothing, unlike the retired `animateItem`
-            // on whole feed rows (see TimelineFeedColumn). The views item stays outside it.
-            if (reactions.items.isNotEmpty()) LookaheadScope {
+            // on whole feed rows (see TimelineFeedColumn). The views slot stays outside it.
+            LookaheadScope {
             val chipBounds = this
             Row(verticalAlignment = Alignment.CenterVertically) {
             // Every chip reserves a [REACTION_TOUCH_MIN_HEIGHT] touch box around its drawn
@@ -1718,57 +1846,74 @@ private fun ActionRow(
             }
             }
             }
-            // Views close the end group: read-only metadata, the lowest-priority item on the
-            // line, so with many reactions it is the tail you reach by scrolling. Its own
-            // [ACTION_ITEM_H_PADDING] is the gap after the last chip and, at the end, the bleed
-            // that puts the count on the content edge.
-            if (views > 0) {
-                ActionItem(symbol = "line_views", count = views)
-            }
             }
         }
         },
+        {
+        // Views close the end group in their own slot: read-only metadata, but always on
+        // screen — the reactions scroll and fade before it, never over it. Its own
+        // [ACTION_ITEM_H_PADDING] is the gap after the last chip and, at the end, the bleed
+        // that puts the count on the content edge.
+        if (views > 0) {
+            ActionItem(symbol = "line_views", count = views)
+        }
+        },
+        ),
     )
 }
+
+/** Width of the soft fade at the reaction strip's end edge while more chips wait past it. */
+private val STRIP_END_FADE = 20.dp
 
 /** Height of the hairline that marks the end strip's start edge while it is scrolled. */
 private val STRIP_EDGE_HEIGHT = 16.dp
 
-/** Below this free width the end strip (reactions, views) moves to its own line instead of a sliver. */
+/** Below this free width the reaction strip (with the views) moves to its own line instead of a sliver. */
 private val REACTION_STRIP_MIN_WIDTH = 96.dp
 
 /**
- * Lays out the post's action line: the action items (first child) at the start and the
- * optional end strip (second child: reactions, then the view count) at the end of the same line.
- * Both children are always placed when present — keep it that way: the strip holds lookahead-
- * animated chips and an AnimatedContent count, which crash when measured but left unplaced. The actions take the
- * width they need; the strip gets the rest and scrolls inside it, and sits against the end
- * edge when it is narrower than that, so the two groups are separated by free space instead
- * of a divider. When the actions leave less than [REACTION_STRIP_MIN_WIDTH] (font scale 2.0,
- * long counts) the strip takes a full line of its own under them. With no action items the
- * strip starts at the content edge.
+ * Lays out the post's action line from three slots: the action items (first content) at the
+ * start, the optional reaction strip (second) and the optional view count (third) at the end.
+ * Every child is always placed when present — keep it that way: the strip holds lookahead-
+ * animated chips and the views an AnimatedContent count, which crash when measured but left
+ * unplaced. The actions and the views take the width they need, measured first, so neither
+ * is ever clipped; the strip gets the rest, scrolls inside it, and sits right before the views
+ * when it is narrower than that, so the groups are separated by free space instead of a
+ * divider. When that leaves less than [REACTION_STRIP_MIN_WIDTH] (font scale 2.0, long
+ * counts) the strip and the views take a full line of their own under the actions, views still
+ * at the end edge. With no action items the strip starts at the content edge.
  */
-private val ActionLineMeasurePolicy = MeasurePolicy { measurables, constraints ->
+private val ActionLineMeasurePolicy = MultiContentMeasurePolicy { (actionMeasurables, stripMeasurables, viewMeasurables), constraints ->
     val loose = constraints.copy(minWidth = 0, minHeight = 0)
-    val actions = measurables[0].measure(loose)
-    val stripMeasurable = measurables.getOrNull(1)
-    val free = constraints.maxWidth - actions.width
-    val sameLine = stripMeasurable == null || actions.width == 0 ||
-        free >= REACTION_STRIP_MIN_WIDTH.roundToPx()
+    val maxWidth = constraints.maxWidth
+    val actions = actionMeasurables.firstOrNull()?.measure(loose)
+    val views = viewMeasurables.firstOrNull()?.measure(loose)
+    val stripMeasurable = stripMeasurables.firstOrNull()
+    val actionsWidth = actions?.width ?: 0
+    val actionsHeight = actions?.height ?: 0
+    val viewsWidth = views?.width ?: 0
+    val viewsHeight = views?.height ?: 0
+    val free = maxWidth - actionsWidth - viewsWidth
+    val sameLine = actionsWidth == 0 ||
+        free >= (if (stripMeasurable != null) REACTION_STRIP_MIN_WIDTH.roundToPx() else 0)
     val strip = stripMeasurable?.measure(
-        loose.copy(maxWidth = if (sameLine) free.coerceAtLeast(0) else constraints.maxWidth),
+        loose.copy(maxWidth = (if (sameLine) free else maxWidth - viewsWidth).coerceAtLeast(0)),
     )
     val stripWidth = strip?.width ?: 0
     val stripHeight = strip?.height ?: 0
-    val height = if (sameLine) maxOf(actions.height, stripHeight) else actions.height + stripHeight
-    layout(constraints.maxWidth, height) {
+    val endLineHeight = maxOf(stripHeight, viewsHeight)
+    val height = if (sameLine) maxOf(actionsHeight, endLineHeight) else actionsHeight + endLineHeight
+    layout(maxWidth, height) {
+        val viewsX = maxWidth - viewsWidth
         if (sameLine) {
-            actions.placeRelative(0, (height - actions.height) / 2)
-            val stripX = if (actions.width == 0) 0 else constraints.maxWidth - stripWidth
+            actions?.placeRelative(0, (height - actionsHeight) / 2)
+            val stripX = if (actionsWidth == 0) 0 else viewsX - stripWidth
             strip?.placeRelative(stripX, (height - stripHeight) / 2)
+            views?.placeRelative(viewsX, (height - viewsHeight) / 2)
         } else {
-            actions.placeRelative(0, 0)
-            strip?.placeRelative(0, actions.height)
+            actions?.placeRelative(0, 0)
+            strip?.placeRelative(0, actionsHeight + (endLineHeight - stripHeight) / 2)
+            views?.placeRelative(viewsX, actionsHeight + (endLineHeight - viewsHeight) / 2)
         }
     }
 }
@@ -2216,9 +2361,11 @@ internal fun ReactionChip(
  * The post's long-press / "⋯" menu: the reaction capsule above the post and a compact
  * card of actions below it, both anchored to the card (see [AnchoredContextMenu]).
  *
- * Deliberately no Comments action and no button group: tapping the card already opens
- * the thread, Share and Save also sit in the card's own action row, and two filled
- * buttons on top of the list outweighed everything else in the menu.
+ * Deliberately no Comments action and no filled button group: tapping the card already
+ * opens the thread, and two filled buttons on top of the list outweighed everything else in
+ * the menu. Save, Share and Copy link lead instead as one row of quiet tonal tiles
+ * ([ContextMenuTiles]) — the most-used actions, in a third of the height three rows took.
+ * The destructive Report keeps a divider of its own at the bottom.
  */
 @Composable
 private fun PostContextMenu(
@@ -2267,29 +2414,50 @@ private fun PostContextMenu(
         },
         actions = {
             ContextMenuCard {
-                ContextMenuItem(
-                    symbol = "bookmark",
-                    label = stringResource(if (isBookmarked) R.string.post_unsave else R.string.post_save),
-                    onClick = {
-                        haptics.performHapticFeedback(
-                            if (isBookmarked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
-                        )
-                        close { interactions.onBookmarkClick(post) }
-                    },
-                )
-                ContextMenuItem(
-                    symbol = "share",
-                    label = stringResource(R.string.post_share),
-                    onClick = { close { interactions.onShareClick(post) } },
-                )
+                // Save · Share · Copy link — the three actions readers reach for most — lead
+                // as one row of tiles; the tile row turns back into rows on its own when only
+                // one is wired or the labels don't fit (see [ContextMenuTiles]).
+                val saveShort = stringResource(if (isBookmarked) R.string.post_action_saved_short else R.string.post_action_save_short)
+                val saveLong = stringResource(if (isBookmarked) R.string.post_unsave else R.string.post_save)
+                val shareLabel = stringResource(R.string.post_share)
+                val linkShort = stringResource(R.string.post_action_link_short)
+                val linkLong = stringResource(R.string.link_action_copy)
                 val onCopyLink = interactions.onCopyLinkClick
-                if (onCopyLink != null) {
-                    ContextMenuItem(
-                        symbol = "link",
-                        label = stringResource(R.string.link_action_copy),
-                        onClick = { close { onCopyLink(post) } },
+                val tiles = buildList {
+                    add(
+                        ContextMenuTile(
+                            symbol = "bookmark",
+                            label = saveShort,
+                            longLabel = saveLong,
+                            selected = isBookmarked,
+                            onClick = {
+                                haptics.performHapticFeedback(
+                                    if (isBookmarked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                                )
+                                close { interactions.onBookmarkClick(post) }
+                            },
+                        ),
                     )
+                    add(
+                        ContextMenuTile(
+                            symbol = "share",
+                            label = shareLabel,
+                            longLabel = shareLabel,
+                            onClick = { close { interactions.onShareClick(post) } },
+                        ),
+                    )
+                    if (onCopyLink != null) {
+                        add(
+                            ContextMenuTile(
+                                symbol = "link",
+                                label = linkShort,
+                                longLabel = linkLong,
+                                onClick = { close { onCopyLink(post) } },
+                            ),
+                        )
+                    }
                 }
+                ContextMenuTiles(tiles)
                 ContextMenuItem(
                     symbol = "open_in_new",
                     label = stringResource(R.string.post_open_telegram),

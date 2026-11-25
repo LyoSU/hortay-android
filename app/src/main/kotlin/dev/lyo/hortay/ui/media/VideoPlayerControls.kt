@@ -3,6 +3,22 @@
 package dev.lyo.hortay.ui.media
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -26,12 +42,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -54,7 +71,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.MorphShape
-import dev.lyo.hortay.ui.theme.asComposeShape
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -88,10 +105,17 @@ import kotlinx.coroutines.isActive
  *     recommendation for media seekers and the Telegram / YouTube / Instagram
  *     convention. Wavy progress remains the right affordance elsewhere in the
  *     app (download, migration) where the bar fills monotonically.
+ *     The stock M3 1.5 track + bar thumb then read as a chunky white capsule
+ *     with a tall handle over video, so the Slider keeps its gesture and
+ *     semantics but paints a slim custom track ([SeekTrack], 4 dp → 6 dp while
+ *     scrubbing) and a 12 dp round thumb with no thumb–track gap.
  *
  *   • **Auto-hide** — controls fade out 3 s after the last interaction, but
  *     only while playing. Paused state keeps the play button onscreen as the
- *     primary "tap to resume" affordance.
+ *     primary "tap to resume" affordance. A picker opened from [extraControls]
+ *     (speed, quality) pins the controls for as long as it is open: the
+ *     picker is anchored to a chip inside the fading layer, and the 3 s hide
+ *     would otherwise pull it out from under the user's finger.
  *
  *   • **Touch model** — single tap toggles controls; double-tap on the left or
  *     right half of the surface seeks ∓10 s (Telegram / YouTube canonical).
@@ -101,6 +125,13 @@ import kotlinx.coroutines.isActive
 fun VideoPlayerControls(
     player: ExoPlayer,
     modifier: Modifier = Modifier,
+    /**
+     * Playback-setting chips (quality, speed) laid out in the bottom row before the mute
+     * button. The lambda receives `holdChrome`: call it with true while a picker is open and
+     * false once it closes, so the auto-hide doesn't fade the chips (and the picker anchored
+     * to them) away mid-choice.
+     */
+    extraControls: (@Composable (holdChrome: (Boolean) -> Unit) -> Unit)? = null,
 ) {
     val isPlaying by produceState(player.isPlaying, player) {
         val listener = object : Player.Listener {
@@ -170,8 +201,17 @@ fun VideoPlayerControls(
             interactionTick = interactionTick + 1
         }
     }
-    LaunchedEffect(controlsVisible, interactionTick, isPlaying) {
-        if (controlsVisible && isPlaying) {
+    // An open picker holds the chrome; closing it re-keys the effect, which restarts the
+    // full 3 s countdown from that moment.
+    var chromeHeld by remember { mutableStateOf(false) }
+    val holdChrome: (Boolean) -> Unit = remember {
+        { held ->
+            chromeHeld = held
+            if (held) controlsVisible = true
+        }
+    }
+    LaunchedEffect(controlsVisible, interactionTick, isPlaying, chromeHeld) {
+        if (controlsVisible && isPlaying && !chromeHeld) {
             delay(AUTO_HIDE_MS)
             controlsVisible = false
         }
@@ -230,23 +270,6 @@ fun VideoPlayerControls(
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Bottom scrim — keeps the time labels and seek bar readable
-                // against bright photo / sky backgrounds. Top half of the
-                // viewer is left unscrimmed because the close button + counter
-                // already carry their own polygon backdrops.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                1f to Color.Black.copy(alpha = 0.55f),
-                            ),
-                        ),
-                )
-
                 // Centre play/pause. Polygon backdrop morphs between Square
                 // (paused, "stopped") and Circle (playing, "in motion"); the
                 // glyph crossfades between play_arrow and pause. 72 dp reads
@@ -267,8 +290,10 @@ fun VideoPlayerControls(
                     modifier = Modifier.align(Alignment.Center),
                 )
 
-                // Bottom row: current time · seek slider · total time · mute.
+                // Bottom band: seek bar over time · chips · mute.
                 BottomBar(
+                    extraControls = extraControls,
+                    holdChrome = holdChrome,
                     positionMs = positionMs,
                     durationMs = durationMs,
                     displayProgress = displayProgress,
@@ -294,10 +319,23 @@ fun VideoPlayerControls(
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        // Bottom scrim — keeps the time labels and seek bar readable
+                        // against bright frames. Painted as the band's own background
+                        // (before the insets) so it reaches under the navigation bar and
+                        // grows with the band when the row wraps at large font scale,
+                        // instead of a fixed-height box the wrapped row could outgrow.
+                        // The top of the viewer is left to the viewer's own top scrim.
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                1f to Color.Black.copy(alpha = BOTTOM_SCRIM_ALPHA),
+                            ),
+                        )
                         .navigationBarsPadding()
-                        // Bottom inset is 4 dp under the visible 12 dp: the mute
-                        // button's 48 dp touch target adds that much slop below it.
-                        .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
+                        // Bottom inset is 4 dp under the visible 12 dp: the 48 dp touch
+                        // targets of the row's 44 dp discs add that much slop below them.
+                        .padding(start = 12.dp, end = 12.dp, top = BOTTOM_SCRIM_LEAD, bottom = 8.dp),
                 )
             }
         }
@@ -356,6 +394,7 @@ private fun CenterPlayPauseButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BottomBar(
     positionMs: Long,
@@ -366,94 +405,205 @@ private fun BottomBar(
     onSliderChangeFinished: () -> Unit,
     muted: Boolean,
     onToggleMute: () -> Unit,
+    extraControls: (@Composable (holdChrome: (Boolean) -> Unit) -> Unit)?,
+    holdChrome: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        // 2 dp + the mute button's 4 dp touch-target slop = the visible 6 dp gap.
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        // M3 Slider: built-in drag + tap-to-seek + thumb position is the
-        // canonical seek affordance. White-on-translucent palette overrides
-        // primary so the thumb / track read against any photo or video frame
-        // (matches the rest of the viewer chrome — close button, page
-        // counter, mute toggle all paint white over a black-translucent
-        // backdrop).
+    Column(modifier = modifier) {
+        // M3 Slider for the gesture, tap-to-seek and the a11y "set progress" action;
+        // [SeekTrack] + [SeekThumb] replace its stock visuals (see the file KDoc). The
+        // 48 dp minimum height is the scrub hit region — the slider centres its 12 dp thumb
+        // and slim track inside it, so the visible bar stays thin while the finger still
+        // lands on a full touch target. Track and thumb draw white, like the rest of the
+        // viewer chrome, so they read on any frame.
+        val interactionSource = remember { MutableInteractionSource() }
+        val pressed by interactionSource.collectIsPressedAsState()
+        val dragged by interactionSource.collectIsDraggedAsState()
+        val scrubbing = pressed || dragged || isDragging
+        // M3 1.5 only takes custom thumb/track on the SliderState overload. Passing
+        // onValueChange keeps the slider controlled: the drag reports up, and the state is
+        // re-synced from [displayProgress] after each composition.
+        val sliderState = remember { SliderState(value = displayProgress) }
+        SideEffect { sliderState.value = displayProgress }
         Slider(
-            value = displayProgress,
+            state = sliderState,
             onValueChange = onSliderChange,
             onValueChangeFinished = onSliderChangeFinished,
-            valueRange = 0f..1f,
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.30f),
-            ),
-            modifier = Modifier.fillMaxWidth(),
+            interactionSource = interactionSource,
+            thumb = { SeekThumb() },
+            track = { state -> SeekTrack(fraction = state.coercedValueAsFraction, scrubbing = scrubbing) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = SEEK_HIT_HEIGHT),
         )
 
-        // Time row + mute toggle. Tabular figures so the digit ribbon
-        // doesn't jitter as seconds tick over.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = formatHmmSs(if (isDragging && durationMs > 0) (displayProgress * durationMs).toLong() else positionMs),
-                color = Color.White,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontFeatureSettings = "tnum",
-                ),
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "/",
-                color = Color.White.copy(alpha = 0.6f),
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = formatHmmSs(durationMs),
-                color = Color.White.copy(alpha = 0.85f),
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontFeatureSettings = "tnum",
-                ),
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            // Mute toggle re-uses the same toggle vocabulary as the centre
-            // play/pause: a polygon backdrop with a glyph crossfade between
-            // volume_up and volume_off. 40 dp is the minimum M3 IconButton
-            // size and visually subordinates this to the centre control —
-            // mute is a setting, not a primary action.
-            val muteShape = HortayExpressive.Pill.asComposeShape()
-            // minimumInteractiveComponentSize reserves the 48 dp touch target around the
-            // 40 dp disc; the 4 dp offset cancels the trailing slop so the disc stays flush
-            // with the slider's end edge.
-            IconButton(
-                onClick = onToggleMute,
-                modifier = Modifier
-                    .offset(x = 4.dp)
-                    .minimumInteractiveComponentSize()
-                    .size(40.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), muteShape),
-            ) {
-                Crossfade(
-                    targetState = muted,
-                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-                    label = "mute-icon",
-                ) { isMuted ->
-                    Symbol(
-                        name = if (isMuted) "volume_off" else "volume_up",
-                        contentDescription = if (isMuted) {
-                            stringResource(R.string.video_control_unmute)
-                        } else {
-                            stringResource(R.string.video_control_mute)
-                        },
-                        tint = Color.White,
-                        size = 20.dp,
+        // Time on the start side, playback chips + mute on the end side. Wraps to two lines
+        // (time over the controls) when both don't fit one — font scale 2.0, long chip labels
+        // — instead of squeezing or clipping either group. Placement is start/end-relative, so
+        // RTL mirrors it.
+        TimeAndControlsRow(
+            time = {
+                // Tabular figures so the digit ribbon doesn't jitter as seconds tick over.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = formatHmmSs(
+                            if (isDragging && durationMs > 0) (displayProgress * durationMs).toLong() else positionMs,
+                        ),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "/",
+                        color = Color.White.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = formatHmmSs(durationMs),
+                        color = Color.White.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                     )
                 }
+            },
+            controls = {
+                Row(
+                    // 48 dp touch targets around 44 dp discs leave 4 dp of slop between
+                    // neighbours, which is the visible gap; no extra spacing needed.
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    // The trailing 2 dp of touch-target slop is cancelled so the mute disc
+                    // sits flush with the seek bar's end edge.
+                    modifier = Modifier.offset(x = 2.dp),
+                ) {
+                    extraControls?.invoke(holdChrome)
+                    // Mute is a setting, not a primary action: the same 44 dp chrome disc as
+                    // close / save / share, with a glyph crossfade between volume_up and
+                    // volume_off.
+                    IconButton(
+                        onClick = onToggleMute,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .size(VIEWER_CHROME_DISC)
+                            .viewerChromeBackdrop(CircleShape),
+                    ) {
+                        Crossfade(
+                            targetState = muted,
+                            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                            label = "mute-icon",
+                        ) { isMuted ->
+                            Symbol(
+                                name = if (isMuted) "volume_off" else "volume_up",
+                                contentDescription = if (isMuted) {
+                                    stringResource(R.string.video_control_unmute)
+                                } else {
+                                    stringResource(R.string.video_control_mute)
+                                },
+                                tint = Color.White,
+                                size = 22.dp,
+                            )
+                        }
+                    }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * Lays out [time] at the start and [controls] at the end of one line when they fit side by
+ * side with a [ROW_MIN_GAP] between them; otherwise [time] takes the first line and
+ * [controls] the second, end-aligned. `placeRelative` mirrors both for RTL.
+ */
+@Composable
+private fun TimeAndControlsRow(
+    time: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+) {
+    Layout(
+        contents = listOf(time, controls),
+        modifier = Modifier.fillMaxWidth(),
+    ) { (timeMeasurables, controlsMeasurables), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val controlsPlaceables = controlsMeasurables.map { it.measure(loose) }
+        val timePlaceables = timeMeasurables.map { it.measure(loose) }
+        val controlsWidth = controlsPlaceables.maxOfOrNull { it.width } ?: 0
+        val controlsHeight = controlsPlaceables.maxOfOrNull { it.height } ?: 0
+        val timeWidth = timePlaceables.maxOfOrNull { it.width } ?: 0
+        val timeHeight = timePlaceables.maxOfOrNull { it.height } ?: 0
+        val width = constraints.maxWidth
+        val oneLine = timeWidth + ROW_MIN_GAP.roundToPx() + controlsWidth <= width
+        val height = if (oneLine) maxOf(timeHeight, controlsHeight) else timeHeight + controlsHeight
+        layout(width, height) {
+            if (oneLine) {
+                timePlaceables.forEach { it.placeRelative(0, (height - it.height) / 2) }
+                controlsPlaceables.forEach { it.placeRelative(width - it.width, (height - it.height) / 2) }
+            } else {
+                timePlaceables.forEach { it.placeRelative(0, 0) }
+                controlsPlaceables.forEach { it.placeRelative(width - it.width, timeHeight) }
             }
+        }
+    }
+}
+
+/** The seek bar's 12 dp round white thumb. Sized exactly, so the slider leaves no gap around it. */
+@Composable
+private fun SeekThumb() {
+    Box(
+        modifier = Modifier
+            .size(SEEK_THUMB)
+            .background(Color.White, CircleShape),
+    )
+}
+
+/**
+ * Slim seek track: white up to [fraction], white at [SEEK_INACTIVE_ALPHA] after it, round
+ * caps, no gap at the thumb and no stop indicator. Thickens from [SEEK_TRACK] to
+ * [SEEK_TRACK_SCRUBBING] while the user scrubs, on the fast spatial spring (a snap under
+ * "Remove animations"). Drawn on a Canvas, which doesn't mirror on its own — the fill runs
+ * from the right edge in RTL, matching the slider's own RTL value mapping.
+ */
+@Composable
+private fun SeekTrack(fraction: Float, scrubbing: Boolean) {
+    val reducedMotion = rememberReducedMotion()
+    val thicknessSpec: AnimationSpec<Dp> =
+        if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
+    val thickness by animateDpAsState(
+        targetValue = if (scrubbing) SEEK_TRACK_SCRUBBING else SEEK_TRACK,
+        animationSpec = thicknessSpec,
+        label = "seek-track-thickness",
+    )
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(SEEK_TRACK_SCRUBBING),
+    ) {
+        val stroke = thickness.toPx()
+        val y = size.height / 2f
+        val start = stroke / 2f
+        val end = size.width - stroke / 2f
+        if (end <= start) return@Canvas
+        val split = start + (end - start) * fraction.coerceIn(0f, 1f)
+        val activeFrom = if (rtl) size.width - split else start
+        val activeTo = if (rtl) end else split
+        val inactiveFrom = if (rtl) start else split
+        val inactiveTo = if (rtl) size.width - split else end
+        drawLine(
+            color = Color.White.copy(alpha = SEEK_INACTIVE_ALPHA),
+            start = Offset(inactiveFrom, y),
+            end = Offset(inactiveTo, y),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        if (activeTo > activeFrom) {
+            drawLine(
+                color = Color.White,
+                start = Offset(activeFrom, y),
+                end = Offset(activeTo, y),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
         }
     }
 }
@@ -467,4 +617,19 @@ private fun formatHmmSs(ms: Long): String {
 }
 
 private const val AUTO_HIDE_MS = 3_000L
+
+// Bottom band scrim: black at this alpha at the screen edge, fading to clear over the band
+// plus [BOTTOM_SCRIM_LEAD] above the seek bar.
+private const val BOTTOM_SCRIM_ALPHA = 0.55f
+private val BOTTOM_SCRIM_LEAD = 40.dp
+
+// Seek bar: 4 dp resting track, 6 dp while scrubbing, 12 dp thumb, 48 dp scrub hit region.
+private val SEEK_TRACK = 4.dp
+private val SEEK_TRACK_SCRUBBING = 6.dp
+private val SEEK_THUMB = 12.dp
+private val SEEK_HIT_HEIGHT = 48.dp
+private const val SEEK_INACTIVE_ALPHA = 0.3f
+
+// Smallest gap kept between the time label and the controls before the row wraps.
+private val ROW_MIN_GAP = 12.dp
 private const val SEEK_STEP_MS = 10_000L

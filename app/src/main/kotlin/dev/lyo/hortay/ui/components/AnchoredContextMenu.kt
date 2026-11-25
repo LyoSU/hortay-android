@@ -3,8 +3,25 @@ package dev.lyo.hortay.ui.components
 import android.graphics.drawable.ColorDrawable
 import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.ParagraphIntrinsics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -132,8 +149,9 @@ interface ContextMenuScope {
  *
  * Placement, in the dialog's safe-drawing area: header above the anchor, actions below it,
  * under the finger horizontally; with room on one side only, both stack on that side.
- * When neither works the menu opens at the finger like a platform context menu — header
- * above the press, actions below — and the whole screen dims evenly, anchor included: a
+ * When neither works the menu opens at the finger like a platform context menu — the
+ * actions below the press with the header stacked straight on top of them — and the whole
+ * screen dims evenly, anchor included: a
  * lit window the menu itself covers reads as a highlight on something you cannot see. Both parts always fit — the actions card
  * gets whatever height the header leaves and scrolls past that.
  *
@@ -278,7 +296,11 @@ private fun MenuLayout(
         val actionsY = (besideY?.second ?: (pressY + clearance))
             .coerceAtMost(bottom - actionsHeight)
             .coerceAtLeast(top + headerSpace)
-        val headerY = (besideY?.first ?: (pressY - clearance - headerSpace))
+        // At the finger the header sits right on top of the card, one [ANCHOR_GAP] apart, so
+        // capsule and card read as one menu. It used to keep its own [FINGER_CLEARANCE] above
+        // the press, which opened a ~64 dp hole between them with a slice of the dimmed post
+        // showing through — two floating things instead of one.
+        val headerY = (besideY?.first ?: (actionsY - headerSpace))
             .coerceAtMost(actionsY - headerSpace)
             .coerceAtLeast(top)
         val startX = if (layoutDirection == LayoutDirection.Rtl) right - actionsPlaceable.width else left
@@ -361,6 +383,118 @@ fun ContextMenuItem(
     }
 }
 
+/**
+ * One of a context menu's most-used actions, drawn as a tile by [ContextMenuTiles]. [label] is
+ * the short word under the icon; [longLabel] is the full action wording, used as the
+ * screen-reader label and as the row label when the tiles fall back to rows.
+ */
+@Immutable
+class ContextMenuTile(
+    val symbol: String,
+    val label: String,
+    val longLabel: String,
+    val onClick: () -> Unit,
+    /** A toggle that is currently on (a saved post): filled icon in the primary colour. */
+    val selected: Boolean = false,
+)
+
+/**
+ * The menu's most-used actions as one row of equal tonal tiles, icon over a short label, at
+ * the top of a [ContextMenuCard]. Three full-height rows became one ~64 dp row, which is
+ * most of what makes the post menu shorter and easier to scan.
+ *
+ * Falls back to ordinary [ContextMenuItem] rows (with [ContextMenuTile.longLabel]) when
+ *  - fewer than two tiles are left (a missing action must not leave a hole or a lone tile);
+ *  - a tile would be too narrow for its label: any single word wider than the tile, or a
+ *    label that needs more than about two lines. That is the font-scale-2.0 and narrow-window
+ *    case, where squeezed tiles would break words mid-way.
+ * The decision is made from the labels' text intrinsics against the widest card the window
+ * allows — not from a measured constraint — because the card sizes itself with
+ * `IntrinsicSize.Max`, which a SubcomposeLayout (BoxWithConstraints) cannot answer.
+ */
+@Composable
+fun ContextMenuTiles(tiles: List<ContextMenuTile>) {
+    val style = MaterialTheme.typography.labelMedium
+    val density = LocalDensity.current
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val windowWidthPx = LocalWindowInfo.current.containerSize.width
+    val labels = tiles.map { it.label }
+    val asTiles = remember(labels, style, density, fontFamilyResolver, windowWidthPx) {
+        tilesFit(labels, style, density, fontFamilyResolver, windowWidthPx)
+    }
+    if (!asTiles) {
+        tiles.forEach { ContextMenuItem(symbol = it.symbol, label = it.longLabel, onClick = it.onClick) }
+        return
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .padding(horizontal = TILE_ROW_H_PADDING, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(TILE_GAP),
+    ) {
+        tiles.forEach { tile ->
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = TILE_MIN_HEIGHT)
+                    .clip(TILE_SHAPE)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .clickable(role = Role.Button, onClick = tile.onClick)
+                    .padding(horizontal = TILE_H_PADDING, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Symbol(
+                    name = tile.symbol,
+                    tint = if (tile.selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 22.dp,
+                    filled = tile.selected,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = tile.label,
+                    style = style,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    // The short word is for the eye; a screen reader gets the full action.
+                    modifier = Modifier.clearAndSetSemantics { contentDescription = tile.longLabel },
+                )
+            }
+        }
+    }
+}
+
+private fun tilesFit(
+    labels: List<String>,
+    style: TextStyle,
+    density: Density,
+    fontFamilyResolver: FontFamily.Resolver,
+    windowWidthPx: Int,
+): Boolean {
+    if (labels.size < 2) return false
+    with(density) {
+        val windowCard = if (windowWidthPx > 0) windowWidthPx - (SCREEN_MARGIN * 2).toPx() else Float.MAX_VALUE
+        val card = minOf(CARD_MAX_WIDTH.toPx(), windowCard)
+        val row = card - (TILE_ROW_H_PADDING * 2).toPx() - TILE_GAP.toPx() * (labels.size - 1)
+        val content = row / labels.size - (TILE_H_PADDING * 2).toPx()
+        if (content <= 0f) return false
+        return labels.all { label ->
+            val intrinsics = ParagraphIntrinsics(
+                text = label,
+                style = style,
+                density = density,
+                fontFamilyResolver = fontFamilyResolver,
+            )
+            intrinsics.minIntrinsicWidth <= content && intrinsics.maxIntrinsicWidth <= content * TILE_MAX_LINES_BUDGET
+        }
+    }
+}
+
 /** Hairline between groups of [ContextMenuItem]s. */
 @Composable
 fun ContextMenuDivider() {
@@ -380,3 +514,14 @@ private val CARD_MAX_WIDTH = 320.dp
 private val CAPSULE_SHAPE = RoundedCornerShape(28.dp)
 private val CARD_SHAPE = RoundedCornerShape(20.dp)
 private const val ENTRANCE_FROM_SCALE = 0.9f
+private val TILE_SHAPE = RoundedCornerShape(14.dp)
+private val TILE_MIN_HEIGHT = 64.dp
+private val TILE_GAP = 6.dp
+private val TILE_ROW_H_PADDING = 8.dp
+private val TILE_H_PADDING = 6.dp
+
+/**
+ * A label may take up to two lines in a tile; a little under 2× the tile width leaves room
+ * for the uneven break between words, so a label that passes never ends in an ellipsis.
+ */
+private const val TILE_MAX_LINES_BUDGET = 1.8f

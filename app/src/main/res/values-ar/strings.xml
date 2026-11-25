@@ -201,7 +201,7 @@
     <string name="timeline_empty">هدوء تام هنا. اشترك في قنوات على Telegram وستظهر في الخلاصة</string>
     <string name="timeline_empty_default_helper">اشترك في قنوات على Telegram وستظهر في الخلاصة</string>
     <string name="timeline_empty_saved_title">لا يوجد شيء محفوظ بعد</string>
-    <string name="timeline_empty_saved_helper">اضغط على الإشارة المرجعية أسفل المنشور للرجوع إليه لاحقاً</string>
+    <string name="timeline_empty_saved_helper">افتح قائمة ⋯ للمنشور واضغط على «حفظ المنشور» للرجوع إليه لاحقاً</string>
     <string name="timeline_empty_default_title">هدوء تام هنا</string>
     <string name="timeline_empty_caught_up_title">قرأت كل شيء</string>
     <string name="timeline_empty_caught_up_helper">لقد قرأت جميع المنشورات في خلاصتك. اسحب للتحديث لمزيد من المستجدات.</string>
@@ -240,6 +240,9 @@
     <string name="post_translate">ترجمة</string>
     <string name="post_save">حفظ المنشور</string>
     <string name="post_unsave">إزالة من المحفوظات</string>
+    <string name="post_action_save_short">حفظ</string>
+    <string name="post_action_saved_short">محفوظ</string>
+    <string name="post_action_link_short">رابط</string>
     <string name="post_copy_text">نسخ النص</string>
     <string name="post_select_text">تحديد النص</string>
     <string name="post_share">مشاركة</string>
@@ -351,6 +354,8 @@
     <string name="channels_subscribers">المشتركون: %1$s</string>
     <string name="channels_unmute">تفعيل الإشعارات</string>
     <string name="channels_mute">كتم الإشعارات</string>
+    <string name="channels_tile_mute">كتم</string>
+    <string name="channels_tile_unmute">إلغاء الكتم</string>
     <string name="channels_leave">مغادرة القناة</string>
     <string name="channels_join">اشتراك</string>
     <string name="channels_hide_from_feed">إخفاء من الخلاصة</string>

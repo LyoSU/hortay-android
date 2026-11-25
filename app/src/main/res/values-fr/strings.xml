@@ -191,7 +191,7 @@
     <string name="timeline_empty">Rien ici pour l\'instant. Abonne-toi à des chaînes dans Telegram et elles apparaîtront dans le fil</string>
     <string name="timeline_empty_default_helper">Abonne-toi à des chaînes dans Telegram et elles apparaîtront dans le fil</string>
     <string name="timeline_empty_saved_title">Rien d\'enregistré pour l\'instant</string>
-    <string name="timeline_empty_saved_helper">Appuie sur le signet sous une publication pour la retrouver plus tard</string>
+    <string name="timeline_empty_saved_helper">Ouvre le menu ⋯ d\'une publication et appuie sur Enregistrer la publication pour la retrouver plus tard</string>
     <string name="timeline_empty_default_title">Rien ici pour l\'instant</string>
     <string name="timeline_empty_caught_up_title">Tout lu</string>
     <string name="timeline_empty_caught_up_helper">Tu as lu toutes les publications de ton fil. Tire vers le bas pour actualiser.</string>
@@ -227,6 +227,9 @@
     <string name="post_translate">Traduire</string>
     <string name="post_save">Enregistrer la publication</string>
     <string name="post_unsave">Retirer des enregistrés</string>
+    <string name="post_action_save_short">Enregistrer</string>
+    <string name="post_action_saved_short">Enregistré</string>
+    <string name="post_action_link_short">Lien</string>
     <string name="post_copy_text">Copier le texte</string>
     <string name="post_select_text">Sélectionner le texte</string>
     <string name="post_share">Partager</string>
@@ -326,6 +329,8 @@
     <string name="channels_subscribers">Abonnés : %1$s</string>
     <string name="channels_unmute">Réactiver les notifications</string>
     <string name="channels_mute">Désactiver les notifications</string>
+    <string name="channels_tile_mute">Sourdine</string>
+    <string name="channels_tile_unmute">Réactiver</string>
     <string name="channels_leave">Quitter la chaîne</string>
     <string name="channels_join">S\'abonner</string>
     <string name="channels_hide_from_feed">Masquer du fil</string>

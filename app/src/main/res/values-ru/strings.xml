@@ -195,7 +195,7 @@
     <string name="timeline_empty">Здесь тихо. Подпишитесь на каналы в Telegram, и они появятся в ленте</string>
     <string name="timeline_empty_default_helper">Подпишитесь на каналы в Telegram, и они появятся в ленте</string>
     <string name="timeline_empty_saved_title">Ничего не сохранено</string>
-    <string name="timeline_empty_saved_helper">Нажмите на закладку под постом, чтобы вернуться к нему позже</string>
+    <string name="timeline_empty_saved_helper">Откройте меню ⋯ поста и нажмите «Сохранить пост», чтобы вернуться к нему позже</string>
     <string name="timeline_empty_default_title">Здесь тихо</string>
     <string name="timeline_empty_caught_up_title">Всё прочитано</string>
     <string name="timeline_empty_caught_up_helper">Вы прочитали все посты в ленте. Потяните вниз, чтобы проверить новые.</string>
@@ -232,6 +232,9 @@
     <string name="post_translate">Перевести</string>
     <string name="post_save">Сохранить пост</string>
     <string name="post_unsave">Убрать из сохранённых</string>
+    <string name="post_action_save_short">Сохранить</string>
+    <string name="post_action_saved_short">Сохранено</string>
+    <string name="post_action_link_short">Ссылка</string>
     <string name="post_copy_text">Копировать текст</string>
     <string name="post_select_text">Выделить текст</string>
     <string name="post_share">Поделиться</string>
@@ -335,6 +338,8 @@
     <string name="channels_subscribers">Подписчики: %1$s</string>
     <string name="channels_unmute">Включить уведомления</string>
     <string name="channels_mute">Отключить уведомления</string>
+    <string name="channels_tile_mute">Без звука</string>
+    <string name="channels_tile_unmute">Со звуком</string>
     <string name="channels_leave">Покинуть канал</string>
     <string name="channels_join">Подписаться</string>
     <string name="channels_hide_from_feed">Скрыть из ленты</string>

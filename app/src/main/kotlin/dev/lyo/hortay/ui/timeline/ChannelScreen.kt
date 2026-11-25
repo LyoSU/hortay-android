@@ -1090,6 +1090,8 @@ fun ChannelScreen(
             discovery = discovery,
             onOpenChannel = { id -> onChannelOpen(id, null) },
             onOpenMedia = onOpenMedia,
+            avatarFileId = channelAvatarFileId,
+            avatarThumb = channelAvatarThumb,
         )
     }
 

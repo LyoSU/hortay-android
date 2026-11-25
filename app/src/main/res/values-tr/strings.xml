@@ -187,7 +187,7 @@
     <string name="timeline_empty">Burada henüz bir şey yok. Telegram\'da kanallara abone ol; akışında görünmeye başlasınlar</string>
     <string name="timeline_empty_default_helper">Telegram\'da kanallara abone ol; akışında görünmeye başlasınlar</string>
     <string name="timeline_empty_saved_title">Henüz kaydedilen yok</string>
-    <string name="timeline_empty_saved_helper">Sonra bakmak için bir gönderinin altındaki yer imine dokun</string>
+    <string name="timeline_empty_saved_helper">Sonra bakmak için bir gönderinin ⋯ menüsünü aç ve Gönderiyi kaydet\'e dokun</string>
     <string name="timeline_empty_default_title">Burada henüz bir şey yok</string>
     <string name="timeline_empty_caught_up_title">Her şeyi okudun</string>
     <string name="timeline_empty_caught_up_helper">Akışındaki tüm gönderileri okudun. Yeni gelenler için aşağı çek.</string>
@@ -222,6 +222,9 @@
     <string name="post_translate">Çevir</string>
     <string name="post_save">Gönderiyi kaydet</string>
     <string name="post_unsave">Kaydedilenlerden kaldır</string>
+    <string name="post_action_save_short">Kaydet</string>
+    <string name="post_action_saved_short">Kaydedildi</string>
+    <string name="post_action_link_short">Bağlantı</string>
     <string name="post_copy_text">Metni kopyala</string>
     <string name="post_select_text">Metni seç</string>
     <string name="post_share">Paylaş</string>
@@ -317,6 +320,8 @@
     <string name="channels_subscribers">Abone: %1$s</string>
     <string name="channels_unmute">Bildirimleri aç</string>
     <string name="channels_mute">Bildirimleri kapat</string>
+    <string name="channels_tile_mute">Sessize al</string>
+    <string name="channels_tile_unmute">Sesi aç</string>
     <string name="channels_leave">Kanaldan ayrıl</string>
     <string name="channels_join">Abone ol</string>
     <string name="channels_hide_from_feed">Akıştan gizle</string>

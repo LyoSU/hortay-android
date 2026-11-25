@@ -105,6 +105,12 @@ fun TdVideoPlayer(
      * an inline feed video.
      */
     playbackSpeed: Float = 1f,
+    /**
+     * Extra chips for the playback chrome's bottom row (the fullscreen viewer's quality and
+     * speed), forwarded to [VideoPlayerControls.extraControls]. Ignored when [showControls]
+     * is false.
+     */
+    controlsExtras: (@Composable (holdChrome: (Boolean) -> Unit) -> Unit)? = null,
 ) {
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -383,6 +389,7 @@ fun TdVideoPlayer(
         if (showControls && (isRemote || mediaState is MediaState.Ready)) {
             VideoPlayerControls(
                 player = exoPlayer,
+                extraControls = controlsExtras,
                 modifier = Modifier.fillMaxSize(),
             )
         }
