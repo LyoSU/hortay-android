@@ -221,6 +221,7 @@
 - Live locations no longer go missing from the feed, and an audio track keeps its caption.
 - A quiz with several correct answers lets you pick several, a closed poll no longer looks tappable, and an audio track at 0:00 no longer looks finished.
 - Ticking answers in a multi-answer poll no longer shifts the poll under your finger.
+- A post deleted in a channel you excluded from the post archive disappears instead of lingering as a greyed-out copy the archive never saved.
 - A contact post shows a person icon, coordinates read as two numbers in every language, and tapping a location opens your maps app.
 - A message type Hortay can't show yet says so in your language instead of printing an internal name.
 - Small controls in posts, media and the edit history are easier to tap, and screen readers announce them as buttons, tabs or switches.
