@@ -21,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,7 +89,11 @@ internal fun UnreadBoundaryRow() {
 }
 
 @Composable
-internal fun EmptyState(kind: EmptyKind, guestMode: Boolean = false) {
+internal fun EmptyState(
+    kind: EmptyKind,
+    guestMode: Boolean = false,
+    onAddChannel: (() -> Unit)? = null,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -121,7 +126,7 @@ internal fun EmptyState(kind: EmptyKind, guestMode: Boolean = false) {
             // In guest mode that's a locally-added public channel (the "+" FAB /
             // Channels tab) — NOT a Telegram account subscription, which never
             // reaches the t.me/s/ guest feed — so swap in the web-mode copy.
-            EmptyKind.Default -> if (guestMode) {
+            EmptyKind.Default -> if (guestMode || onAddChannel != null) {
                 R.string.web_empty_channels_body
             } else {
                 R.string.timeline_empty_default_helper
@@ -150,10 +155,22 @@ internal fun EmptyState(kind: EmptyKind, guestMode: Boolean = false) {
         // does nothing for the t.me/s/ guest feed (no account is read there), so
         // the button was both redundant and false. Guest channels are added via
         // the always-present "Add channel" FAB / Channels tab instead.
+        //
+        // With [onAddChannel] (the signed-in feed) the primary action stays in the app:
+        // the add-channel sheet with its suggestions. Leaving for Telegram on a first run
+        // is where new users got lost; it stays as the quieter secondary action.
         if (kind == EmptyKind.Default && !guestMode) {
             Spacer(Modifier.height(20.dp))
             val context = LocalContext.current
-            Button(onClick = { openTelegramApp(context) }) {
+            if (onAddChannel != null) {
+                Button(onClick = onAddChannel) {
+                    Symbol(name = "add", contentDescription = null, size = 18.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(text = stringResource(R.string.web_add_channel))
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            TextButton(onClick = { openTelegramApp(context) }) {
                 Text(text = stringResource(R.string.empty_action_open_telegram))
             }
         }

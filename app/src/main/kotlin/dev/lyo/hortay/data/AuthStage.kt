@@ -29,8 +29,9 @@ sealed interface AuthStage {
      *     channel that ever fires besides Fragment (tdlib/td#2310: third-party `type`/
      *     `next_type` can be ONLY TelegramMessage, Fragment, or null — SMS is reserved for
      *     official mobile apps). Drives a helper line telling the user the code arrives in
-     *     Telegram on another signed-in device, NOT by SMS — the single biggest source of
-     *     "I never got an SMS, the app is broken" confusion for Telegram reader clients.
+     *     the Telegram app (this phone or another signed-in device), NOT by SMS — the single
+     *     biggest source of "I never got an SMS, the app is broken" confusion for Telegram
+     *     reader clients — plus an Open Telegram button on the code screen.
      */
     data class WaitCode(
         val phoneNumber: String,
@@ -63,6 +64,13 @@ sealed interface AuthStage {
         val recoveryEmailPattern: String = "",
     ) : AuthStage
     data object Ready : AuthStage
-    /** Unrecoverable-here states (email confirm, register, other-device). UI offers reset. */
-    data class Error(val message: String) : AuthStage
+    /**
+     * Unrecoverable-here states (email confirm, register, other-device). UI offers reset.
+     *
+     * [resolvedInTelegram] is true for the states the user finishes in the official Telegram
+     * app (the UI heads them "Finish this step in Telegram" and offers Open Telegram); false
+     * for a local failure such as the TDLib client failing to initialise, where sending the
+     * user to Telegram would be wrong.
+     */
+    data class Error(val message: String, val resolvedInTelegram: Boolean = true) : AuthStage
 }

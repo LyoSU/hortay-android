@@ -38,6 +38,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -227,12 +229,14 @@ fun AddChannelSheet(
     // instant the subscribe lands and the confirmation never paints.
     val holdVisible = remember { mutableStateMapOf<String, Unit>() }
 
-    // Curated catalog for this locale, with subscribed channels filtered out.
-    val groups by produceState(initialValue = emptyList<SuggestedGroup>(), locale) {
+    // Curated catalog for this locale, with subscribed channels filtered out. Null until
+    // the catalog resolves — a first open with no disk cache awaits the network, and the
+    // sheet shows a loading row for it instead of an empty space under the search field.
+    val groups by produceState<List<SuggestedGroup>?>(initialValue = null, locale) {
         value = suggestionsRepo.groups(locale)
     }
     val visibleGroups = remember(groups, subscribedSet, holdVisible.keys.toList()) {
-        groups.mapNotNull { g ->
+        groups.orEmpty().mapNotNull { g ->
             val remaining = g.channels.filter {
                 val key = it.username.lowercase()
                 key !in subscribedSet || key in holdVisible
@@ -407,6 +411,21 @@ fun AddChannelSheet(
                 }
             }
 
+            if (groups == null) {
+                item(key = "suggestions_loading", contentType = "suggestions_loading") {
+                    val loadingLabel = stringResource(R.string.web_loading)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp)
+                            .semantics { contentDescription = loadingLabel },
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        LoadingIndicator(modifier = Modifier.size(32.dp))
+                    }
+                }
+            }
+
             discoverSuggestions(
                 groups = visibleGroups,
                 hydrated = hydrated,
@@ -417,14 +436,27 @@ fun AddChannelSheet(
                 // `holdVisible` for SUBSCRIBE_CONFIRM_HOLD_MS so the confirmation reads
                 // before the live subscription flow drops the row. `subscribeAndRefresh`
                 // surfaces its own errors; returning true reflects the dispatch.
+                //
+                // The very first channel closes the sheet: with nothing followed yet the
+                // user came here to get something to read, and the feed behind the sheet
+                // now shows that channel loading. Later adds keep the sheet open so
+                // several channels can be picked in a row.
                 onAdd = { username ->
                     val key = username.lowercase()
+                    val firstChannel = subscribedSet.isEmpty()
                     holdVisible[key] = Unit
                     val title = hydrated[key]?.title ?: username
                     feedSource.subscribeAndRefresh(username, placeholderTitle = title)
-                    scope.launch {
-                        delay(SUBSCRIBE_CONFIRM_HOLD_MS)
-                        holdVisible.remove(key)
+                    if (firstChannel) {
+                        scope.launch {
+                            sheetState.hide()
+                            onDismiss()
+                        }
+                    } else {
+                        scope.launch {
+                            delay(SUBSCRIBE_CONFIRM_HOLD_MS)
+                            holdVisible.remove(key)
+                        }
                     }
                     true
                 },

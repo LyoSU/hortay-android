@@ -6,7 +6,7 @@
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Phone number</string>
-    <string name="auth_phone_helper">Number with country code. Telegram will send a confirmation code</string>
+    <string name="auth_phone_helper">You sign in directly through Telegram, with no server of ours in between. The code arrives in the Telegram app, not by SMS.</string>
     <string name="auth_password_label">Two-step verification password</string>
     <string name="auth_password_hint">Hint: %1$s</string>
     <string name="auth_password_helper">The same one you set in the official Telegram under Two-Step Verification</string>
@@ -16,8 +16,16 @@
     <string name="auth_password_recovery_back">Enter password instead</string>
     <string name="auth_password_recovery_unavailable">No recovery email is set. Two-step verification can only be reset from the official Telegram on another device</string>
     <string name="auth_send_code">Send code</string>
+    <string name="auth_sign_in_telegram">Sign in with Telegram</string>
+    <string name="auth_title_phone">Your number</string>
     <string name="auth_continue">Continue</string>
-    <string name="auth_continue_without_login">No sign-in: read public channels</string>
+    <string name="auth_continue_without_login">Read without an account</string>
+    <string name="auth_trust_privacy_link">Privacy policy</string>
+    <string name="auth_trust_source_link">Open source</string>
+    <string name="auth_code_share_note">Telegram\'s warning not to share the code is about other people. Entering it here signs you in to Hortay.</string>
+    <string name="auth_title_init_failure">Couldn\'t start sign-in</string>
+    <string name="auth_subtitle_init_failure">The problem is in the app, not in your Telegram account</string>
+    <string name="auth_err_unreachable">Couldn\'t reach Telegram. Check your connection or set up a proxy at the top of the screen</string>
 
     <!-- Web (anonymous / guest) mode -->
     <string name="web_feed_title">Feed</string>
@@ -100,10 +108,10 @@
     <string name="auth_title_wait_password">Enter your password</string>
     <string name="auth_title_error">Finish this step in Telegram</string>
     <string name="auth_subtitle_wait_code">Code sent. Check: %1$s</string>
-    <string name="auth_code_hint_telegram">Third-party apps can\'t receive the code by SMS. It arrives in Telegram on another device where you\'re already signed in.</string>
+    <string name="auth_code_hint_telegram">Look for it in the Telegram app, on this phone or another device. Third-party apps don\'t get the code by SMS.</string>
     <string name="auth_subtitle_password_no_hint">Account is protected with two-step verification</string>
     <string name="auth_subtitle_password_with_hint">Account is protected with two-step verification. Enter your password</string>
-    <string name="auth_subtitle_default">Read Telegram channels as a feed — without chats or pings</string>
+    <string name="auth_subtitle_default">All your channels in one feed</string>
     <string name="auth_country_label">Country</string>
     <string name="auth_country_loading">Loading…</string>
     <string name="auth_phone_placeholder">Phone number</string>
@@ -120,7 +128,7 @@
     <string name="country_other">Other country</string>
 
     <!-- Auth code channels -->
-    <string name="auth_channel_telegram_message">Telegram on another device</string>
+    <string name="auth_channel_telegram_message">the Telegram app</string>
     <string name="auth_channel_sms_with_phone">SMS to %1$s</string>
     <string name="auth_channel_sms">SMS</string>
     <string name="auth_channel_sms_word">SMS with a word</string>
@@ -918,9 +926,11 @@
     <string name="onboarding_got_it">Got it</string>
     <string name="onboarding_feed_order_title">How do you want to read?</string>
     <string name="onboarding_feed_order_newest_desc">Like a news feed</string>
-    <string name="onboarding_feed_order_oldest_desc">Like a chat — you continue where you stopped</string>
+    <string name="onboarding_feed_order_oldest_desc">Like a chat</string>
+    <string name="onboarding_feed_order_newest_hint">Latest posts first, older ones below</string>
+    <string name="onboarding_feed_order_oldest_hint">Opens at the first post you haven\'t read</string>
     <string name="onboarding_feed_order_confirm">Continue</string>
-    <string name="onboarding_feed_order_footer">You can change this later in %1$s → %2$s.</string>
+    <string name="onboarding_feed_order_footer">You can change this later in %1$s → %2$s</string>
     <string name="settings_section_reading">Reading</string>
     <string name="settings_theme_mode_system">System</string>
     <string name="settings_theme_mode_light">Light</string>

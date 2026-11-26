@@ -3,7 +3,7 @@
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Номер телефона</string>
-    <string name="auth_phone_helper">Введите номер с кодом страны. Telegram отправит код подтверждения</string>
+    <string name="auth_phone_helper">Вход идёт напрямую через Telegram, без нашего сервера. Код придёт в приложение Telegram, а не по SMS.</string>
     <string name="auth_password_label">Пароль двухэтапной аутентификации</string>
     <string name="auth_password_hint">Подсказка: %1$s</string>
     <string name="auth_password_helper">Пароль из раздела «Двухэтапная аутентификация» в официальном Telegram</string>
@@ -13,8 +13,16 @@
     <string name="auth_password_recovery_back">Ввести пароль</string>
     <string name="auth_password_recovery_unavailable">К аккаунту не привязана почта для восстановления. Сбросить двухэтапную аутентификацию можно только в официальном Telegram на другом устройстве</string>
     <string name="auth_send_code">Отправить код</string>
+    <string name="auth_sign_in_telegram">Войти через Telegram</string>
+    <string name="auth_title_phone">Ваш номер</string>
     <string name="auth_continue">Продолжить</string>
-    <string name="auth_continue_without_login">Читать публичные каналы без входа</string>
+    <string name="auth_continue_without_login">Читать без аккаунта</string>
+    <string name="auth_trust_privacy_link">Политика конфиденциальности</string>
+    <string name="auth_trust_source_link">Открытый код</string>
+    <string name="auth_code_share_note">Предупреждение Telegram не сообщать код касается других людей. Здесь вы вводите его, чтобы войти в Hortay.</string>
+    <string name="auth_title_init_failure">Не удалось начать вход</string>
+    <string name="auth_subtitle_init_failure">Сбой в приложении, а не в вашем аккаунте Telegram</string>
+    <string name="auth_err_unreachable">Не удалось связаться с Telegram. Проверьте соединение или настройте прокси вверху экрана</string>
 
     <!-- Web (anonymous / guest) mode -->
     <string name="web_feed_title">Лента</string>
@@ -99,10 +107,10 @@
     <string name="auth_title_wait_password">Введите пароль</string>
     <string name="auth_title_error">Завершите шаг в Telegram</string>
     <string name="auth_subtitle_wait_code">Код отправлен. Проверьте: %1$s</string>
-    <string name="auth_code_hint_telegram">Сторонние приложения не получают код по SMS. Он приходит в Telegram на другом устройстве, где вы уже вошли.</string>
+    <string name="auth_code_hint_telegram">Ищите его в приложении Telegram на этом телефоне или другом устройстве. Сторонние приложения не получают код по SMS.</string>
     <string name="auth_subtitle_password_no_hint">Аккаунт защищён двухэтапной аутентификацией</string>
     <string name="auth_subtitle_password_with_hint">Аккаунт защищён двухэтапной аутентификацией. Введите пароль</string>
-    <string name="auth_subtitle_default">Читайте Telegram-каналы как ленту — без чатов и уведомлений</string>
+    <string name="auth_subtitle_default">Все ваши каналы в одной ленте</string>
     <string name="auth_country_label">Страна</string>
     <string name="auth_country_loading">Загружаем…</string>
     <string name="auth_phone_placeholder">Номер телефона</string>
@@ -119,7 +127,7 @@
     <string name="country_other">Другая страна</string>
 
     <!-- Auth code channels -->
-    <string name="auth_channel_telegram_message">Telegram на другом устройстве</string>
+    <string name="auth_channel_telegram_message">приложение Telegram</string>
     <string name="auth_channel_sms_with_phone">SMS на %1$s</string>
     <string name="auth_channel_sms">SMS</string>
     <string name="auth_channel_sms_word">SMS со словом</string>
@@ -924,9 +932,11 @@
     <string name="onboarding_got_it">Понятно</string>
     <string name="onboarding_feed_order_title">Как вам удобнее читать?</string>
     <string name="onboarding_feed_order_newest_desc">Как в ленте новостей</string>
-    <string name="onboarding_feed_order_oldest_desc">Как в чате — чтение продолжается с того места, где вы остановились</string>
+    <string name="onboarding_feed_order_oldest_desc">Как в чате</string>
+    <string name="onboarding_feed_order_newest_hint">Сначала самые свежие, старые ниже</string>
+    <string name="onboarding_feed_order_oldest_hint">Открывается с первого непрочитанного</string>
     <string name="onboarding_feed_order_confirm">Продолжить</string>
-    <string name="onboarding_feed_order_footer">Это можно изменить позже: %1$s → %2$s.</string>
+    <string name="onboarding_feed_order_footer">Это можно изменить позже: %1$s → %2$s</string>
     <string name="settings_section_reading">Чтение</string>
     <string name="settings_theme_mode_system">Системная</string>
     <string name="settings_theme_mode_light">Светлая</string>

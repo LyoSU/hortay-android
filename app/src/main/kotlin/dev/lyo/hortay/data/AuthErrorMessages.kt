@@ -17,6 +17,12 @@ import dev.lyo.hortay.R
  * numeric tail (FLOOD_WAIT_X) needs prefix matching; everything else is exact.
  */
 internal fun friendlyAuthErrorMessage(res: StringResolver, throwable: Throwable): String {
+    // A send that hit TdClient's timeout never got an answer from Telegram — offline or a
+    // network that blocks it. Its message names the TDLib request class, which must not
+    // reach the user, so it is matched by code before any message parsing.
+    if (throwable is TdClient.TdException && throwable.code == TdClient.SEND_TIMEOUT_CODE) {
+        return res.getString(R.string.auth_err_unreachable)
+    }
     val raw = (throwable as? TdClient.TdException)?.let { extractCode(it.message ?: "") }
         ?: throwable.message.orEmpty()
     return when {

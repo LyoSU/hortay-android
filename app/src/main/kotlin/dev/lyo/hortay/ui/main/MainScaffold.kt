@@ -457,7 +457,7 @@ fun MainScaffold(graph: AppGraph) {
     val mapThumbnailResolver: dev.lyo.hortay.ui.timeline.MapThumbnailResolver = remember(graph) {
         { request -> graph.mapThumbnails.resolve(request) }
     }
-    LinkAwareScaffold(graph) {
+    LinkAwareScaffold(graph, feed = graph.postsRepository) {
         CompositionLocalProvider(
             dev.lyo.hortay.ui.timeline.LocalInlineCallbackPresser provides inlineCallbackPresser,
             dev.lyo.hortay.ui.timeline.LocalMapThumbnailResolver provides mapThumbnailResolver,

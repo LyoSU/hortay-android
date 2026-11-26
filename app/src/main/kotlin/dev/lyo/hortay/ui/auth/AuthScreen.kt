@@ -2,45 +2,52 @@
 
 package dev.lyo.hortay.ui.auth
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ContainedLoadingIndicator
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -48,27 +55,37 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import dev.lyo.hortay.ui.icons.Symbol
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -77,28 +94,50 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.coerceAtMost
+import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
+import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.Country
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.main.openExternalUrl
+import dev.lyo.hortay.ui.settings.AUTHOR_SOURCE_URL
 import dev.lyo.hortay.ui.settings.ProxyScreen
+import dev.lyo.hortay.ui.util.rememberReducedMotion
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Auth flow entry point. Reads three signals from [TdClient]:
- *   - [TdClient.authStage] — where we are in TDLib's authorization state machine.
- *   - [TdClient.authError]  — transient errors from the last submit (kept *separate* so
- *     a rejected code doesn't blow the user back to a blank "Помилка" screen — they stay
- *     on the same form with their input intact and an inline message under the field).
- *   - [TdClient.connection] (optional) — could be used to gate the submit button when
- *     offline; currently we let TDLib reject and the friendly mapper handles it.
+ * Auth flow entry point, in two steps before TDLib's own stages take over:
+ *   - **Welcome** — the brand hero, then two equal ways in: sign in with Telegram, or read
+ *     public channels without an account (guest mode is a first choice, not fine print).
+ *   - **Phone** — the number form, reached only after the user chose to sign in.
+ * TDLib sits in WaitPhone for both, so which one shows is UI state (see [authStep]).
+ * The code, password and error stages follow with their own content under the same
+ * header (back where it is legal, the small fan mark, the proxy entry).
  *
- * The [graph] dependency is what gives us [AppGraph.countries]; we let the country picker
- * lazy-load on first composition of the phone form (`countries.load()` inside `LaunchedEffect`).
+ * Reads two signals from [TdClient]:
+ *   - [TdClient.authError] — transient errors from the last submit, kept *separate* from
+ *     the stage so a rejected code leaves the user on the same form with their input
+ *     intact and an inline message under the field.
+ *   - the [stage] passed in — where TDLib's authorization state machine is.
+ *
+ * The [graph] dependency gives us [AppGraph.countries]; the phone form lazy-loads the
+ * country catalogue on first composition (`countries.load()` inside `LaunchedEffect`).
  */
 @Composable
 fun AuthScreen(graph: AppGraph, stage: AuthStage) {
@@ -107,6 +146,45 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
     // Proxy can be configured before sign-in — addProxy works pre-authorization (tdlib/td#300),
     // so a user in a blocked network can reach Telegram to authenticate at all.
     var showProxy by remember { mutableStateOf(false) }
+    // Welcome vs Phone. Saved across rotation; this is a step inside one screen, not the
+    // top-level navigation ARCHITECTURE.md keeps out of saved state.
+    var signInChosen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(stage) { signInChosen = signInChosenAfter(stage, signInChosen) }
+    val step = authStep(stage, signInChosen)
+    // Above the steps, so Phone → Welcome → Phone keeps the typed number.
+    val draft = rememberSaveable(saver = PhoneDraft.Saver) { PhoneDraft() }
+    val hero = rememberAuthHero()
+    val scope = rememberCoroutineScope()
+    val cancelAttempt: () -> Unit = remember(graph) { { graph.appScope.launch { graph.tdClient.cancelAuth() } } }
+    val enterGuest: () -> Unit = remember(graph) { { graph.appScope.launch { graph.guestMode.setGuest(true) } } }
+    val openProxy: () -> Unit = remember { { showProxy = true } }
+    val chooseSignIn: () -> Unit = remember { { signInChosen = true } }
+    val backToWelcome: () -> Unit = remember { { signInChosen = false } }
+
+    // Back. Phone → Welcome follows the finger (predictive back: the form slides and
+    // fades a little toward the edge, then the step switch carries it out); code and
+    // password abandon the attempt. The flags are exclusive, and both drop while the
+    // proxy overlay owns back, so exactly one handler is enabled at a time.
+    val back = authBack(step)
+    val peek = remember { Animatable(0f) }
+    val peekSettle = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    LaunchedEffect(step) { if (step == AuthStep.Phone) peek.snapTo(0f) }
+    PredictiveBackHandler(enabled = back == AuthBack.ToWelcome && !showProxy) { events ->
+        try {
+            events.collect { peek.snapTo(it.progress) }
+            signInChosen = false
+        } catch (e: CancellationException) {
+            scope.launch { peek.animateTo(0f, peekSettle) }
+            throw e
+        }
+    }
+    BackHandler(enabled = back == AuthBack.CancelAttempt && !showProxy) { cancelAttempt() }
+
+    // From the window, not from constraints: the keyboard shrinks the height and must not
+    // flip a portrait phone into the two-pane layout mid-typing.
+    val configuration = LocalConfiguration.current
+    val wide = configuration.screenWidthDp >= WIDE_MIN_WIDTH_DP ||
+        configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Box(
         modifier = Modifier
@@ -115,85 +193,46 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
-        // Centers the capped-width form on tablet/desktop-windowing; on phones the
-        // column's fillMaxWidth() below already consumes the whole box width, so
-        // TopCenter vs the previous default TopStart has no visible effect there.
-        contentAlignment = Alignment.TopCenter,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxHeight()
-                .widthIn(max = 520.dp)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-        ) {
-            Spacer(Modifier.height(40.dp))
-
-            // Back affordance only on stages where bouncing back makes sense. WaitPhone
-            // is the root of the flow — there's nowhere to back to. Loading/Ready/Error
-            // either auto-resolve or have their own retry button.
-            if (stage is AuthStage.WaitCode || stage is AuthStage.WaitPassword) {
-                BackAffordance(onBack = { graph.appScope.launch { client.cancelAuth() } })
-                Spacer(Modifier.height(12.dp))
-            }
-
-            HeroBlock(stage = stage)
-
-            Spacer(Modifier.height(36.dp))
-
-            // Auth-stage slide: vertical (sibling forms, not depth navigation).
-            // MotionScheme spec captured in composable scope; transitionSpec is
-            // non-composable so we can't read MaterialTheme inside it.
-            val authSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
-            val authEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-            AnimatedContent(
-                targetState = stage,
-                transitionSpec = {
-                    (slideInVertically(authSpatial) { it / 6 } + fadeIn(authEffects))
-                        .togetherWith(slideOutVertically(authSpatial) { -it / 6 } + fadeOut(authEffects))
-                },
-                label = "auth-stage",
-            ) { current ->
-                when (current) {
-                    is AuthStage.Loading -> LoadingForm()
-                    is AuthStage.WaitPhone -> PhoneForm(graph = graph, errorMessage = authError)
-                    is AuthStage.WaitCode -> CodeForm(
-                        graph = graph,
-                        stage = current,
-                        errorMessage = authError,
-                    )
-                    is AuthStage.WaitPassword -> PasswordForm(
-                        graph = graph,
-                        stage = current,
-                        errorMessage = authError,
-                    )
-                    is AuthStage.Error -> RecoverableErrorBlock(
-                        message = current.message,
-                        onRetry = { graph.appScope.launch { client.cancelAuth() } },
-                    )
-                    is AuthStage.Ready -> LoadingForm()
+        val steps = @Composable { modifier: Modifier ->
+            AuthSteps(
+                frame = AuthFrame(step, stage),
+                graph = graph,
+                authError = authError,
+                draft = draft,
+                hero = hero,
+                wide = wide,
+                peek = { peek.value },
+                onSignIn = chooseSignIn,
+                onGuest = enterGuest,
+                onBackToWelcome = backToWelcome,
+                onCancelAttempt = cancelAttempt,
+                onProxy = openProxy,
+                modifier = modifier,
+            )
+        }
+        if (wide) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                HeroPane(hero = hero, modifier = Modifier.weight(1f).fillMaxHeight())
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    steps(Modifier.widthIn(max = AUTH_CONTENT_MAX_WIDTH).fillMaxSize())
                 }
             }
-
-            Spacer(Modifier.height(24.dp))
-
-            TextButton(
-                onClick = { showProxy = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Symbol(name = "vpn_key", size = 18.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.proxy_title))
+        } else {
+            // Centres the capped-width column on a portrait tablet narrower than the
+            // two-pane threshold; on phones the column already spans the width.
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                steps(Modifier.widthIn(max = AUTH_CONTENT_MAX_WIDTH).fillMaxSize())
             }
-
-            Spacer(Modifier.height(24.dp))
         }
 
         if (showProxy) {
-            // AuthScreen is the root with no back stack, so the system back gesture would finish
-            // the Activity. This handler — composed only while the overlay is up — intercepts back
-            // to dismiss the proxy screen instead, and unregisters when it closes.
+            // The auth screen is the root with no back stack, so the system back gesture would
+            // finish the Activity. This handler — composed only while the overlay is up, and
+            // the only enabled one then — dismisses the proxy screen instead.
             BackHandler { showProxy = false }
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 ProxyScreen(
@@ -206,121 +245,406 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
     }
 }
 
+/** What one step renders: its kind, and the TDLib stage it was composed with. */
+@Immutable
+private data class AuthFrame(val step: AuthStep, val stage: AuthStage)
+
 @Composable
-private fun BackAffordance(onBack: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) {
-            Symbol(
-                name = "arrow_back",
-                tint = MaterialTheme.colorScheme.onSurface,
-                size = 24.dp,
-                contentDescription = stringResource(R.string.auth_back),
+private fun AuthSteps(
+    frame: AuthFrame,
+    graph: AppGraph,
+    authError: String?,
+    draft: PhoneDraft,
+    hero: AuthHero,
+    wide: Boolean,
+    peek: () -> Float,
+    onSignIn: () -> Unit,
+    onGuest: () -> Unit,
+    onBackToWelcome: () -> Unit,
+    onCancelAttempt: () -> Unit,
+    onProxy: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Steps go forward and back like pages: a short horizontal slide plus fade, mirrored
+    // in RTL. Specs are read here because transitionSpec is not composable. Keyed on the
+    // step, so a new payload for the same step (a resent code, Loading → WaitPhone under
+    // Welcome) updates in place instead of sliding.
+    val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val direction = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1 else 1
+    AnimatedContent(
+        targetState = frame,
+        contentKey = { it.step },
+        transitionSpec = {
+            val sign = if (targetState.step.ordinal >= initialState.step.ordinal) direction else -direction
+            (slideInHorizontally(spatial) { sign * it / STEP_SLIDE_DIVISOR } + fadeIn(effects))
+                .togetherWith(slideOutHorizontally(spatial) { -sign * it / STEP_SLIDE_DIVISOR } + fadeOut(effects))
+        },
+        label = "auth-step",
+        modifier = modifier,
+    ) { current ->
+        when (current.step) {
+            AuthStep.Welcome -> WelcomeStep(
+                stage = current.stage,
+                hero = hero,
+                showHero = !wide,
+                onSignIn = onSignIn,
+                onGuest = onGuest,
+                onProxy = onProxy,
+            )
+            AuthStep.Phone -> PhoneStep(
+                graph = graph,
+                stage = current.stage,
+                draft = draft,
+                errorMessage = authError,
+                showMark = !wide,
+                peek = peek,
+                onBack = onBackToWelcome,
+                onProxy = onProxy,
+            )
+            AuthStep.Code, AuthStep.Password, AuthStep.Error, AuthStep.Finishing -> StageStep(
+                graph = graph,
+                stage = current.stage,
+                errorMessage = authError,
+                showMark = !wide,
+                onCancelAttempt = onCancelAttempt,
+                onGuest = onGuest,
+                onProxy = onProxy,
             )
         }
+    }
+}
+
+// ---------- Header ----------
+
+/**
+ * One header for every step: back where it is legal, the small fan mark (dropped where
+ * the big hero is already on screen), and the proxy entry at the end — reachable before
+ * sign-in, so a user on a network that blocks Telegram can get through.
+ */
+@Composable
+private fun AuthTopBar(onBack: (() -> Unit)?, showMark: Boolean, onProxy: () -> Unit) {
+    val mark = remember { BrandFanState(fanned = true) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = TOP_BAR_MIN_HEIGHT)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Symbol(
+                    name = "arrow_back",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    size = 24.dp,
+                    contentDescription = stringResource(R.string.auth_back),
+                )
+            }
+        } else {
+            Spacer(Modifier.width(20.dp))
+        }
+        if (showMark) {
+            Spacer(Modifier.width(4.dp))
+            BrandFanLogo(state = mark, size = 28.dp, modifier = Modifier.clip(BrandTileShape))
+        }
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = onProxy) {
+            Symbol(name = "vpn_key", size = 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.proxy_title))
+        }
+    }
+}
+
+// ---------- Hero ----------
+
+/**
+ * Motion state of the hero, hoisted to the screen so the hero can leave and come back
+ * (Welcome ↔ Phone on a phone, the left pane on wide screens) without replaying its
+ * entrance. [motion] lets one movement run at a time: a tap during the entrance or
+ * during a leaf-through is ignored rather than restarting it.
+ */
+@Stable
+private class AuthHero(val reducedMotion: Boolean) {
+    val fan = BrandFanState(fanned = reducedMotion)
+    val titleAlpha = Animatable(if (reducedMotion) 1f else 0f)
+    val titleOffset = Animatable(0f)
+    val motion = Mutex()
+
+    fun leafThrough(scope: CoroutineScope, spec: FiniteAnimationSpec<Float>) {
+        if (reducedMotion) return
+        scope.launch {
+            if (!motion.tryLock()) return@launch
+            try {
+                fan.leafThrough(spec)
+            } finally {
+                motion.unlock()
+            }
+        }
+    }
+}
+
+/**
+ * The screen's one expressive moment (ARCHITECTURE.md → intensity budget). On entry the
+ * logo's three cards leaf out of a single stack into the fan and the wordmark settles in;
+ * once the fan has landed, the cards leaf through one time ("hortay" = "leaf through!")
+ * and rest. Nothing runs after that; a tap on the hero leafs through again. Under
+ * reduced motion everything starts at rest and the tap does nothing.
+ */
+@Composable
+private fun rememberAuthHero(): AuthHero {
+    val reducedMotion = rememberReducedMotion()
+    val hero = remember { AuthHero(reducedMotion) }
+    val fanSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val leafSpec = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
+    val titleSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val titleEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val titleRise = with(LocalDensity.current) { HERO_TITLE_RISE.toPx() }
+    LaunchedEffect(hero) {
+        if (hero.reducedMotion) return@LaunchedEffect
+        hero.motion.withLock {
+            hero.titleOffset.snapTo(titleRise)
+            coroutineScope {
+                launch {
+                    delay(HERO_TITLE_DELAY_MS)
+                    launch { hero.titleAlpha.animateTo(1f, titleEffects) }
+                    hero.titleOffset.animateTo(0f, titleSpatial)
+                }
+                hero.fan.leafOut(fanSpec, HERO_FAN_STAGGER_MS)
+            }
+            delay(HERO_LEAF_PAUSE_MS)
+            hero.fan.leafThrough(leafSpec)
+        }
+    }
+    return hero
+}
+
+@Composable
+private fun HeroMark(hero: AuthHero, size: Dp) {
+    val scope = rememberCoroutineScope()
+    val leafSpec = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
+    BrandFanLogo(
+        state = hero.fan,
+        size = size,
+        style = BrandFanStyle.Floating,
+        showPost = true,
+        modifier = Modifier
+            // Decorative replay: a bare tap detector adds no semantics, so a screen reader
+            // neither announces nor focuses the logo. No ripple.
+            .pointerInput(hero) {
+                detectTapGestures { hero.leafThrough(scope, leafSpec) }
+            },
+    )
+}
+
+/** Wordmark and the one-line promise under it; they settle in together. */
+@Composable
+private fun HeroTitle(hero: AuthHero, modifier: Modifier = Modifier) {
+    Column(
+        // Layer-phase reads: the settle animates without recomposing the text.
+        modifier = modifier.graphicsLayer {
+            alpha = hero.titleAlpha.value
+            translationY = hero.titleOffset.value
+        },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
-            text = stringResource(R.string.auth_back),
-            style = MaterialTheme.typography.labelLarge,
+            text = stringResource(R.string.app_name),
+            style = MaterialTheme.typography.displaySmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.auth_subtitle_default),
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.clickable(role = Role.Button, onClick = onBack),
+            textAlign = TextAlign.Center,
         )
     }
 }
 
+/** The hero as the left pane of the two-pane layout, beside every step. */
 @Composable
-private fun HeroBlock(stage: AuthStage) {
-    Column {
-        Box(
+private fun HeroPane(hero: AuthHero, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val size = min(maxHeight * WIDE_HERO_HEIGHT_FRACTION, maxWidth * HERO_WIDTH_FRACTION)
+            .coerceIn(HERO_MIN_SIZE, HERO_MAX_SIZE)
+        Column(
             modifier = Modifier
-                .size(72.dp)
-                .clip(MaterialTheme.shapes.large)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Symbol(
-                name = when (stage) {
-                    is AuthStage.WaitCode -> "pin"
-                    is AuthStage.WaitPassword -> "lock"
-                    is AuthStage.Error -> "info"
-                    else -> "smartphone"
-                },
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                size = 36.dp,
-            )
+            HeroMark(hero = hero, size = size)
+            Spacer(Modifier.height(28.dp))
+            HeroTitle(hero = hero)
         }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = when (stage) {
-                is AuthStage.WaitCode -> stringResource(R.string.auth_title_wait_code)
-                is AuthStage.WaitPassword -> stringResource(R.string.auth_title_wait_password)
-                is AuthStage.Error -> stringResource(R.string.auth_title_error)
-                else -> stringResource(R.string.app_name)
-            },
-            style = MaterialTheme.typography.displaySmall,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = when (stage) {
-                is AuthStage.WaitCode -> stringResource(R.string.auth_subtitle_wait_code, stage.channelLabel)
-                is AuthStage.WaitPassword -> stringResource(
-                    if (stage.hint.isNotEmpty()) R.string.auth_subtitle_password_no_hint
-                    else R.string.auth_subtitle_password_with_hint,
+    }
+}
+
+// ---------- Welcome ----------
+
+/**
+ * Step 1. The hero takes the middle of the screen; the two ways in sit at the bottom,
+ * within thumb reach, with the privacy policy as one quiet line under them. When the
+ * content can't fit (large font, landscape-ish heights) the column scrolls instead of
+ * squeezing: it is at least the viewport tall, so the weights pin the actions to the
+ * bottom whenever there is room.
+ */
+@Composable
+private fun WelcomeStep(
+    stage: AuthStage,
+    hero: AuthHero,
+    showHero: Boolean,
+    onSignIn: () -> Unit,
+    onGuest: () -> Unit,
+    onProxy: () -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val viewport = maxHeight
+        val heroSize = (viewport * HERO_HEIGHT_FRACTION)
+            .coerceAtMost(maxWidth * HERO_WIDTH_FRACTION)
+            .coerceIn(HERO_MIN_SIZE, HERO_MAX_SIZE)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = viewport),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            AuthTopBar(onBack = null, showMark = false, onProxy = onProxy)
+            Spacer(Modifier.weight(1f))
+            if (showHero) {
+                HeroMark(hero = hero, size = heroSize)
+                Spacer(Modifier.height(28.dp))
+                HeroTitle(hero = hero, modifier = Modifier.padding(horizontal = 24.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(24.dp))
+                // While TDLib is still starting, the button shows it is getting ready
+                // instead of looking disabled for no visible reason.
+                PrimaryActionButton(
+                    text = stringResource(R.string.auth_sign_in_telegram),
+                    enabled = canStartSignIn(stage),
+                    loading = stage is AuthStage.Loading,
+                    onClick = onSignIn,
                 )
-                is AuthStage.Error -> stringResource(R.string.auth_open_telegram_hint)
-                else -> stringResource(R.string.auth_subtitle_default)
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+                Spacer(Modifier.height(12.dp))
+                GuestButton(onClick = onGuest)
+                Spacer(Modifier.height(4.dp))
+                PrivacyLink()
+                Spacer(Modifier.height(8.dp))
+            }
+        }
     }
 }
 
 // ---------- Phone ----------
 
+/**
+ * Step 2: one title, one helper line (where the sign-in goes and where the code will
+ * arrive — the worry a third-party app asking for a Telegram number raises), the form,
+ * and a quiet link to the source for anyone who wants to check.
+ */
 @Composable
-private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
+private fun PhoneStep(
+    graph: AppGraph,
+    stage: AuthStage,
+    draft: PhoneDraft,
+    errorMessage: String?,
+    showMark: Boolean,
+    peek: () -> Float,
+    onBack: () -> Unit,
+    onProxy: () -> Unit,
+) {
+    val direction = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1 else 1
+    val peekDistance = with(LocalDensity.current) { PHONE_PEEK_DISTANCE.toPx() }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val progress = peek()
+                translationX = progress * peekDistance * direction
+                alpha = 1f - progress * PHONE_PEEK_FADE
+            }
+            .verticalScroll(rememberScrollState()),
+    ) {
+        AuthTopBar(onBack = onBack, showMark = showMark, onProxy = onProxy)
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.auth_title_phone),
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.auth_phone_helper),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(28.dp))
+            PhoneForm(
+                graph = graph,
+                draft = draft,
+                errorMessage = errorMessage,
+                ready = stage is AuthStage.WaitPhone,
+            )
+            Spacer(Modifier.height(4.dp))
+            OpenSourceLink(modifier = Modifier.align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun PhoneForm(graph: AppGraph, draft: PhoneDraft, errorMessage: String?, ready: Boolean) {
     val client = graph.tdClient
     val scope = rememberCoroutineScope()
-    val countries by graph.countries.countries.collectAsStateWithLifecycle()
+    val catalogue by graph.countries.countries.collectAsStateWithLifecycle()
     val detectedIso by graph.countries.detectedIso.collectAsStateWithLifecycle()
+    // TDLib's names arrive in English; re-label them in the app's language (observable
+    // through LocalConfiguration, so an in-app language switch re-labels too).
+    val locale = LocalConfiguration.current.locales[0]
+    val countries = remember(catalogue, locale) { localizeCountries(catalogue, locale) }
 
     LaunchedEffect(Unit) { graph.countries.load() }
 
-    var selected by remember { mutableStateOf<Country?>(null) }
-    // Typed input survives Activity recreation. MainActivity now declares configChanges for
-    // rotation / theme / fold, but a locale switch and process death still recreate it, and
-    // plain `remember` wiped the number there. The picked country is saved by ISO and
-    // re-resolved against the catalogue.
-    var selectedIso by rememberSaveable { mutableStateOf<String?>(null) }
-    var phoneNational by rememberSaveable { mutableStateOf("") }
+    val selected = remember(countries, draft.selectedIso, detectedIso) {
+        pickCountry(countries, savedIso = draft.selectedIso, detectedIso = detectedIso)
+    }
     var sheetOpen by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
-    // Used only when the user picks the synthetic "Інша країна" row — they can type any
-    // dial code into the prefix field (e.g. +1268, +672). For real countries the prefix
-    // stays read-only and equals the picked country's dialCode.
-    var customDial by rememberSaveable { mutableStateOf("+") }
 
-    LaunchedEffect(selected) { selected?.let { selectedIso = it.iso } }
-
-    // Pick the default country once the catalogue + detection arrive. Prefer the
-    // country restored from saved state, then the carrier ISO; fall back to UA — this
-    // app's audience is Ukraine-first and a sensible default beats a blank dial-code
-    // field on first launch.
-    LaunchedEffect(countries, detectedIso) {
-        if (selected == null && countries.isNotEmpty()) {
-            val iso = detectedIso?.uppercase() ?: "UA"
-            selected = selectedIso?.let { saved -> countries.firstOrNull { it.iso.equals(saved, ignoreCase = true) } }
-                ?: countries.firstOrNull { it.iso.equals(iso, ignoreCase = true) }
-                ?: countries.firstOrNull { it.iso.equals("UA", ignoreCase = true) }
-                ?: countries.first()
-        }
+    // The number field takes focus, keyboard up, as the step opens: typing the number is
+    // the only thing to do here. One frame first, so the field is attached.
+    val numberFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        numberFocus.requestFocus()
+        keyboard?.show()
     }
 
     // Errors from a previous submit clear once the user edits anything — feels right and
     // avoids a stale red message hanging around after they've already corrected it.
-    LaunchedEffect(phoneNational, selected, customDial) {
+    LaunchedEffect(draft.national, selected, draft.customDial) {
         if (errorMessage != null) client.clearAuthError()
     }
+
+    val canSubmit = ready &&
+        !submitting &&
+        selected != null &&
+        draft.national.length >= 5 &&
+        (!selected.isCustom || draft.customDial.length >= 2)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         CountrySelectorRow(
@@ -330,77 +654,43 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
         Spacer(Modifier.height(12.dp))
         PhoneNumberRow(
             country = selected,
-            customDial = customDial,
+            customDial = draft.customDial,
             onCustomDialChange = { raw ->
                 // Allow only `+` plus digits; keep `+` always at the head so the user
                 // can't accidentally erase it. Cap at 5 (E.164 country code max is 3,
                 // but Fragment-style services can quote longer prefixes; 5 is safe).
                 val digits = raw.toAsciiDigits().take(4)
-                customDial = "+$digits"
+                draft.customDial = "+$digits"
             },
-            value = phoneNational,
-            onValueChange = { phoneNational = it.toAsciiDigits().take(15) },
+            value = draft.national,
+            onValueChange = { draft.national = it.toAsciiDigits().take(15) },
             isError = errorMessage != null,
+            focusRequester = numberFocus,
         )
         AnimatedFieldError(text = errorMessage)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.auth_phone_helper),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         Spacer(Modifier.height(24.dp))
         PrimaryActionButton(
             text = stringResource(R.string.auth_send_code),
-            enabled = !submitting &&
-                (selected != null) &&
-                phoneNational.length >= 5 &&
-                (!(selected?.isCustom ?: false) || customDial.length >= 2),
-            loading = submitting,
+            enabled = canSubmit,
+            // Also while TDLib is still coming back to WaitPhone (after "Change number").
+            loading = submitting || !ready,
             onClick = {
                 val country = selected ?: return@PrimaryActionButton
-                val prefix = if (country.isCustom) customDial else country.dialCode
-                val full = prefix + phoneNational
+                val prefix = if (country.isCustom) draft.customDial else country.dialCode
+                val full = prefix + draft.national
                 submitting = true
                 scope.launch {
                     try { client.submitPhone(full) } finally { submitting = false }
                 }
             },
         )
-        Spacer(Modifier.height(20.dp))
-        // Guest-mode escape hatch. Visible only on the WaitPhone stage so it
-        // doesn't compete with code/password forms mid-flow. Flipping the flag
-        // recomposes MainActivity, which routes through to WebModeScaffold.
-        // No TDLib call, no phone number, no MTProto — purely a local DataStore
-        // write. Subscriptions persist across mode switches both directions so
-        // the user can experiment without losing their channel list.
-        //
-        // Visual weight: bumped from a near-invisible TextButton to an
-        // OutlinedButton with a leading "visibility" glyph. Still secondary to
-        // the filled "Send code" PrimaryActionButton above (no background fill,
-        // outlined stroke is materially less prominent than the primary
-        // container) — guest mode is a real opt-out, not the happy path.
-        OutlinedButton(
-            onClick = {
-                scope.launch { graph.guestMode.setGuest(true) }
-            },
-            shapes = ButtonDefaults.shapes(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Symbol(name = "visibility", contentDescription = null, size = 18.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.auth_continue_without_login),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
     }
 
     if (sheetOpen) {
         CountryPickerSheet(
             countries = countries,
             onPick = { picked ->
-                selected = picked
+                draft.selectedIso = picked.iso
                 sheetOpen = false
             },
             onDismiss = { sheetOpen = false },
@@ -408,6 +698,7 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
     }
 }
 
+/** The picked country by name only: no flag emoji (see [CountryPickerSheet]). */
 @Composable
 private fun CountrySelectorRow(country: Country?, onClick: () -> Unit) {
     Row(
@@ -416,16 +707,11 @@ private fun CountrySelectorRow(country: Country?, onClick: () -> Unit) {
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
-            Text(
-                text = country?.flag ?: "🌐",
-                style = MaterialTheme.typography.titleLarge,
-            )
-        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.auth_country_label),
@@ -454,6 +740,7 @@ private fun PhoneNumberRow(
     value: String,
     onValueChange: (String) -> Unit,
     isError: Boolean,
+    focusRequester: FocusRequester,
 ) {
     val isCustom = country?.isCustom == true
     // Dial code then national number is a fixed left-to-right sequence in every locale.
@@ -501,6 +788,7 @@ private fun PhoneNumberRow(
             ),
             modifier = Modifier
                 .weight(1f)
+                .focusRequester(focusRequester)
                 .semantics { contentType = ContentType.PhoneNumber },
         )
     }
@@ -594,6 +882,10 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
         // (tdlib/td#2310) — SMS is reserved for official mobile clients. Spell that out
         // so a user without a second signed-in device doesn't sit waiting for an SMS that
         // will never come and conclude the app is broken.
+        //
+        // The code message itself warns "don't give this code to anyone". Read cold, that
+        // looks like a reason to stop here, so the next line says what the warning is
+        // about. And since the code sits in another app, one tap opens it.
         if (stage.deliveredInApp) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -601,6 +893,23 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.auth_code_share_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            val context = LocalContext.current
+            OutlinedButton(
+                onClick = { dev.lyo.hortay.ui.main.openTelegramApp(context) },
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Symbol(name = "open_in_new", contentDescription = null, size = 18.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.action_open_telegram))
+            }
         }
         Spacer(Modifier.height(20.dp))
         PrimaryActionButton(
@@ -906,8 +1215,159 @@ private fun RecoveryInfoCard(text: String) {
     }
 }
 
+// ---------- Code, password, error ----------
+
+/**
+ * TDLib's later stages keep their own content under the shared header. Back is offered
+ * on the code and password stages only, where it abandons the attempt; an error has its
+ * own Retry, and on an error the guest way in stays offered, since a user without a
+ * Telegram account would otherwise have no way forward.
+ */
+@Composable
+private fun StageStep(
+    graph: AppGraph,
+    stage: AuthStage,
+    errorMessage: String?,
+    showMark: Boolean,
+    onCancelAttempt: () -> Unit,
+    onGuest: () -> Unit,
+    onProxy: () -> Unit,
+) {
+    val canGoBack = stage is AuthStage.WaitCode || stage is AuthStage.WaitPassword
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        AuthTopBar(onBack = if (canGoBack) onCancelAttempt else null, showMark = showMark, onProxy = onProxy)
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Spacer(Modifier.height(12.dp))
+            StageHeading(stage = stage)
+            Spacer(Modifier.height(28.dp))
+            when (stage) {
+                is AuthStage.WaitCode -> CodeForm(graph = graph, stage = stage, errorMessage = errorMessage)
+                is AuthStage.WaitPassword -> PasswordForm(graph = graph, stage = stage, errorMessage = errorMessage)
+                is AuthStage.Error -> {
+                    RecoverableErrorBlock(
+                        message = stage.message,
+                        showOpenTelegram = stage.resolvedInTelegram,
+                        onRetry = onCancelAttempt,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    GuestButton(onClick = onGuest)
+                }
+                AuthStage.Loading, AuthStage.WaitPhone, AuthStage.Ready -> LoadingForm()
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun StageHeading(stage: AuthStage) {
+    val title = when (stage) {
+        is AuthStage.WaitCode -> stringResource(R.string.auth_title_wait_code)
+        is AuthStage.WaitPassword -> stringResource(R.string.auth_title_wait_password)
+        is AuthStage.Error -> stringResource(
+            if (stage.resolvedInTelegram) R.string.auth_title_error else R.string.auth_title_init_failure,
+        )
+        AuthStage.Loading, AuthStage.WaitPhone, AuthStage.Ready -> return
+    }
+    val subtitle = when (stage) {
+        is AuthStage.WaitCode -> stringResource(R.string.auth_subtitle_wait_code, stage.channelLabel)
+        is AuthStage.WaitPassword -> stringResource(
+            if (stage.hint.isNotEmpty()) R.string.auth_subtitle_password_no_hint
+            else R.string.auth_subtitle_password_with_hint,
+        )
+        is AuthStage.Error -> stringResource(
+            if (stage.resolvedInTelegram) R.string.auth_open_telegram_hint else R.string.auth_subtitle_init_failure,
+        )
+        AuthStage.Loading, AuthStage.WaitPhone, AuthStage.Ready -> return
+    }
+    Text(
+        text = title,
+        style = MaterialTheme.typography.headlineLarge,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = subtitle,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+// ---------- Entry: guest and links ----------
+
+/**
+ * Guest-mode way in: no account, no phone number, no TDLib call — a local DataStore flag
+ * that MainActivity routes on. Tonal, full width and in the primary button's size class:
+ * reading public channels without an account is a real first choice, not an opt-out.
+ */
+@Composable
+private fun GuestButton(onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        shapes = ButtonDefaults.shapes(
+            shape = CircleShape,
+            pressedShape = MaterialTheme.shapes.medium,
+        ),
+        contentPadding = PaddingValuesPrimary,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = stringResource(R.string.auth_continue_without_login),
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/**
+ * The privacy policy (the one Settings → Privacy opens) as one quiet line under the ways
+ * in. The whole line is the link, in a 48 dp target. Opened through the guarded helper:
+ * no browser installed must not throw out of the tap.
+ */
+@Composable
+private fun PrivacyLink() {
+    val context = LocalContext.current
+    Text(
+        text = stringResource(R.string.auth_trust_privacy_link),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(role = Role.Button) { openExternalUrl(context, BuildConfig.PRIVACY_POLICY_URL) }
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    )
+}
+
+/** The repository Settings → About opens, under the phone form: the claim made checkable. */
+@Composable
+private fun OpenSourceLink(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    TextButton(
+        onClick = { openExternalUrl(context, AUTHOR_SOURCE_URL) },
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+        modifier = modifier,
+    ) {
+        Text(
+            text = stringResource(R.string.auth_trust_source_link),
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
+
 // ---------- Shared ----------
 
+/**
+ * The step's one filled action. Disabled is the standard M3 disabled button, so it never
+ * passes for the tonal guest button. [loading] (work under way, or TDLib not ready yet)
+ * keeps the filled colours with a spinner in place of the label, and keeps the label as
+ * the button's spoken name.
+ */
 @Composable
 private fun PrimaryActionButton(
     text: String,
@@ -926,15 +1386,19 @@ private fun PrimaryActionButton(
             shape = CircleShape,
             pressedShape = MaterialTheme.shapes.medium,
         ),
-        enabled = enabled,
+        enabled = enabled && !loading,
         contentPadding = PaddingValuesPrimary,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth(),
+        colors = if (loading) {
+            ButtonDefaults.buttonColors(
+                disabledContainerColor = MaterialTheme.colorScheme.primary,
+                disabledContentColor = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            ButtonDefaults.buttonColors()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (loading) Modifier.semantics { contentDescription = text } else Modifier),
     ) {
         if (loading) {
             // Inline expressive spinner that morphs through the canonical M3 polygon
@@ -945,16 +1409,59 @@ private fun PrimaryActionButton(
                 color = LocalContentColor.current,
             )
         } else {
-            Text(text, style = MaterialTheme.typography.titleMedium)
+            Text(text, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         }
     }
 }
 
-private val PaddingValuesPrimary
-    @Composable get() = androidx.compose.foundation.layout.PaddingValues(
-        vertical = 18.dp,
-        horizontal = 24.dp,
-    )
+/** Delay before the back card follows the accent card out of the stack. */
+private const val HERO_FAN_STAGGER_MS = 70L
+
+/** The title starts settling once the fan is under way, not after it lands. */
+private const val HERO_TITLE_DELAY_MS = 120L
+
+/** A breath between the fan landing and the leaf-through, so the two read as two beats. */
+private const val HERO_LEAF_PAUSE_MS = 220L
+
+/** How far below its place the title starts. */
+private val HERO_TITLE_RISE = 8.dp
+
+/**
+ * Share of the viewport height the hero box takes on a phone ("roughly 40 %"); the
+ * floating cards fill about 58 % of the box (see BrandFanGeometry's floating frame).
+ */
+private const val HERO_HEIGHT_FRACTION = 0.42f
+
+/** The hero beside the steps on wide screens has the whole pane height to itself. */
+private const val WIDE_HERO_HEIGHT_FRACTION = 0.5f
+
+/** Never wider than this share of the available width, so it keeps side margins. */
+private const val HERO_WIDTH_FRACTION = 0.8f
+private val HERO_MIN_SIZE = 96.dp
+private val HERO_MAX_SIZE = 360.dp
+
+/** The launcher tile's rounding, proportional, for the small header mark. */
+private val BrandTileShape = RoundedCornerShape(percent = 24)
+
+/** Two panes from this window width (and in any landscape window). */
+private const val WIDE_MIN_WIDTH_DP = 600
+
+/** The column cap the screen has always used on tablets and desktop windows. */
+private val AUTH_CONTENT_MAX_WIDTH = 520.dp
+
+private val TOP_BAR_MIN_HEIGHT = 56.dp
+
+/** Steps slide by a fifth of their width; the fade carries the rest. */
+private const val STEP_SLIDE_DIVISOR = 5
+
+/** How far the phone step follows a back swipe before the step switch takes over. */
+private val PHONE_PEEK_DISTANCE = 48.dp
+private const val PHONE_PEEK_FADE = 0.25f
+
+private val PaddingValuesPrimary = PaddingValues(
+    vertical = 18.dp,
+    horizontal = 24.dp,
+)
 
 @Composable
 private fun LoadingForm() {
@@ -997,7 +1504,7 @@ private fun AnimatedFieldError(text: String?) {
 }
 
 @Composable
-private fun RecoverableErrorBlock(message: String, onRetry: () -> Unit) {
+private fun RecoverableErrorBlock(message: String, showOpenTelegram: Boolean, onRetry: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = message,
@@ -1005,21 +1512,24 @@ private fun RecoverableErrorBlock(message: String, onRetry: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(20.dp))
-        // AuthStage.Error always carries an "open Telegram, do X there, come back"
-        // recovery path (the subtitle on the hero block makes this explicit). Surface
-        // the open-Telegram action right next to retry so the user has a one-tap
-        // jump to the recovery surface — not just guidance copy.
-        val context = LocalContext.current
-        OutlinedButton(
-            onClick = { dev.lyo.hortay.ui.main.openTelegramApp(context) },
-            shapes = ButtonDefaults.shapes(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Symbol(name = "open_in_new", contentDescription = null, size = 18.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.action_open_telegram))
+        // An AuthStage.Error resolved in Telegram carries an "open Telegram, do X there,
+        // come back" recovery path (the subtitle on the hero block makes this explicit).
+        // Surface the open-Telegram action right next to retry so the user has a one-tap
+        // jump to the recovery surface — not just guidance copy. A local failure (client
+        // init) has nothing to do in Telegram, so it gets retry only.
+        if (showOpenTelegram) {
+            val context = LocalContext.current
+            OutlinedButton(
+                onClick = { dev.lyo.hortay.ui.main.openTelegramApp(context) },
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Symbol(name = "open_in_new", contentDescription = null, size = 18.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.action_open_telegram))
+            }
+            Spacer(Modifier.height(12.dp))
         }
-        Spacer(Modifier.height(12.dp))
         PrimaryActionButton(
             text = stringResource(R.string.auth_retry),
             enabled = true,

@@ -319,6 +319,7 @@ class TdClient private constructor(
                         Log.e(TAG, "SetTdlibParameters failed", err)
                         _authStage.value = AuthStage.Error(
                             strings.getString(R.string.auth_err_init_failure),
+                            resolvedInTelegram = false,
                         )
                     }
                     .isSuccess

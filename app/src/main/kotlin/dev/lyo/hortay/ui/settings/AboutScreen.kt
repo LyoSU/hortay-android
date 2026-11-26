@@ -113,5 +113,5 @@ internal fun AboutScreen(
 
 private const val AUTHOR_CHANNEL_HANDLE = "lyblog"
 private const val AUTHOR_DEVELOPER_HANDLE = "lydev"
-private const val AUTHOR_SOURCE_URL = "https://github.com/LyoSU/hortay-android"
+internal const val AUTHOR_SOURCE_URL = "https://github.com/LyoSU/hortay-android"
 private const val AUTHOR_SOURCE_LABEL = "github.com/LyoSU/hortay-android"

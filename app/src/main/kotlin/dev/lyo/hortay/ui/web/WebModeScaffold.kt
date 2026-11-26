@@ -418,7 +418,7 @@ fun WebModeScaffold(graph: AppGraph) {
         else WindowInsets.navigationBars
         ).asPaddingValues()
 
-    LinkAwareScaffold(graph) {
+    LinkAwareScaffold(graph, feed = graph.webFeedSource) {
     CompositionLocalProvider(
         LocalReadCursors provides cursorHolder,
         dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,

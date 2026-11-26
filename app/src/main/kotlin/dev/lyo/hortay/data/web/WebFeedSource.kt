@@ -974,6 +974,21 @@ class WebFeedSource(
     )
 
     /**
+     * First fetches still running for channels just added; drives [contentFetchPending].
+     * Guarded by `this` so the count and the published flag can't be written out of
+     * order by two completions on different threads.
+     */
+    private var firstFetchesInFlight = 0
+    private val _contentFetchPending = MutableStateFlow(false)
+    override val contentFetchPending: StateFlow<Boolean> = _contentFetchPending.asStateFlow()
+
+    @Synchronized
+    private fun trackFirstFetch(delta: Int) {
+        firstFetchesInFlight += delta
+        _contentFetchPending.value = firstFetchesInFlight > 0
+    }
+
+    /**
      * Convenience "subscribe and refresh" that's the common path from the
      * Add-channel screen. Idempotent: subscribing to an already-followed channel
      * still triggers a fetch (user might be expecting fresh content) but the DB
@@ -1011,9 +1026,13 @@ class WebFeedSource(
         // awaiting the network round-trip — see [PostsRepository.refresh]'s
         // similar fire-and-forget rationale; the user expects "added — feed
         // updates as content lands" not a blocking spinner.
+        // Counted from before the launch so the feed never sees a gap between "added"
+        // and "fetching"; released on completion, which also fires when the job is
+        // cancelled before it ever started.
+        trackFirstFetch(+1)
         scope.launch {
             fetchOne(normalized, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
-        }
+        }.invokeOnCompletion { trackFirstFetch(-1) }
     }
 
     /** The persistent half of [subscribeAndRefresh]: channel table + DataStore. */

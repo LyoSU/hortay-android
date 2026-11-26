@@ -3,7 +3,7 @@
 
     <!-- Layar autentikasi -->
     <string name="auth_phone_label">Nomor telepon</string>
-    <string name="auth_phone_helper">Nomor beserta kode negara. Telegram akan mengirim kode konfirmasi</string>
+    <string name="auth_phone_helper">Kamu masuk langsung lewat Telegram, tanpa server kami. Kode dikirim ke aplikasi Telegram, bukan lewat SMS.</string>
     <string name="auth_password_label">Kata sandi verifikasi dua langkah</string>
     <string name="auth_password_hint">Petunjuk: %1$s</string>
     <string name="auth_password_helper">Kata sandi yang kamu buat di Telegram resmi untuk Verifikasi Dua Langkah</string>
@@ -13,8 +13,16 @@
     <string name="auth_password_recovery_back">Masukkan kata sandi</string>
     <string name="auth_password_recovery_unavailable">Tidak ada email pemulihan yang terdaftar. Verifikasi dua langkah hanya bisa direset dari Telegram resmi di perangkat lain</string>
     <string name="auth_send_code">Kirim kode</string>
+    <string name="auth_sign_in_telegram">Masuk dengan Telegram</string>
+    <string name="auth_title_phone">Nomormu</string>
     <string name="auth_continue">Lanjutkan</string>
-    <string name="auth_continue_without_login">Tanpa masuk: baca kanal publik</string>
+    <string name="auth_continue_without_login">Baca tanpa akun</string>
+    <string name="auth_trust_privacy_link">Kebijakan privasi</string>
+    <string name="auth_trust_source_link">Sumber terbuka</string>
+    <string name="auth_code_share_note">Peringatan Telegram agar tidak membagikan kode ditujukan soal orang lain. Memasukkannya di sini membuatmu masuk ke Hortay.</string>
+    <string name="auth_title_init_failure">Tidak bisa memulai proses masuk</string>
+    <string name="auth_subtitle_init_failure">Masalahnya ada di aplikasi, bukan di akun Telegram kamu</string>
+    <string name="auth_err_unreachable">Tidak bisa terhubung ke Telegram. Periksa koneksi atau atur proxy di bagian atas layar</string>
 
     <!-- Mode web (anonim / tamu) -->
     <string name="web_feed_title">Feed</string>
@@ -94,10 +102,10 @@
     <string name="auth_title_wait_password">Masukkan kata sandi</string>
     <string name="auth_title_error">Selesaikan langkah ini di Telegram</string>
     <string name="auth_subtitle_wait_code">Kode terkirim. Periksa: %1$s</string>
-    <string name="auth_code_hint_telegram">Aplikasi pihak ketiga tidak menerima kode lewat SMS. Kode dikirim ke Telegram di perangkat lain tempat kamu sudah masuk.</string>
+    <string name="auth_code_hint_telegram">Cari di aplikasi Telegram, di ponsel ini atau perangkat lain. Aplikasi pihak ketiga tidak menerima kode lewat SMS.</string>
     <string name="auth_subtitle_password_no_hint">Akun dilindungi dengan verifikasi dua langkah</string>
     <string name="auth_subtitle_password_with_hint">Akun dilindungi dengan verifikasi dua langkah. Masukkan kata sandimu</string>
-    <string name="auth_subtitle_default">Baca kanal Telegram sebagai feed — tanpa obrolan atau notifikasi</string>
+    <string name="auth_subtitle_default">Semua kanalmu dalam satu feed</string>
     <string name="auth_country_label">Negara</string>
     <string name="auth_country_loading">Memuat…</string>
     <string name="auth_phone_placeholder">Nomor telepon</string>
@@ -114,7 +122,7 @@
     <string name="country_other">Negara lain</string>
 
     <!-- Saluran kode autentikasi -->
-    <string name="auth_channel_telegram_message">Telegram di perangkat lain</string>
+    <string name="auth_channel_telegram_message">aplikasi Telegram</string>
     <string name="auth_channel_sms_with_phone">SMS ke %1$s</string>
     <string name="auth_channel_sms">SMS</string>
     <string name="auth_channel_sms_word">SMS dengan kata</string>
@@ -857,9 +865,11 @@
     <string name="onboarding_got_it">Mengerti</string>
     <string name="onboarding_feed_order_title">Bagaimana kamu ingin membaca?</string>
     <string name="onboarding_feed_order_newest_desc">Seperti feed berita</string>
-    <string name="onboarding_feed_order_oldest_desc">Seperti obrolan — kamu melanjutkan dari tempat terakhir berhenti</string>
+    <string name="onboarding_feed_order_oldest_desc">Seperti obrolan</string>
+    <string name="onboarding_feed_order_newest_hint">Terbaru di atas, yang lama di bawah</string>
+    <string name="onboarding_feed_order_oldest_hint">Dibuka di kiriman pertama yang belum dibaca</string>
     <string name="onboarding_feed_order_confirm">Lanjutkan</string>
-    <string name="onboarding_feed_order_footer">Kamu bisa mengubahnya nanti di %1$s → %2$s.</string>
+    <string name="onboarding_feed_order_footer">Kamu bisa mengubahnya nanti di %1$s → %2$s</string>
     <string name="settings_section_reading">Membaca</string>
     <string name="settings_theme_mode_system">Sistem</string>
     <string name="settings_theme_mode_light">Terang</string>

@@ -3,7 +3,7 @@
 
     <!-- Tela de autenticação -->
     <string name="auth_phone_label">Número de telefone</string>
-    <string name="auth_phone_helper">Número com código do país. O Telegram enviará um código de confirmação</string>
+    <string name="auth_phone_helper">Você entra direto pelo Telegram, sem servidor nosso no meio. O código chega no app do Telegram, não por SMS.</string>
     <string name="auth_password_label">Senha da verificação em duas etapas</string>
     <string name="auth_password_hint">Dica: %1$s</string>
     <string name="auth_password_helper">A mesma senha que você definiu no Telegram oficial em Verificação em duas etapas</string>
@@ -13,8 +13,16 @@
     <string name="auth_password_recovery_back">Inserir senha</string>
     <string name="auth_password_recovery_unavailable">Nenhum e-mail de recuperação cadastrado. A verificação em duas etapas só pode ser redefinida pelo Telegram oficial em outro dispositivo</string>
     <string name="auth_send_code">Enviar código</string>
+    <string name="auth_sign_in_telegram">Entrar com o Telegram</string>
+    <string name="auth_title_phone">Seu número</string>
     <string name="auth_continue">Continuar</string>
-    <string name="auth_continue_without_login">Sem entrar: ler canais públicos</string>
+    <string name="auth_continue_without_login">Ler sem conta</string>
+    <string name="auth_trust_privacy_link">Política de privacidade</string>
+    <string name="auth_trust_source_link">Código aberto</string>
+    <string name="auth_code_share_note">O aviso do Telegram para não compartilhar o código é sobre outras pessoas. Digitá-lo aqui faz você entrar no Hortay.</string>
+    <string name="auth_title_init_failure">Não foi possível iniciar o login</string>
+    <string name="auth_subtitle_init_failure">O problema está no app, não na sua conta do Telegram</string>
+    <string name="auth_err_unreachable">Não foi possível conectar ao Telegram. Verifique sua conexão ou configure um proxy no topo da tela</string>
 
     <!-- Modo web (anônimo / visitante) -->
     <string name="web_feed_title">Feed</string>
@@ -98,10 +106,10 @@
     <string name="auth_title_wait_password">Digite sua senha</string>
     <string name="auth_title_error">Conclua esta etapa no Telegram</string>
     <string name="auth_subtitle_wait_code">Código enviado. Verifique: %1$s</string>
-    <string name="auth_code_hint_telegram">Apps de terceiros não recebem o código por SMS. Ele chega no Telegram em outro dispositivo onde você já entrou.</string>
+    <string name="auth_code_hint_telegram">Procure no app do Telegram, neste celular ou em outro dispositivo. Apps de terceiros não recebem o código por SMS.</string>
     <string name="auth_subtitle_password_no_hint">A conta está protegida com verificação em duas etapas</string>
     <string name="auth_subtitle_password_with_hint">A conta está protegida com verificação em duas etapas. Digite sua senha</string>
-    <string name="auth_subtitle_default">Leia canais do Telegram como um feed — sem chats ou notificações</string>
+    <string name="auth_subtitle_default">Todos os seus canais em um só feed</string>
     <string name="auth_country_label">País</string>
     <string name="auth_country_loading">Carregando…</string>
     <string name="auth_phone_placeholder">Número de telefone</string>
@@ -118,7 +126,7 @@
     <string name="country_other">Outro país</string>
 
     <!-- Canais de código de autenticação -->
-    <string name="auth_channel_telegram_message">Telegram em outro dispositivo</string>
+    <string name="auth_channel_telegram_message">o app do Telegram</string>
     <string name="auth_channel_sms_with_phone">SMS para %1$s</string>
     <string name="auth_channel_sms">SMS</string>
     <string name="auth_channel_sms_word">SMS com uma palavra</string>
@@ -907,9 +915,11 @@
     <string name="onboarding_got_it">Entendi</string>
     <string name="onboarding_feed_order_title">Como você prefere ler?</string>
     <string name="onboarding_feed_order_newest_desc">Como um feed de notícias</string>
-    <string name="onboarding_feed_order_oldest_desc">Como um chat: você continua de onde parou</string>
+    <string name="onboarding_feed_order_oldest_desc">Como um chat</string>
+    <string name="onboarding_feed_order_newest_hint">Primeiro os mais recentes, os anteriores abaixo</string>
+    <string name="onboarding_feed_order_oldest_hint">Abre na primeira publicação não lida</string>
     <string name="onboarding_feed_order_confirm">Continuar</string>
-    <string name="onboarding_feed_order_footer">Você pode mudar isso depois em %1$s → %2$s.</string>
+    <string name="onboarding_feed_order_footer">Você pode mudar isso depois em %1$s → %2$s</string>
     <string name="settings_section_reading">Leitura</string>
     <string name="settings_theme_mode_system">Sistema</string>
     <string name="settings_theme_mode_light">Claro</string>

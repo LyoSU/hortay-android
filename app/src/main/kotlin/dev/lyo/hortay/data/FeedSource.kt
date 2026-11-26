@@ -83,6 +83,15 @@ interface FeedSource {
     val initialSyncDone: StateFlow<Boolean> get() = ALWAYS_SETTLED
 
     /**
+     * `true` while content for a source the user just added is still being fetched —
+     * guest mode's first fetch of a freshly subscribed channel. The feed renders an
+     * empty list as loading, not as "nothing to read", while this holds. Default: never
+     * (TDLib mode delivers a new channel through its update stream; its cold-start wait
+     * is [initialSyncDone]).
+     */
+    val contentFetchPending: StateFlow<Boolean> get() = NEVER_PENDING
+
+    /**
      * Monotonic account-session counter: changes exactly when the impl wipes its
      * per-account state (TDLib mode: `PostsRepository.clear()` on logout), and never
      * otherwise. Long-lived consumers that hold session-derived state — the feed
@@ -95,5 +104,7 @@ interface FeedSource {
 }
 
 private val ALWAYS_SETTLED: StateFlow<Boolean> = MutableStateFlow(true).asStateFlow()
+
+private val NEVER_PENDING: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
 
 private val SINGLE_SESSION: StateFlow<Long> = MutableStateFlow(0L).asStateFlow()

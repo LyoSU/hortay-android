@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -47,7 +46,8 @@ import dev.lyo.hortay.ui.icons.Symbol
 
 /**
  * Telegram-style country picker. Modal bottom sheet with a search field above a single
- * scrollable list — flag · localized name · dial code per row. Search filters by name
+ * scrollable list — localized name · dial code per row, no flag emoji (a flag stands for
+ * a state, not a language or a phone plan, and renders differently per vendor font). Search filters by name
  * (case-insensitive) and by trimmed dial code so users can type "380" or "ukr" and find
  * the same row.
  *
@@ -140,7 +140,7 @@ fun CountryPickerSheet(
                     // grammar of official Telegram. During search the filter respects the
                     // user's intent and we don't break the result list with a divider.
                     val pinnedCount = if (query.isBlank()) {
-                        filtered.indexOfFirst { !it.isCustom && it.iso != "FT" }
+                        filtered.indexOfFirst { !it.isPinned }
                             .takeIf { it > 0 } ?: 0
                     } else 0
                     itemsIndexed(filtered, key = { _, c -> c.iso }) { index, country ->
@@ -159,8 +159,8 @@ fun CountryPickerSheet(
 }
 
 /**
- * Picker row built on Material 3 [ListItem]. Flag → name → dial code maps cleanly onto the
- * leading/headline/trailing slots, so we get the standard ListItem rhythm (text alignment,
+ * Picker row built on Material 3 [ListItem]. Name → dial code maps cleanly onto the
+ * headline/trailing slots, so we get the standard ListItem rhythm (text alignment,
  * 56 dp min height, padding) without hand-tuning a `Row + spacedBy(14.dp) + padding`.
  *
  * Container is transparent so the row sits flat on the sheet surface; rounded clip stays on
@@ -177,13 +177,6 @@ private fun CountryRow(country: Country, onClick: () -> Unit) {
             .clip(MaterialTheme.shapes.medium)
             .clickable(role = Role.Button, onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = {
-            // The flag glyph alignment differs across vendor emoji fonts — wrapping
-            // it in a fixed-width Box keeps the name column aligned across all rows.
-            Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
-                Text(text = country.flag, style = MaterialTheme.typography.titleLarge)
-            }
-        },
         content = {
             Text(
                 text = country.name,

@@ -27,7 +27,6 @@ data class Country(
     val iso: String,
     val name: String,
     val dialCode: String,
-    val flag: String,
     val allDialCodes: ImmutableList<String>,
     /**
      * True for the synthetic "Інша країна" row — selecting it unlocks the dial-code field
@@ -41,8 +40,7 @@ data class Country(
  * Telegram's Fragment platform issues anonymous numbers under the `+888` reserved prefix
  * (ITU's "global services" range). They aren't a country, so [TdApi.GetCountries] doesn't
  * return them — every official Telegram client pins them at the top of the picker as a
- * dedicated entry. We do the same; the pirate flag is a friendly nod to the user's own
- * phrasing ("піратські") and matches what Fragment-bought numbers actually feel like.
+ * dedicated entry. We do the same.
  *
  * Names are resolved through [Resources] so the picker label tracks the active locale.
  */
@@ -50,7 +48,6 @@ internal fun fragmentAnonymousNumbers(res: StringResolver): Country = Country(
     iso = "FT",
     name = res.getString(R.string.country_anonymous_numbers),
     dialCode = "+888",
-    flag = "🏴‍☠️",
     allDialCodes = persistentListOf("888"),
 )
 
@@ -58,15 +55,16 @@ internal fun customCountryEntry(res: StringResolver): Country = Country(
     iso = "??",
     name = res.getString(R.string.country_other),
     dialCode = "+",
-    flag = "🌐",
     allDialCodes = persistentListOf(),
     isCustom = true,
 )
 
 /**
- * Backed by TDLib's [TdApi.GetCountries] (localized to systemLanguageCode = "uk", so names
- * arrive already translated) and [TdApi.GetCountryCode] (carrier/IP-based ISO guess for
- * the initial selection). Falls back to Ukraine when detection fails — the realistic
+ * Backed by TDLib's [TdApi.GetCountries] and [TdApi.GetCountryCode] (carrier/IP-based ISO
+ * guess for the initial selection). TDLib translates country names through its language
+ * pack, which this app never selects, so the names arrive in English whatever the UI
+ * language; the auth screen re-labels them from the ISO code in the app's locale
+ * (`localizeCountries` in `ui/auth/CountryNames.kt`). Falls back to Ukraine when detection fails — the realistic
  * audience of this app is UA-first, and a sensible default is better than a blank header.
  *
  * Lazy on purpose: the AuthScreen calls [load] when it composes the phone form, so during
@@ -135,7 +133,6 @@ class CountryRepository(
                     iso = info.countryCode,
                     name = info.name.ifEmpty { info.englishName },
                     dialCode = "+$dial",
-                    flag = isoToFlagEmoji(info.countryCode),
                     allDialCodes = info.callingCodes.toList().toImmutableList(),
                 )
             }
@@ -154,20 +151,4 @@ class CountryRepository(
         const val MAX_ATTEMPTS = 5
         const val BACKOFF_BASE_MS = 300L
     }
-}
-
-/**
- * Convert an ISO-3166-1 alpha-2 country code ("UA") into its regional-indicator flag
- * emoji ("🇺🇦"). Each letter maps to U+1F1E6 + (letter - 'A'); two of them rendered side
- * by side become the flag glyph on every modern Android. No image assets needed.
- */
-internal fun isoToFlagEmoji(iso: String): String {
-    if (iso.length != 2) return ""
-    val a = iso[0].uppercaseChar()
-    val b = iso[1].uppercaseChar()
-    if (a !in 'A'..'Z' || b !in 'A'..'Z') return ""
-    val base = 0x1F1E6
-    val first = base + (a - 'A')
-    val second = base + (b - 'A')
-    return String(Character.toChars(first)) + String(Character.toChars(second))
 }

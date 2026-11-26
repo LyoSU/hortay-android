@@ -41,6 +41,34 @@ class TimelineUiStateBuilderTest {
     }
 
     @Test
+    fun `Loading when items empty and first content still pending`() {
+        // First sign-in: the session-start sync hasn't delivered a post yet and no
+        // pull-to-refresh is running. Must not read as "no subscriptions".
+        val s = buildTimelineUiState(
+            items = persistentListOf(),
+            cursorsLanded = true,
+            frozenCursors = EmptyReadCursors,
+            feedOrder = FeedOrder.Newest,
+            refreshing = false,
+            contentPending = true,
+        )
+        assertTrue(s is TimelineUiState.Loading)
+    }
+
+    @Test
+    fun `pending content does not hold back items that already arrived`() {
+        val s = buildTimelineUiState(
+            items = persistentListOf(item(1L)),
+            cursorsLanded = true,
+            frozenCursors = EmptyReadCursors,
+            feedOrder = FeedOrder.Newest,
+            refreshing = false,
+            contentPending = true,
+        )
+        assertTrue(s is TimelineUiState.Ready)
+    }
+
+    @Test
     fun `Loading in reverse feed when cursors not landed`() {
         // Critical: rendering reverse-feed items at index 0 (= oldest post) before
         // cursors land was the source of "starts on a random ancient post" symptom.

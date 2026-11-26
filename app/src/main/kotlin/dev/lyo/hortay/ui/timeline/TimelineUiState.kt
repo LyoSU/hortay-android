@@ -20,13 +20,16 @@ import kotlinx.collections.immutable.PersistentList
  * in one frame.
  *
  * Three states:
- *   • [Loading] — refresh in flight with empty items, OR reverse-feed items
- *     present but cursors not yet landed. UI renders a [SkeletonFeed].
+ *   • [Loading] — refresh in flight with empty items, OR the source's first
+ *     content is still on its way with empty items (see [buildTimelineUiState]'s
+ *     `contentPending`), OR reverse-feed items present but cursors not yet
+ *     landed. UI renders a [SkeletonFeed].
  *   • [Ready]   — items non-empty, [initialIndex] computed against
  *     [frozenCursors]. The LazyColumn mounts with this initialIndex. Subsequent
  *     emissions update [items] but the caller treats [initialIndex] as
  *     one-shot — it's only consumed at LazyListState construction time.
- *   • [Empty]   — refresh finished, zero items. Render an empty-state hero.
+ *   • [Empty]   — refresh finished, nothing pending, zero items. Render an
+ *     empty-state hero.
  */
 @Immutable
 sealed interface TimelineUiState {
@@ -57,6 +60,14 @@ sealed interface TimelineUiState {
  * index 0: post data is always descending (newest = index 0), and the
  * LazyColumn uses reverseLayout=true so index 0 appears at the bottom of
  * the viewport — the "you're caught up, here's the latest" landing.
+ *
+ * [contentPending]: the source is still delivering its first content — TDLib mode's
+ * session-start chat-list sync, or a guest channel's first fetch right after it was
+ * added. An empty list then means "not here yet", not "nothing to read", so it maps
+ * to Loading. Without it a fresh sign-in painted the "subscribe to channels" hero
+ * (with its Open Telegram button) for the seconds before the first post arrived:
+ * `refreshing` only covers pull-to-refresh, never the cold-start sync. The caller
+ * caps how long it reports pending so an offline sync can't hold the skeleton forever.
  */
 fun buildTimelineUiState(
     items: PersistentList<FeedItem>,
@@ -66,9 +77,10 @@ fun buildTimelineUiState(
     refreshing: Boolean,
     minUnreadDate: Long = 0L,
     annotations: Map<String, FeedAnnotation> = emptyMap(),
+    contentPending: Boolean = false,
 ): TimelineUiState {
     if (items.isEmpty()) {
-        return if (refreshing) TimelineUiState.Loading else TimelineUiState.Empty
+        return if (refreshing || contentPending) TimelineUiState.Loading else TimelineUiState.Empty
     }
     if (feedOrder == FeedOrder.OldestUnreadFirst && !cursorsLanded) {
         return TimelineUiState.Loading

@@ -3,7 +3,7 @@
 
     <!-- صفحه ورود -->
     <string name="auth_phone_label">شماره تلفن</string>
-    <string name="auth_phone_helper">شماره را با کد کشور وارد کنید. Telegram یک کد تأیید ارسال می‌کند</string>
+    <string name="auth_phone_helper">ورود مستقیم از طریق Telegram انجام می‌شود، بدون سرور ما. کد در برنامه Telegram می‌آید، نه با پیامک.</string>
     <string name="auth_password_label">رمز عبور تأیید دو مرحله‌ای</string>
     <string name="auth_password_hint">راهنما: %1$s</string>
     <string name="auth_password_helper">همان رمزی که در Telegram رسمی برای تأیید دو مرحله‌ای تنظیم کرده‌اید</string>
@@ -13,8 +13,16 @@
     <string name="auth_password_recovery_back">وارد کردن رمز عبور</string>
     <string name="auth_password_recovery_unavailable">ایمیل بازیابی تنظیم نشده. تأیید دو مرحله‌ای فقط از Telegram رسمی روی دستگاه دیگری قابل بازنشانی است</string>
     <string name="auth_send_code">ارسال کد</string>
+    <string name="auth_sign_in_telegram">ورود با Telegram</string>
+    <string name="auth_title_phone">شماره شما</string>
     <string name="auth_continue">ادامه</string>
-    <string name="auth_continue_without_login">بدون ورود: خواندن کانال‌های عمومی</string>
+    <string name="auth_continue_without_login">خواندن بدون حساب</string>
+    <string name="auth_trust_privacy_link">سیاست حریم خصوصی</string>
+    <string name="auth_trust_source_link">متن‌باز</string>
+    <string name="auth_code_share_note">هشدار Telegram درباره ندادن کد، مربوط به افراد دیگر است. با وارد کردن آن در اینجا وارد Hortay می‌شوید.</string>
+    <string name="auth_title_init_failure">شروع ورود ممکن نشد</string>
+    <string name="auth_subtitle_init_failure">مشکل از برنامه است، نه از حساب Telegram شما</string>
+    <string name="auth_err_unreachable">اتصال به Telegram ممکن نشد. اتصال را بررسی کنید یا از بالای صفحه یک پروکسی تنظیم کنید</string>
 
     <!-- حالت وب (ناشناس / مهمان) -->
     <string name="web_feed_title">فید</string>
@@ -95,10 +103,10 @@
     <string name="auth_title_wait_password">رمز عبور را وارد کنید</string>
     <string name="auth_title_error">این مرحله را در Telegram کامل کنید</string>
     <string name="auth_subtitle_wait_code">کد ارسال شد. بررسی کنید: %1$s</string>
-    <string name="auth_code_hint_telegram">برنامه‌های شخص ثالث کد را با پیامک دریافت نمی‌کنند. کد در تلگرام روی دستگاه دیگری که در آن وارد شده‌اید می‌آید.</string>
+    <string name="auth_code_hint_telegram">آن را در برنامه Telegram روی همین گوشی یا دستگاه دیگری پیدا کنید. برنامه‌های شخص ثالث کد را با پیامک دریافت نمی‌کنند.</string>
     <string name="auth_subtitle_password_no_hint">حساب با تأیید دو مرحله‌ای محافظت می‌شود</string>
     <string name="auth_subtitle_password_with_hint">حساب با تأیید دو مرحله‌ای محافظت می‌شود. رمز عبور را وارد کنید</string>
-    <string name="auth_subtitle_default">کانال‌های Telegram را به‌صورت فید بخوانید — بدون چت و اعلان</string>
+    <string name="auth_subtitle_default">همه کانال‌های شما در یک فید</string>
     <string name="auth_country_label">کشور</string>
     <string name="auth_country_loading">در حال بارگذاری…</string>
     <string name="auth_phone_placeholder">شماره تلفن</string>
@@ -115,7 +123,7 @@
     <string name="country_other">کشور دیگر</string>
 
     <!-- کانال‌های ارسال کد -->
-    <string name="auth_channel_telegram_message">Telegram روی دستگاه دیگر</string>
+    <string name="auth_channel_telegram_message">برنامه Telegram</string>
     <string name="auth_channel_sms_with_phone">SMS به %1$s</string>
     <string name="auth_channel_sms">SMS</string>
     <string name="auth_channel_sms_word">SMS با یک کلمه</string>
@@ -876,9 +884,11 @@
     <string name="onboarding_got_it">متوجه شدم</string>
     <string name="onboarding_feed_order_title">دوست داری چطور بخوانی؟</string>
     <string name="onboarding_feed_order_newest_desc">مثل فید خبری</string>
-    <string name="onboarding_feed_order_oldest_desc">مثل چت — از همان جایی که ماندی ادامه می‌دهی</string>
+    <string name="onboarding_feed_order_oldest_desc">مثل چت</string>
+    <string name="onboarding_feed_order_newest_hint">اول تازه‌ترین‌ها، قدیمی‌ترها پایین‌تر</string>
+    <string name="onboarding_feed_order_oldest_hint">از اولین پست خوانده‌نشده باز می‌شود</string>
     <string name="onboarding_feed_order_confirm">ادامه</string>
-    <string name="onboarding_feed_order_footer">می‌توانی بعداً آن را در %1$s ← %2$s تغییر دهی.</string>
+    <string name="onboarding_feed_order_footer">می‌توانی بعداً آن را در %1$s ← %2$s تغییر دهی</string>
     <string name="settings_section_reading">مطالعه</string>
     <string name="settings_theme_mode_system">سیستم</string>
     <string name="settings_theme_mode_light">روشن</string>

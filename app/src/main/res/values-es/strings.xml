@@ -3,7 +3,7 @@
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Número de teléfono</string>
-    <string name="auth_phone_helper">Número con código de país. Telegram enviará un código de confirmación</string>
+    <string name="auth_phone_helper">Inicias sesión directamente con Telegram, sin ningún servidor nuestro. El código llega a la app de Telegram, no por SMS.</string>
     <string name="auth_password_label">Contraseña de verificación en dos pasos</string>
     <string name="auth_password_hint">Pista: %1$s</string>
     <string name="auth_password_helper">La misma que configuraste en Telegram oficial en Verificación en dos pasos</string>
@@ -13,8 +13,16 @@
     <string name="auth_password_recovery_back">Ingresar contraseña</string>
     <string name="auth_password_recovery_unavailable">No hay correo de recuperación configurado. La verificación en dos pasos solo puede restablecerse desde Telegram oficial en otro dispositivo</string>
     <string name="auth_send_code">Enviar código</string>
+    <string name="auth_sign_in_telegram">Entrar con Telegram</string>
+    <string name="auth_title_phone">Tu número</string>
     <string name="auth_continue">Continuar</string>
-    <string name="auth_continue_without_login">Sin cuenta: leer canales públicos</string>
+    <string name="auth_continue_without_login">Leer sin cuenta</string>
+    <string name="auth_trust_privacy_link">Política de privacidad</string>
+    <string name="auth_trust_source_link">Código abierto</string>
+    <string name="auth_code_share_note">La advertencia de Telegram de no compartir el código se refiere a otras personas. Al introducirlo aquí inicias sesión en Hortay.</string>
+    <string name="auth_title_init_failure">No se pudo iniciar el acceso</string>
+    <string name="auth_subtitle_init_failure">El fallo está en la app, no en tu cuenta de Telegram</string>
+    <string name="auth_err_unreachable">No se pudo conectar con Telegram. Revisa tu conexión o configura un proxy arriba de la pantalla</string>
 
     <!-- Web (anonymous / guest) mode -->
     <string name="web_feed_title">Inicio</string>
@@ -97,10 +105,10 @@
     <string name="auth_title_wait_password">Ingresa tu contraseña</string>
     <string name="auth_title_error">Completa este paso en Telegram</string>
     <string name="auth_subtitle_wait_code">Código enviado. Revisa: %1$s</string>
-    <string name="auth_code_hint_telegram">Las apps de terceros no reciben el código por SMS. Llega a Telegram en otro dispositivo donde ya tienes la sesión iniciada.</string>
+    <string name="auth_code_hint_telegram">Búscalo en la app de Telegram, en este teléfono o en otro dispositivo. Las apps de terceros no reciben el código por SMS.</string>
     <string name="auth_subtitle_password_no_hint">La cuenta está protegida con verificación en dos pasos</string>
     <string name="auth_subtitle_password_with_hint">La cuenta está protegida con verificación en dos pasos. Ingresa tu contraseña</string>
-    <string name="auth_subtitle_default">Lee canales de Telegram como un feed — sin chats ni notificaciones</string>
+    <string name="auth_subtitle_default">Todos tus canales en un solo feed</string>
     <string name="auth_country_label">País</string>
     <string name="auth_country_loading">Cargando…</string>
     <string name="auth_phone_placeholder">Número de teléfono</string>
@@ -117,7 +125,7 @@
     <string name="country_other">Otro país</string>
 
     <!-- Auth code channels -->
-    <string name="auth_channel_telegram_message">Telegram en otro dispositivo</string>
+    <string name="auth_channel_telegram_message">la app de Telegram</string>
     <string name="auth_channel_sms_with_phone">SMS a %1$s</string>
     <string name="auth_channel_sms">SMS</string>
     <string name="auth_channel_sms_word">SMS con una palabra</string>
@@ -901,9 +909,11 @@
     <string name="onboarding_got_it">Entendido</string>
     <string name="onboarding_feed_order_title">¿Cómo prefieres leer?</string>
     <string name="onboarding_feed_order_newest_desc">Como un feed de noticias</string>
-    <string name="onboarding_feed_order_oldest_desc">Como un chat: continúas donde lo dejaste</string>
+    <string name="onboarding_feed_order_oldest_desc">Como un chat</string>
+    <string name="onboarding_feed_order_newest_hint">Primero lo más reciente, lo anterior debajo</string>
+    <string name="onboarding_feed_order_oldest_hint">Se abre en la primera publicación sin leer</string>
     <string name="onboarding_feed_order_confirm">Continuar</string>
-    <string name="onboarding_feed_order_footer">Puedes cambiarlo más tarde en %1$s → %2$s.</string>
+    <string name="onboarding_feed_order_footer">Puedes cambiarlo más tarde en %1$s → %2$s</string>
     <string name="settings_section_reading">Lectura</string>
     <string name="settings_theme_mode_system">Sistema</string>
     <string name="settings_theme_mode_light">Claro</string>

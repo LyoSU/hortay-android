@@ -3,7 +3,7 @@
 
     <!-- شاشة تسجيل الدخول -->
     <string name="auth_phone_label">رقم الهاتف</string>
-    <string name="auth_phone_helper">أدخل الرقم مع رمز البلد. سيرسل Telegram رمز التأكيد</string>
+    <string name="auth_phone_helper">يتم تسجيل الدخول مباشرة عبر Telegram، دون أي خادم لنا. يصل الرمز إلى تطبيق Telegram وليس عبر الرسائل القصيرة.</string>
     <string name="auth_password_label">كلمة مرور التحقق بخطوتين</string>
     <string name="auth_password_hint">تلميح: %1$s</string>
     <string name="auth_password_helper">هي نفس كلمة المرور التي ضبطتها في Telegram الرسمي ضمن التحقق بخطوتين</string>
@@ -13,8 +13,16 @@
     <string name="auth_password_recovery_back">أدخل كلمة المرور بدلاً من ذلك</string>
     <string name="auth_password_recovery_unavailable">لم يُضَف بريد إلكتروني للاسترداد. لا يمكن إعادة ضبط التحقق بخطوتين إلا من Telegram الرسمي على جهاز آخر</string>
     <string name="auth_send_code">إرسال الرمز</string>
+    <string name="auth_sign_in_telegram">تسجيل الدخول عبر Telegram</string>
+    <string name="auth_title_phone">رقمك</string>
     <string name="auth_continue">متابعة</string>
-    <string name="auth_continue_without_login">تصفح القنوات العامة بدون تسجيل دخول</string>
+    <string name="auth_continue_without_login">القراءة بدون حساب</string>
+    <string name="auth_trust_privacy_link">سياسة الخصوصية</string>
+    <string name="auth_trust_source_link">مفتوح المصدر</string>
+    <string name="auth_code_share_note">تحذير Telegram من مشاركة الرمز يخص الأشخاص الآخرين. إدخاله هنا يسجّل دخولك إلى Hortay.</string>
+    <string name="auth_title_init_failure">تعذّر بدء تسجيل الدخول</string>
+    <string name="auth_subtitle_init_failure">المشكلة في التطبيق وليست في حسابك على Telegram</string>
+    <string name="auth_err_unreachable">تعذّر الوصول إلى Telegram. تحقق من الاتصال أو اضبط وكيلًا من أعلى الشاشة</string>
 
     <!-- وضع الويب (مجهول / ضيف) -->
     <string name="web_feed_title">المنشورات</string>
@@ -99,10 +107,10 @@
     <string name="auth_title_wait_password">أدخل كلمة المرور</string>
     <string name="auth_title_error">أكمل هذه الخطوة في Telegram</string>
     <string name="auth_subtitle_wait_code">أُرسل الرمز. تحقق من: %1$s</string>
-    <string name="auth_code_hint_telegram">لا تتلقى التطبيقات الخارجية الرمز عبر الرسائل القصيرة. يصل الرمز إلى Telegram على جهاز آخر سجّلت الدخول فيه.</string>
+    <string name="auth_code_hint_telegram">ابحث عنه في تطبيق Telegram على هذا الهاتف أو على جهاز آخر. لا تتلقى التطبيقات الخارجية الرمز عبر الرسائل القصيرة.</string>
     <string name="auth_subtitle_password_no_hint">الحساب محمي بالتحقق بخطوتين</string>
     <string name="auth_subtitle_password_with_hint">الحساب محمي بالتحقق بخطوتين. أدخل كلمة المرور</string>
-    <string name="auth_subtitle_default">اقرأ قنوات Telegram كخلاصة — بدون دردشات أو إشعارات</string>
+    <string name="auth_subtitle_default">كل قنواتك في خلاصة واحدة</string>
     <string name="auth_country_label">البلد</string>
     <string name="auth_country_loading">جارٍ التحميل…</string>
     <string name="auth_phone_placeholder">رقم الهاتف</string>
@@ -119,7 +127,7 @@
     <string name="country_other">بلد آخر</string>
 
     <!-- قنوات إرسال رمز التحقق -->
-    <string name="auth_channel_telegram_message">Telegram على جهاز آخر</string>
+    <string name="auth_channel_telegram_message">تطبيق Telegram</string>
     <string name="auth_channel_sms_with_phone">رسالة قصيرة إلى %1$s</string>
     <string name="auth_channel_sms">رسالة قصيرة</string>
     <string name="auth_channel_sms_word">رسالة قصيرة بكلمة</string>
@@ -966,9 +974,11 @@
     <string name="onboarding_got_it">فهمت</string>
     <string name="onboarding_feed_order_title">كيف تحب أن تقرأ؟</string>
     <string name="onboarding_feed_order_newest_desc">مثل موجز الأخبار</string>
-    <string name="onboarding_feed_order_oldest_desc">مثل المحادثة — تتابع من حيث توقفت</string>
+    <string name="onboarding_feed_order_oldest_desc">مثل المحادثة</string>
+    <string name="onboarding_feed_order_newest_hint">الأحدث أولًا، والأقدم في الأسفل</string>
+    <string name="onboarding_feed_order_oldest_hint">يفتح على أول منشور غير مقروء</string>
     <string name="onboarding_feed_order_confirm">متابعة</string>
-    <string name="onboarding_feed_order_footer">يمكنك تغيير ذلك لاحقًا في %1$s ← %2$s.</string>
+    <string name="onboarding_feed_order_footer">يمكنك تغيير ذلك لاحقًا في %1$s ← %2$s</string>
     <string name="settings_section_reading">القراءة</string>
     <string name="settings_theme_mode_system">النظام</string>
     <string name="settings_theme_mode_light">فاتح</string>

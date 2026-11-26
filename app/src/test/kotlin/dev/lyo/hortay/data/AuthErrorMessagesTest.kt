@@ -34,4 +34,17 @@ class AuthErrorMessagesTest {
             friendlyAuthErrorMessage(FakeStrings, err),
         )
     }
+
+    @Test
+    fun `a send timeout maps to the connection message, never the request class name`() {
+        // The exact shape TdClient.send throws on its timeout.
+        val err = TdClient.TdException(
+            TdClient.SEND_TIMEOUT_CODE,
+            "SEND_TIMEOUT SetAuthenticationPhoneNumber",
+        )
+        assertEquals(
+            FakeStrings.getString(R.string.auth_err_unreachable),
+            friendlyAuthErrorMessage(FakeStrings, err),
+        )
+    }
 }

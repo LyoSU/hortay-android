@@ -11,14 +11,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.intl.Locale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.ui.channels.AddChannelTdSheet
 import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
@@ -99,6 +104,10 @@ internal fun TabContentSwitcher(
                     tabStateHolder.SaveableStateProvider(key = "feed-channel:__all__") {
                         val mutedSavedKeys by graph.postsRepository.mutedSavedKeys
                             .collectAsStateWithLifecycle()
+                        // The empty feed's primary action: the same in-app add-channel sheet
+                        // the Channels tab opens, so a first run with no channels never has
+                        // to leave the app to find something to read.
+                        var addSheetOpen by remember { mutableStateOf(false) }
                         TimelineScreen(
                             feed = graph.postsRepository,
                             tdlibRepo = graph.postsRepository,
@@ -141,7 +150,22 @@ internal fun TabContentSwitcher(
                             archiveRepository = graph.archiveRepository,
                             archiveMediaResolver = graph.archivedMediaResolver,
                             onSearchClick = onSearchClick,
+                            onAddChannel = { addSheetOpen = true },
                         )
+                        if (addSheetOpen) {
+                            AddChannelTdSheet(
+                                suggestionsRepo = graph.channelSuggestions,
+                                discovery = graph.channelDiscovery,
+                                actions = graph.channelActions,
+                                recommended = graph.recommendedChannels,
+                                locale = Locale.current.language.lowercase(),
+                                onDismiss = { addSheetOpen = false },
+                                onOpenChannel = { chatId ->
+                                    addSheetOpen = false
+                                    onPushChannel(chatId, null)
+                                },
+                            )
+                        }
                     }
                 }
                 NavTab.Channels -> ChannelsScreen(

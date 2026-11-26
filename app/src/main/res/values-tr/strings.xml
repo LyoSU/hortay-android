@@ -3,7 +3,7 @@
 
     <!-- Kimlik doğrulama ekranı -->
     <string name="auth_phone_label">Telefon numarası</string>
-    <string name="auth_phone_helper">Ülke koduyla birlikte numara gir. Telegram bir doğrulama kodu gönderecek</string>
+    <string name="auth_phone_helper">Giriş doğrudan Telegram üzerinden yapılır, arada bizim sunucumuz yok. Kod SMS ile değil, Telegram uygulamasına gelir.</string>
     <string name="auth_password_label">İki adımlı doğrulama şifresi</string>
     <string name="auth_password_hint">İpucu: %1$s</string>
     <string name="auth_password_helper">Resmi Telegram uygulamasında İki Adımlı Doğrulama için ayarladığın şifre</string>
@@ -13,8 +13,16 @@
     <string name="auth_password_recovery_back">Şifre gir</string>
     <string name="auth_password_recovery_unavailable">Kurtarma e-postası eklenmemiş. İki adımlı doğrulama yalnızca başka bir cihazda resmi Telegram üzerinden sıfırlanabilir</string>
     <string name="auth_send_code">Kod gönder</string>
+    <string name="auth_sign_in_telegram">Telegram ile giriş yap</string>
+    <string name="auth_title_phone">Numaran</string>
     <string name="auth_continue">Devam et</string>
-    <string name="auth_continue_without_login">Giriş yapmadan: herkese açık kanalları oku</string>
+    <string name="auth_continue_without_login">Hesapsız oku</string>
+    <string name="auth_trust_privacy_link">Gizlilik politikası</string>
+    <string name="auth_trust_source_link">Açık kaynak</string>
+    <string name="auth_code_share_note">Telegram\'ın kodu paylaşmama uyarısı başka kişiler içindir. Kodu buraya girmek seni Hortay\'a giriş yaptırır.</string>
+    <string name="auth_title_init_failure">Giriş başlatılamadı</string>
+    <string name="auth_subtitle_init_failure">Sorun Telegram hesabında değil, uygulamada</string>
+    <string name="auth_err_unreachable">Telegram\'a ulaşılamadı. Bağlantını kontrol et ya da ekranın üstünden bir proxy ayarla</string>
 
     <!-- Web (anonim / misafir) modu -->
     <string name="web_feed_title">Akış</string>
@@ -97,10 +105,10 @@
     <string name="auth_title_wait_password">Şifreni gir</string>
     <string name="auth_title_error">Bu adımı Telegram\'da tamamla</string>
     <string name="auth_subtitle_wait_code">Kod gönderildi. Kontrol et: %1$s</string>
-    <string name="auth_code_hint_telegram">Üçüncü taraf uygulamalar kodu SMS ile alamaz. Kod, oturum açtığın başka bir cihazdaki Telegram\'a gelir.</string>
+    <string name="auth_code_hint_telegram">Kodu bu telefondaki ya da başka bir cihazdaki Telegram uygulamasında ara. Üçüncü taraf uygulamalar kodu SMS ile alamaz.</string>
     <string name="auth_subtitle_password_no_hint">Hesap iki adımlı doğrulamayla korunuyor</string>
     <string name="auth_subtitle_password_with_hint">Hesap iki adımlı doğrulamayla korunuyor. Şifreni gir</string>
-    <string name="auth_subtitle_default">Telegram kanallarını akış olarak oku — sohbet ve bildirim olmadan</string>
+    <string name="auth_subtitle_default">Tüm kanalların tek bir akışta</string>
     <string name="auth_country_label">Ülke</string>
     <string name="auth_country_loading">Yükleniyor…</string>
     <string name="auth_phone_placeholder">Telefon numarası</string>
@@ -117,7 +125,7 @@
     <string name="country_other">Diğer ülke</string>
 
     <!-- Doğrulama kodu kanalları -->
-    <string name="auth_channel_telegram_message">Başka cihazdaki Telegram</string>
+    <string name="auth_channel_telegram_message">Telegram uygulaması</string>
     <string name="auth_channel_sms_with_phone">%1$s numarasına SMS</string>
     <string name="auth_channel_sms">SMS</string>
     <string name="auth_channel_sms_word">Kelimeli SMS</string>
@@ -877,9 +885,11 @@
     <string name="onboarding_got_it">Anladım</string>
     <string name="onboarding_feed_order_title">Nasıl okumak istersin?</string>
     <string name="onboarding_feed_order_newest_desc">Haber akışı gibi</string>
-    <string name="onboarding_feed_order_oldest_desc">Sohbet gibi — kaldığın yerden devam edersin</string>
+    <string name="onboarding_feed_order_oldest_desc">Sohbet gibi</string>
+    <string name="onboarding_feed_order_newest_hint">Önce en yeniler, eskiler aşağıda</string>
+    <string name="onboarding_feed_order_oldest_hint">İlk okunmamış gönderiden açılır</string>
     <string name="onboarding_feed_order_confirm">Devam</string>
-    <string name="onboarding_feed_order_footer">Bunu daha sonra %1$s → %2$s bölümünden değiştirebilirsin.</string>
+    <string name="onboarding_feed_order_footer">Bunu daha sonra %1$s → %2$s bölümünden değiştirebilirsin</string>
     <string name="settings_section_reading">Okuma</string>
     <string name="settings_theme_mode_system">Sistem</string>
     <string name="settings_theme_mode_light">Açık</string>

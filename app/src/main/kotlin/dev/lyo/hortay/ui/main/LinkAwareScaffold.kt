@@ -11,11 +11,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.ui.onboarding.FeedOrderOnboardingSheet
 import dev.lyo.hortay.ui.text.ExternalLinkConfirmDialog
 import dev.lyo.hortay.ui.text.LocalHashtagTap
 import dev.lyo.hortay.ui.text.LocalLinkConfirm
 import dev.lyo.hortay.ui.text.parseHashtagWithScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -43,7 +46,12 @@ import kotlinx.coroutines.launch
  * two sites).
  */
 @Composable
-fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
+fun LinkAwareScaffold(
+    graph: AppGraph,
+    /** The scaffold's own feed; the first-run feed-order question waits for its first post. */
+    feed: FeedSource,
+    content: @Composable () -> Unit,
+) {
     val systemUriHandler = LocalUriHandler.current
     val appContext = LocalContext.current.applicationContext
     val hortayUriHandler = remember(graph, systemUriHandler, appContext) {
@@ -116,7 +124,7 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
                 onDismiss = { graph.linkDialogs.dismissMaskedLink() },
             )
         }
-        FeedOrderOnboardingHost(graph)
+        FeedOrderOnboardingHost(graph, feed)
     }
 }
 
@@ -124,12 +132,21 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
  * Hosts the one-time feed-order question. This composable lives inside [LinkAwareScaffold],
  * which only wraps the two post-auth scaffolds, so it never shows over the sign-in screen.
  * Any dismissal marks the flag, so the question is never asked twice.
+ *
+ * Asked only once [feed] has at least one post: over an empty feed (a guest with no
+ * channels yet, a sign-in whose first sync is still running) "newest on top or at the
+ * bottom" has nothing to point at, and the sheet only stood between the user and the
+ * first post.
  */
 @Composable
-private fun FeedOrderOnboardingHost(graph: AppGraph) {
+private fun FeedOrderOnboardingHost(graph: AppGraph, feed: FeedSource) {
     // Default true while the flag loads so the sheet never flashes for users who answered.
     val chosen by graph.onboardingStore.feedOrderChosen.collectAsStateWithLifecycle(initialValue = true)
     if (chosen) return
+    val hasPosts by remember(feed) {
+        feed.subscribedPosts.map { it.isNotEmpty() }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+    if (!hasPosts) return
     val current by graph.settingsStore.feedOrder.collectAsStateWithLifecycle(
         initialValue = FeedOrder.OldestUnreadFirst,
     )

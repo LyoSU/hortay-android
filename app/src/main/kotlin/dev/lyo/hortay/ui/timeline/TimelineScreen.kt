@@ -287,6 +287,11 @@ fun TimelineScreen(
      * channel instead. TDLib mode leaves the default and keeps the Telegram CTA.
      */
     guestMode: Boolean = false,
+    /**
+     * Opens the in-app add-channel sheet. When set, the no-subscriptions empty state
+     * leads with it and keeps "Open Telegram" as a secondary action. Signed-in feed only.
+     */
+    onAddChannel: (() -> Unit)? = null,
 ) {
     // Holders read by long-lived LaunchedEffects (home-tap, scope-switch) so
     // their captures stay live across recomposition without restarting the
@@ -794,6 +799,20 @@ fun TimelineScreen(
     // (the latched initialIndex would otherwise be preserved across the flip and a
     // seed-bump LaunchedEffect could no-op when old/new boundaries collide).
     val persistentFeedItems = remember(feedItems) { feedItems.toPersistentList() }
+    // Empty-list gate for the first content (see [buildTimelineUiState] `contentPending`):
+    // the session-start sync in TDLib mode, a just-added channel's first fetch in guest
+    // mode. The sync half is capped by [EMPTY_FEED_SYNC_MAX_WAIT_MS] so an offline first
+    // launch falls through to the empty state instead of a skeleton that never resolves.
+    // Saved is exempt — an empty bookmark list is never "still loading".
+    val syncDone by vm.initialSyncDone.collectAsStateWithLifecycle()
+    val firstFetchPending by feed.contentFetchPending.collectAsStateWithLifecycle()
+    var syncWaitExpired by remember(feed) { mutableStateOf(false) }
+    LaunchedEffect(feed) {
+        kotlinx.coroutines.delay(EMPTY_FEED_SYNC_MAX_WAIT_MS)
+        syncWaitExpired = true
+    }
+    val contentPending = !showOnlyBookmarked &&
+        ((!syncDone && !syncWaitExpired) || firstFetchPending)
     // Scene-level identity. Includes [scopeKey] so a scope swap (Archive ↔
     // All ↔ Folder) re-keys the latcher, the VM pinned-anchor map, AND the
     // LazyListState saver bundle in one shot. The LazyColumn then mounts
@@ -821,6 +840,7 @@ fun TimelineScreen(
         refreshing = refreshing,
         minUnreadDate = recencyCutoffMs,
         annotations = clustered.annotations,
+        contentPending = contentPending,
     )
     val latchedUiState = rememberLatchedTimelineUiState(
         candidate = candidateUiState,
@@ -1013,7 +1033,6 @@ fun TimelineScreen(
     // which [scope_filter] already renders as All without discarding the saved selection.
     // Also only after the session's initial sync: mid cold start the slice is partial, so a
     // folder whose channels haven't landed yet would look hidden and lose the selection.
-    val syncDone by vm.initialSyncDone.collectAsStateWithLifecycle()
     LaunchedEffect(selectedFolderId, headerTabs, foldersList, syncDone) {
         if (!syncDone) return@LaunchedEffect
         val selected = selectedFolderId ?: return@LaunchedEffect
@@ -1818,7 +1837,7 @@ fun TimelineScreen(
                                     filteredPosts.isNotEmpty() -> EmptyKind.CaughtUp
                                 else -> EmptyKind.Default
                             }
-                            EmptyState(emptyKind, guestMode = guestMode)
+                            EmptyState(emptyKind, guestMode = guestMode, onAddChannel = onAddChannel)
                         }
                         is TimelineUiState.Ready -> {
                         // Scroll gate: while the LazyColumn is mid-scroll (drag, fling,
@@ -2442,6 +2461,14 @@ private const val COLD_START_CURSOR_GRACE_MS = 800L
  * falls through to the snapshot after it rather than sitting on a skeleton.
  */
 private const val COLD_START_SYNC_MAX_WAIT_MS = 3_000L
+
+/**
+ * Upper bound on how long an empty feed shows the skeleton instead of the empty state
+ * while [dev.lyo.hortay.data.FeedSource.initialSyncDone] is still false. A first sign-in
+ * normally delivers its first post well inside this; an offline launch whose sync never
+ * completes then shows the real empty state rather than an endless skeleton.
+ */
+private const val EMPTY_FEED_SYNC_MAX_WAIT_MS = 15_000L
 
 /**
  * Recency floor for cold-start landing in [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst].
