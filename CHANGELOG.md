@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-## [0.13.0] — 2026-11-20
+## [0.13.0] — 2026-11-26
 
 ### Added
 - A channel's info card has a Media button that opens a grid of the channel's photos and videos — tap one to view it fullscreen.
@@ -45,6 +45,8 @@
 - The Channels tab shows a one-time tip about the sideways swipe, and a hidden channel has a visible button to show it again.
 - Reactions are drawn with Telegram's own emoji artwork, and Settings → Appearance can switch them back to your phone's emoji.
 - Picking a reaction plays Telegram's animation for it, and the reactions in the long-press menu animate in as it opens.
+- The app has a new icon: three cards fanned out on indigo.
+- An empty feed has an “Add channel” button that opens channel suggestions right in the app.
 
 ### Changed
 - The post archive lists one entry per post with its channel, time and a preview, grouped by day, with counts on the Deleted and Edited filters.
@@ -100,6 +102,10 @@
 - Post text breaks into lines more evenly.
 - Settings rows sit in grouped blocks, each with a round icon tile that lights up when its switch is on.
 - In channel suggestions and search results, Subscribe is a compact round button, so channel names and descriptions get the full row width.
+- Sign-in starts with a welcome screen offering “Sign in with Telegram” or “Read without an account”, and asks for your number on the next step.
+- The sign-in screens say up front that the code arrives in the Telegram app, not by SMS, and the code screen has an Open Telegram button.
+- The first-run feed-order question shows a small sketch of each option and waits until the feed has its first post.
+- Country names in the sign-in country list follow your app language.
 
 ### Fixed
 - Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.
@@ -262,6 +268,8 @@
 - Sharing a photo or video no longer fails on phones that hide the list of installed apps.
 - Channels that forbid saving their content no longer offer to save, share or copy their photos, videos and text — sharing a link to the post still works.
 - Share, Copy link and Open in Telegram no longer wait while Telegram temporarily rate-limits the app.
+- A fresh sign-in no longer flashes “subscribe to channels” while the first posts are still loading, and a guest-mode channel you just added shows a loading feed instead of an empty one.
+- A sign-in that fails to start says the problem is in the app instead of sending you to Telegram.
 
 ### Performance
 - Idle video players are released when the app goes to the background.
@@ -282,6 +290,7 @@
 - Beta builds run only for commits pushed to the main branch, and releases must come from main, pass the unit tests and pass a 16 KB page-size check.
 - App downloads no longer carry translations for languages the app doesn't ship.
 - The app is about 2 MB smaller on disk, and beta builds about 9 MB smaller.
+- Debug builds install next to the Play and beta builds under their own application id.
 
 ## [0.12.0] — 2026-07-16
 
