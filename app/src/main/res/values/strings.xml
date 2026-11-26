@@ -931,6 +931,10 @@
     <string name="onboarding_feed_order_oldest_hint">Opens at the first post you haven\'t read</string>
     <string name="onboarding_feed_order_confirm">Continue</string>
     <string name="onboarding_feed_order_footer">You can change this later in %1$s → %2$s</string>
+    <string name="rate_prompt_title">Enjoying Hortay?</string>
+    <string name="rate_prompt_body">A rating on Google Play helps other readers find the app.</string>
+    <string name="rate_prompt_rate">Rate on Google Play</string>
+    <string name="rate_prompt_later">Not now</string>
     <string name="settings_section_reading">Reading</string>
     <string name="settings_theme_mode_system">System</string>
     <string name="settings_theme_mode_light">Light</string>

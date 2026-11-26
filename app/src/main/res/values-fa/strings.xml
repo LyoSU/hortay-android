@@ -889,6 +889,10 @@
     <string name="onboarding_feed_order_oldest_hint">از اولین پست خوانده‌نشده باز می‌شود</string>
     <string name="onboarding_feed_order_confirm">ادامه</string>
     <string name="onboarding_feed_order_footer">می‌توانی بعداً آن را در %1$s ← %2$s تغییر دهی</string>
+    <string name="rate_prompt_title">از Hortay راضی هستی؟</string>
+    <string name="rate_prompt_body">امتیاز تو در Google Play به خوانندگان دیگر کمک می‌کند این برنامه را پیدا کنند.</string>
+    <string name="rate_prompt_rate">امتیاز در Google Play</string>
+    <string name="rate_prompt_later">الان نه</string>
     <string name="settings_section_reading">مطالعه</string>
     <string name="settings_theme_mode_system">سیستم</string>
     <string name="settings_theme_mode_light">روشن</string>

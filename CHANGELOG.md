@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- After a week of regular use, the app asks once whether you want to rate it on Google Play.
+
 ## [0.13.0] — 2026-11-26
 
 ### Added

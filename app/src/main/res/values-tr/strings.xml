@@ -890,6 +890,10 @@
     <string name="onboarding_feed_order_oldest_hint">İlk okunmamış gönderiden açılır</string>
     <string name="onboarding_feed_order_confirm">Devam</string>
     <string name="onboarding_feed_order_footer">Bunu daha sonra %1$s → %2$s bölümünden değiştirebilirsin</string>
+    <string name="rate_prompt_title">Hortay\'ı beğendin mi?</string>
+    <string name="rate_prompt_body">Google Play\'de vereceğin bir puan, diğer okurların uygulamayı bulmasına yardımcı olur.</string>
+    <string name="rate_prompt_rate">Google Play\'de puan ver</string>
+    <string name="rate_prompt_later">Şimdi değil</string>
     <string name="settings_section_reading">Okuma</string>
     <string name="settings_theme_mode_system">Sistem</string>
     <string name="settings_theme_mode_light">Açık</string>

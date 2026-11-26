@@ -979,6 +979,10 @@
     <string name="onboarding_feed_order_oldest_hint">يفتح على أول منشور غير مقروء</string>
     <string name="onboarding_feed_order_confirm">متابعة</string>
     <string name="onboarding_feed_order_footer">يمكنك تغيير ذلك لاحقًا في %1$s ← %2$s</string>
+    <string name="rate_prompt_title">هل يعجبك Hortay؟</string>
+    <string name="rate_prompt_body">يساعد تقييمك على Google Play القرّاء الآخرين في العثور على التطبيق.</string>
+    <string name="rate_prompt_rate">قيّم على Google Play</string>
+    <string name="rate_prompt_later">ليس الآن</string>
     <string name="settings_section_reading">القراءة</string>
     <string name="settings_theme_mode_system">النظام</string>
     <string name="settings_theme_mode_light">فاتح</string>

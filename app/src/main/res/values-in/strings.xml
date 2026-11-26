@@ -870,6 +870,10 @@
     <string name="onboarding_feed_order_oldest_hint">Dibuka di kiriman pertama yang belum dibaca</string>
     <string name="onboarding_feed_order_confirm">Lanjutkan</string>
     <string name="onboarding_feed_order_footer">Kamu bisa mengubahnya nanti di %1$s → %2$s</string>
+    <string name="rate_prompt_title">Suka Hortay?</string>
+    <string name="rate_prompt_body">Rating di Google Play membantu pembaca lain menemukan aplikasi ini.</string>
+    <string name="rate_prompt_rate">Beri rating di Google Play</string>
+    <string name="rate_prompt_later">Nanti saja</string>
     <string name="settings_section_reading">Membaca</string>
     <string name="settings_theme_mode_system">Sistem</string>
     <string name="settings_theme_mode_light">Terang</string>

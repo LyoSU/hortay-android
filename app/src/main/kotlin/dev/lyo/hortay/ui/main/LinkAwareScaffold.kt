@@ -3,8 +3,12 @@ package dev.lyo.hortay.ui.main
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -13,6 +17,8 @@ import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.ui.onboarding.FeedOrderOnboardingSheet
+import dev.lyo.hortay.ui.onboarding.RatePromptSheet
+import dev.lyo.hortay.ui.onboarding.openPlayStoreListing
 import dev.lyo.hortay.ui.text.ExternalLinkConfirmDialog
 import dev.lyo.hortay.ui.text.LocalHashtagTap
 import dev.lyo.hortay.ui.text.LocalLinkConfirm
@@ -125,7 +131,42 @@ fun LinkAwareScaffold(
             )
         }
         FeedOrderOnboardingHost(graph, feed)
+        RatePromptHost(graph, feed)
     }
+}
+
+/**
+ * Hosts the one-time rate-on-Google-Play sheet (eligibility: [dev.lyo.hortay.data.RatePromptPolicy]).
+ * Waits behind the feed-order question so two sheets never stack, and for a feed with posts.
+ *
+ * The shown flag is persisted the moment the sheet opens, so a process death while it is up
+ * still counts as asked. The flag flipping makes the store report "not eligible", so a
+ * saveable latch keeps the open sheet on screen, across rotation too, until it is answered.
+ */
+@Composable
+private fun RatePromptHost(graph: AppGraph, feed: FeedSource) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    // Both default to "don't ask" while DataStore loads, so the sheet never flashes.
+    val feedOrderChosen by graph.onboardingStore.feedOrderChosen.collectAsStateWithLifecycle(initialValue = false)
+    val eligible by graph.onboardingStore.ratePromptEligible.collectAsStateWithLifecycle(initialValue = false)
+    val hasPosts by remember(feed) {
+        feed.subscribedPosts.map { it.isNotEmpty() }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+    val shouldOpen = !open && eligible && feedOrderChosen && hasPosts
+    LaunchedEffect(shouldOpen) {
+        if (!shouldOpen) return@LaunchedEffect
+        open = true
+        graph.appScope.launch { graph.onboardingStore.setRatePromptShown() }
+    }
+    if (!open) return
+    val context = LocalContext.current
+    RatePromptSheet(
+        onRate = {
+            open = false
+            openPlayStoreListing(context)
+        },
+        onDismiss = { open = false },
+    )
 }
 
 /**

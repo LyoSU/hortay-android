@@ -914,6 +914,10 @@
     <string name="onboarding_feed_order_oldest_hint">Se abre en la primera publicación sin leer</string>
     <string name="onboarding_feed_order_confirm">Continuar</string>
     <string name="onboarding_feed_order_footer">Puedes cambiarlo más tarde en %1$s → %2$s</string>
+    <string name="rate_prompt_title">¿Te gusta Hortay?</string>
+    <string name="rate_prompt_body">Una valoración en Google Play ayuda a otros lectores a encontrar la app.</string>
+    <string name="rate_prompt_rate">Valorar en Google Play</string>
+    <string name="rate_prompt_later">Ahora no</string>
     <string name="settings_section_reading">Lectura</string>
     <string name="settings_theme_mode_system">Sistema</string>
     <string name="settings_theme_mode_light">Claro</string>

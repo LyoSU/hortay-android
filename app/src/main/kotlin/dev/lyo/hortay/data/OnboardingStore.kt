@@ -7,9 +7,14 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 
 /**
  * One-shot "has the user already been shown this?" flags for feature-discovery UI.
@@ -30,6 +35,9 @@ import kotlinx.coroutines.flow.map
  * install of this version that receives an update before ever reaching the feed (signed out
  * the whole time) skips the question — harmless, the order is still in Settings; a restore
  * onto a new device (firstInstall == lastUpdate) is asked once.
+ *
+ * The rate prompt's usage counters (first launch seen, distinct launch days) live here too:
+ * they describe this install, never leave the device, and survive logout like the flags.
  */
 class OnboardingStore(context: Context) {
 
@@ -58,6 +66,37 @@ class OnboardingStore(context: Context) {
 
     /** True once the split-button caption was shown. */
     val splitButtonHintSeen: Flow<Boolean> = flag(KEY_SPLIT_BUTTON_HINT_SEEN)
+
+    /** Whether the rate-on-Google-Play sheet may appear now. See [RatePromptPolicy]. */
+    val ratePromptEligible: Flow<Boolean> = dataStore.data.map { prefs ->
+        RatePromptPolicy.isEligible(
+            nowMs = System.currentTimeMillis(),
+            firstSeenMs = prefs[KEY_RATE_FIRST_SEEN_MS],
+            distinctDays = prefs[KEY_RATE_DAY_COUNT] ?: 0,
+            shown = prefs[KEY_RATE_PROMPT_SHOWN] ?: false,
+            installedFromPlay = installedFromPlay,
+        )
+    }.flowOn(Dispatchers.Default)
+
+    // The installer never changes while the process lives; one PackageManager call is enough.
+    private val installedFromPlay: Boolean by lazy { RatePromptPolicy.isInstalledFromPlay(appContext) }
+
+    /**
+     * Counts today as a launch day for the rate prompt and stamps the first launch the first
+     * time it runs. Called once per process start, off the main thread.
+     */
+    suspend fun recordLaunchDay(nowMs: Long = System.currentTimeMillis(), today: Long = LocalDate.now().toEpochDay()) {
+        dataStore.edit { prefs ->
+            if (prefs[KEY_RATE_FIRST_SEEN_MS] == null) prefs[KEY_RATE_FIRST_SEEN_MS] = nowMs
+            val last = prefs[KEY_RATE_LAST_DAY]
+            if (last != today) {
+                prefs[KEY_RATE_DAY_COUNT] = RatePromptPolicy.nextDayCount(prefs[KEY_RATE_DAY_COUNT] ?: 0, last, today)
+                prefs[KEY_RATE_LAST_DAY] = today
+            }
+        }
+    }
+
+    suspend fun setRatePromptShown() = set(KEY_RATE_PROMPT_SHOWN, true)
 
     suspend fun setFeedOrderChosen(value: Boolean = true) = set(KEY_FEED_ORDER_CHOSEN, value)
 
@@ -88,6 +127,10 @@ class OnboardingStore(context: Context) {
         val KEY_CHANNELS_SWIPE_HINT_SEEN = booleanPreferencesKey("channels_swipe_hint_seen")
         val KEY_SPLIT_BUTTON_HINT_SEEN = booleanPreferencesKey("split_button_hint_seen")
         val KEY_INSTALL_SEEDED = booleanPreferencesKey("install_seeded")
+        val KEY_RATE_FIRST_SEEN_MS = longPreferencesKey("rate_first_seen_ms")
+        val KEY_RATE_DAY_COUNT = intPreferencesKey("rate_launch_day_count")
+        val KEY_RATE_LAST_DAY = longPreferencesKey("rate_last_launch_day")
+        val KEY_RATE_PROMPT_SHOWN = booleanPreferencesKey("rate_prompt_shown")
     }
 }
 

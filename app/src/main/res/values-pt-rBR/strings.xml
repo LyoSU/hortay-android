@@ -920,6 +920,10 @@
     <string name="onboarding_feed_order_oldest_hint">Abre na primeira publicação não lida</string>
     <string name="onboarding_feed_order_confirm">Continuar</string>
     <string name="onboarding_feed_order_footer">Você pode mudar isso depois em %1$s → %2$s</string>
+    <string name="rate_prompt_title">Está curtindo o Hortay?</string>
+    <string name="rate_prompt_body">Uma avaliação no Google Play ajuda outros leitores a encontrar o app.</string>
+    <string name="rate_prompt_rate">Avaliar no Google Play</string>
+    <string name="rate_prompt_later">Agora não</string>
     <string name="settings_section_reading">Leitura</string>
     <string name="settings_theme_mode_system">Sistema</string>
     <string name="settings_theme_mode_light">Claro</string>

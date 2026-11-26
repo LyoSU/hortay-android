@@ -941,6 +941,10 @@
     <string name="onboarding_feed_order_oldest_hint">Відкривається з першого непрочитаного</string>
     <string name="onboarding_feed_order_confirm">Продовжити</string>
     <string name="onboarding_feed_order_footer">Це можна змінити пізніше: %1$s → %2$s</string>
+    <string name="rate_prompt_title">Подобається Hortay?</string>
+    <string name="rate_prompt_body">Оцінка в Google Play допомагає іншим читачам знайти застосунок.</string>
+    <string name="rate_prompt_rate">Оцінити в Google Play</string>
+    <string name="rate_prompt_later">Не зараз</string>
     <string name="settings_section_reading">Читання</string>
     <string name="settings_theme_mode_system">Системна</string>
     <string name="settings_theme_mode_light">Світла</string>

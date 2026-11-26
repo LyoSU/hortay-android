@@ -128,6 +128,12 @@ class AppGraph(context: Context) {
     /** Device-level one-shot feature-discovery flags. See [OnboardingStore]. */
     val onboardingStore: OnboardingStore = OnboardingStore(context)
 
+    init {
+        // Rate-prompt bookkeeping: one DataStore edit per process start, on appScope so cold
+        // start never waits on it.
+        appScope.launch { onboardingStore.recordLaunchDay() }
+    }
+
     /**
      * [SettingsStore.archiveInAllFeed], pre-warmed. It is part of the feed's scene key, so
      * a `collectAsState(initialValue = false)` flipping to `true` after the snapshot has
