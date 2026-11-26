@@ -1,0 +1,45 @@
+O Hortay é um leitor independente de canais do Telegram. Todos os canais que você segue chegam em um só feed, em ordem, com uma marca onde você parou da última vez.
+
+O Telegram mostra os canais como uma lista de conversas. Com dez canais, funciona. Com duzentos, você abre uma conversa, rola, volta, abre a próxima e continua sem saber o que perdeu. O Hortay transforma esses mesmos canais em um feed de notícias.
+
+UM SÓ FEED PARA TODOS OS SEUS CANAIS
+• Mais recentes primeiro, ou estilo chat: lidas em cima, não lidas embaixo, e você cai direto na primeira publicação não lida
+• Uma publicação conta como lida depois de ficar um instante na tela, e o status de leitura é sincronizado com o Telegram
+• Abas para suas pastas do Telegram e para o arquivo
+• Busca em todos os canais e uma aba “Salvos” para seus favoritos
+
+SEM REPETIÇÃO, SEM ENXURRADA DE PUBLICAÇÕES
+• Uma publicação encaminhada por vários dos seus canais aparece uma vez só
+• Uma sequência de publicações de um canal fica agrupada sob a primeira
+• Quando vários canais falam da mesma notícia, cada publicação mostra quem mais escreveu sobre ela
+
+LEIA SEM CONTA
+• O modo visitante lê canais públicos sem login e sem número de telefone
+• Canais seguidos, favoritos e posições de leitura ficam no seu aparelho
+
+UM FEED TRANQUILO
+• Oculte um canal por 8 horas, um dia ou uma semana sem cancelar a inscrição
+• Filtro de palavras: publicações com as palavras ou hashtags da sua lista ficam de fora
+• Marque todos os canais como lidos de uma vez
+
+PUBLICAÇÕES DO JEITO QUE O TELEGRAM MOSTRA
+• Enquetes e quizzes, reações, emojis personalizados, figurinhas animadas
+• Álbuns, vídeo no próprio feed, mensagens de vídeo redondas, mensagens de voz e áudio com controle de velocidade e miniplayer
+• Formatação rica: títulos, tabelas, blocos de código, fórmulas
+• Comentários em threads, mensagens fixadas, tradução, checagem de fatos
+
+E MAIS
+• Arquivo local opcional de publicações editadas e apagadas, com comparação entre versões
+• Proxy SOCKS5, HTTP e MTProto com troca automática
+• Cores do papel de parede ou da marca, temas claro, escuro e preto puro, quatro tamanhos de texto
+• Layouts para tablets e janelas largas
+• 13 idiomas, incluindo português
+
+PRIVACIDADE
+Sem análises, sem relatórios de falhas, sem anúncios, sem push de terceiros. O Hortay se conecta ao Telegram diretamente pelo TDLib, a biblioteca cliente oficial e de código aberto do Telegram, sem servidor próprio no meio. Você entra pela autenticação padrão do Telegram, e sua conta continua nos servidores do Telegram. O app é de código aberto.
+
+O Hortay é um leitor: dá para reagir, votar em enquetes e ler comentários, mas não dá para escrever mensagens. Ele é para quem lê mais canais do Telegram do que conversa.
+
+—
+
+O Hortay é um aplicativo independente de terceiros, criado com a API pública do Telegram. Ele não é afiliado à Telegram FZ-LLC nem à Telegram Messenger Inc., nem endossado ou patrocinado por elas. “Telegram” é uma marca comercial de seu respectivo proprietário.

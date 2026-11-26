@@ -1,0 +1,45 @@
+Hortay adalah pembaca independen untuk kanal Telegram. Semua kanal yang kamu ikuti masuk ke satu feed, berurutan, dengan penanda di tempat terakhir kamu berhenti membaca.
+
+Telegram menampilkan kanal sebagai daftar obrolan. Dengan sepuluh kanal, itu masih oke. Dengan dua ratus kanal, kamu membuka obrolan, menggulir, kembali, membuka yang berikutnya, dan tetap tidak tahu apa yang terlewat. Hortay mengubah kanal-kanal yang sama menjadi linimasa.
+
+SATU FEED UNTUK SEMUA KANALMU
+• Terbaru di atas, atau gaya obrolan: yang sudah dibaca di atas, yang belum di bawah, dan kamu langsung sampai di kiriman pertama yang belum dibaca
+• Kiriman dihitung sudah dibaca setelah tampil sebentar di layar, dan status bacanya tersinkron ke Telegram
+• Tab untuk folder Telegram-mu dan arsip
+• Pencarian di semua kanal, dan tab Tersimpan untuk markah
+
+TANPA DUPLIKAT, TANPA BANJIR KIRIMAN
+• Kiriman yang diteruskan beberapa kanalmu hanya muncul sekali
+• Rentetan kiriman dari satu kanal terlipat di bawah kiriman pertamanya
+• Saat beberapa kanal membahas berita yang sama, tiap kiriman menunjukkan siapa lagi yang menulis tentangnya
+
+BACA TANPA AKUN
+• Mode tamu membaca kanal publik tanpa masuk dan tanpa nomor telepon
+• Kanal yang diikuti, markah, dan posisi baca tetap tersimpan di perangkatmu
+
+FEED YANG TENANG
+• Sembunyikan kanal selama 8 jam, sehari, atau seminggu tanpa berhenti berlangganan
+• Filter kata: kiriman berisi kata atau tagar dari daftarmu tidak masuk feed
+• Tandai semua kanal sudah dibaca dalam satu langkah
+
+KIRIMAN SEPERTI DI TELEGRAM
+• Jajak pendapat dan kuis, reaksi, emoji kustom, stiker animasi
+• Album, video langsung di feed, pesan video bulat, pesan suara dan audio dengan pengatur kecepatan dan pemutar mini
+• Format kaya: judul, tabel, blok kode, rumus
+• Komentar berutas, pesan yang disematkan, terjemahan, cek fakta
+
+DAN LAGI
+• Arsip lokal opsional untuk kiriman yang diedit dan dihapus, dengan perbandingan antarversi
+• Proksi SOCKS5, HTTP, dan MTProto dengan peralihan otomatis
+• Warna wallpaper atau warna merek, tema terang, gelap, dan hitam pekat, empat ukuran teks
+• Tata letak untuk tablet dan jendela lebar
+• 13 bahasa, termasuk bahasa Indonesia
+
+PRIVASI
+Tanpa analitik, tanpa laporan crash, tanpa iklan, tanpa push pihak ketiga. Hortay terhubung langsung ke Telegram lewat TDLib, pustaka klien resmi Telegram yang bersumber terbuka, tanpa server sendiri di tengahnya. Kamu masuk lewat autentikasi standar Telegram, dan akunmu tetap berada di server Telegram. Aplikasi ini bersumber terbuka.
+
+Hortay adalah pembaca: kamu bisa memberi reaksi, ikut jajak pendapat, dan membaca komentar, tapi tidak bisa menulis pesan. Aplikasi ini untuk kamu yang lebih banyak membaca kanal Telegram daripada mengobrol.
+
+—
+
+Hortay adalah aplikasi pihak ketiga independen yang dibuat menggunakan API publik Telegram. Aplikasi ini tidak berafiliasi dengan, tidak didukung, dan tidak disponsori oleh Telegram FZ-LLC maupun Telegram Messenger Inc. “Telegram” adalah merek dagang milik pemiliknya masing-masing.

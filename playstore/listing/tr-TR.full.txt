@@ -1,0 +1,45 @@
+Hortay, Telegram kanalları için bağımsız bir okuyucu. Takip ettiğin her kanal tek bir akışa, sırayla gelir ve en son kaldığın yer işaretlenir.
+
+Telegram kanalları sohbet listesi olarak gösterir. On kanalla bu iş görür. İki yüz kanalla bir sohbet açarsın, kaydırırsın, geri dönersin, sonrakini açarsın ve yine de neyi kaçırdığını bilmezsin. Hortay aynı kanalları bir haber akışına dönüştürür.
+
+TÜM KANALLARIN İÇİN TEK AKIŞ
+• En yeniler üstte ya da sohbet gibi: okunanlar yukarıda, okunmayanlar aşağıda ve doğrudan ilk okunmamış gönderiye gelirsin
+• Bir gönderi ekranda kısa bir süre kaldıktan sonra okunmuş sayılır ve okuma durumu Telegram ile eşitlenir
+• Telegram klasörlerin ve arşiv için sekmeler
+• Tüm kanallarda arama ve yer imleri için “Kaydedilenler” sekmesi
+
+TEKRAR YOK, GÖNDERİ SELİ YOK
+• Birkaç kanalının ilettiği bir gönderi yalnızca bir kez görünür
+• Bir kanaldan art arda gelen gönderiler ilkinin altında toplanır
+• Birkaç kanal aynı haberi yazdığında her gönderi, konuyu başka kimlerin yazdığını gösterir
+
+HESAPSIZ OKU
+• Misafir modu, herkese açık kanalları giriş yapmadan ve telefon numarası olmadan okur
+• Takip ettiklerin, yer imlerin ve okuma konumların cihazında kalır
+
+SAKİN BİR AKIŞ
+• Bir kanalı abonelikten çıkmadan 8 saat, bir gün ya da bir hafta gizle
+• Kelime filtresi: listene eklediğin kelimeleri veya hashtag'leri içeren gönderiler akışa girmez
+• Tüm kanalları tek adımda okundu say
+
+GÖNDERİLER TELEGRAM'DAKİ GİBİ
+• Anketler ve testler, tepkiler, özel emojiler, animasyonlu çıkartmalar
+• Albümler, akış içinde video, yuvarlak video mesajlar, hız ayarı ve mini oynatıcıyla sesli mesajlar ve ses dosyaları
+• Zengin biçimlendirme: başlıklar, tablolar, kod blokları, formüller
+• İç içe yorumlar, sabitlenmiş mesajlar, çeviri, doğruluk kontrolleri
+
+VE DAHASI
+• Düzenlenen ve silinen gönderiler için isteğe bağlı yerel arşiv, sürümler arası karşılaştırmayla
+• Otomatik geçişli SOCKS5, HTTP ve MTProto proxy
+• Duvar kâğıdı ya da marka renkleri, açık, koyu ve saf siyah temalar, dört metin boyutu
+• Tablet ve geniş pencere düzenleri
+• Türkçe dahil 13 dil
+
+GİZLİLİK
+Analiz yok, çökme raporu yok, reklam yok, üçüncü taraf push bildirimi yok. Hortay, Telegram'ın resmi açık kaynak istemci kütüphanesi TDLib üzerinden Telegram ile doğrudan konuşur, arada kendi sunucusu yoktur. Telegram'ın standart kimlik doğrulamasıyla giriş yaparsın ve hesabın Telegram'ın sunucularında kalır. Uygulama açık kaynaklıdır.
+
+Hortay bir okuyucudur: tepki verebilir, anketlerde oy kullanabilir ve yorumları okuyabilirsin, ama mesaj yazamazsın. Telegram'da mesajlaşmaktan çok kanal okuyanlar için yapıldı.
+
+—
+
+Hortay, Telegram'ın herkese açık API'si kullanılarak geliştirilmiş bağımsız bir üçüncü taraf uygulamadır. Telegram FZ-LLC veya Telegram Messenger Inc. ile bağlantılı değildir; bu şirketler tarafından onaylanmamış veya sponsor edilmemiştir. “Telegram”, ilgili sahibinin ticari markasıdır.

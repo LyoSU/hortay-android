@@ -1,0 +1,45 @@
+Hortay is an independent reader for Telegram channels. Every channel you follow lands in one feed, in order, with a marker where you stopped last time.
+
+Telegram shows channels as a chat list. With ten channels that works. With two hundred you open a chat, scroll, go back, open the next one, and still don't know what you missed. Hortay turns the same channels into a timeline.
+
+ONE FEED FOR ALL YOUR CHANNELS
+• Newest first, or chat-style: read posts above, unread below, and you land on the first unread post
+• A post counts as read after it stayed on screen for a moment, and the read state syncs back to Telegram
+• Tabs for your Telegram folders and the archive
+• Search across all channels, and a Saved tab for bookmarks
+
+NO REPEATS, NO POST FLOODS
+• A post forwarded by several of your channels shows once
+• A burst of posts from one channel folds under the first one
+• When several channels cover the same story, each post shows who else wrote about it
+
+READ WITHOUT AN ACCOUNT
+• Guest mode reads public channels with no sign-in and no phone number
+• Follows, bookmarks and read positions stay on your device
+
+A QUIET FEED
+• Hide a channel for 8 hours, a day or a week without unsubscribing
+• Word filter: posts with the words or hashtags you list stay out
+• Mark every channel as read in one step
+
+POSTS THE WAY TELEGRAM SHOWS THEM
+• Polls and quizzes, reactions, custom emoji, animated stickers
+• Albums, inline video, round video messages, voice and audio with speed control and a mini-player
+• Rich formatting: headings, tables, code blocks, formulas
+• Comments as threads, pinned messages, translation, fact checks
+
+AND ALSO
+• Optional local archive of edited and deleted posts, with a diff between versions
+• SOCKS5, HTTP and MTProto proxy with automatic switching
+• Wallpaper or brand colours, light, dark and pure black themes, four text sizes
+• Tablet and wide-window layouts
+• 13 languages
+
+PRIVACY
+No analytics, no crash reporting, no ads, no third-party push. Hortay talks to Telegram directly through TDLib, Telegram's official open-source client library, with no server of its own in between. You sign in through Telegram's standard authentication, and your account stays on Telegram's servers. The app is open source.
+
+Hortay is a reader: you can react, vote in polls and read comments, but there is no message composer. It is for people who read Telegram channels more than they message.
+
+—
+
+Hortay is an independent third-party application built using Telegram's public API. It is not affiliated with, endorsed by, or sponsored by Telegram FZ-LLC or Telegram Messenger Inc. "Telegram" is a trademark of its respective owner.
