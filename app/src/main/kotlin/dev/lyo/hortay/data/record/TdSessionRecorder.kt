@@ -18,8 +18,8 @@ import java.io.File
  *
  * ```
  * adb shell setprop log.tag.HortayTdRecord DEBUG
- * adb shell am force-stop dev.lyo.hortay          # recording starts with the next launch
- * adb pull /sdcard/Android/data/dev.lyo.hortay/files/td-sessions/
+ * adb shell am force-stop dev.lyo.hortay.debug    # recording starts with the next launch
+ * adb pull /sdcard/Android/data/dev.lyo.hortay.debug/files/td-sessions/
  * ```
  *
  * The file is anonymised as it is written ([TdRedactor]) and stays on the device until

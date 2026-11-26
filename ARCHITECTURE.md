@@ -70,7 +70,7 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 
 | Identifier | Why it's load-bearing |
 |---|---|
-| `dev.lyo.hortay` (+ `.beta`) | applicationId, namespace, signing identity. |
+| `dev.lyo.hortay` (+ `.beta`, `.debug`) | applicationId, namespace, signing identity. The suffixes let the Play build, beta and debug install side by side. |
 | `org.drinkless.tdlib` | TDLib upstream FQCN. Renaming breaks JNI symbol lookup in libtdjni.so. |
 | `:libwebm` / `libhortaywebm.so` / `dev.lyo.hortay.webm.WebmAlphaNative` | Vendored minimal-ffmpeg WebM(VP9+alpha) decoder. The JNI method name `Java_dev_lyo_hortay_webm_WebmAlphaNative_nativeDecode` and the `Raw` ctor signature must match the C in `libwebm/src/main/cpp`. Built by `scripts/build-ffmpeg.sh` (host NDK; libs gitignored). |
 | Release keystore (`storeFile` + `keyAlias` from `keystore.properties`) | Release signing identity. Losing it = losing the upgrade path for installed users. |

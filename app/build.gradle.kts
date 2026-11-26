@@ -152,8 +152,13 @@ android {
                 debugSymbolLevel = "FULL"
             }
         }
+        // Debug lives at dev.lyo.hortay.debug so it installs next to the Play build and
+        // the beta — a clean third app for first-run / sign-in work on a phone whose
+        // beta is already signed in. Same suffix scheme as beta below.
         debug {
             isDebuggable = true
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
             // Keep x86_64 for emulator workflows in debug builds.
             ndk {
                 abiFilters.clear()

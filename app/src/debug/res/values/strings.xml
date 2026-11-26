@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Overrides main's app_name on every locale (main keeps it out of values-<lang>),
+         so the debug build reads as its own app next to the Play build and the beta. -->
+    <string name="app_name" translatable="false">Hortay Debug</string>
+</resources>
