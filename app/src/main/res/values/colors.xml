@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_foreground">#FFFFFFFF</color>
-    <color name="brand_gradient_top">#FFC2C0FF</color>
-    <color name="brand_gradient_mid">#FF8A8CDC</color>
-    <color name="brand_gradient_bot">#FF5A5BA8</color>
+    <!-- Launcher icon background gradient (135 degrees, top-left to bottom-right). The
+         bottom stop is also the splash-screen background. -->
+    <color name="brand_gradient_top">#FF5A55D6</color>
+    <color name="brand_gradient_bot">#FF3C389E</color>
+    <!-- Launcher icon cards, back to front. -->
+    <color name="launcher_card_back">#FF9E9AF2</color>
+    <color name="launcher_card_accent">#FFFF7E47</color>
+    <color name="launcher_card_front">#FFFFFFFF</color>
 </resources>

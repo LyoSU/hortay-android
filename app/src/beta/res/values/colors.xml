@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Warm amber launcher + splash gradient for the beta, so it can't be mistaken
-         for the periwinkle Play build on the home screen. These colours are used only
-         by the launcher background and the splash screen. -->
-    <color name="brand_gradient_top">#FFFFD58A</color>
-    <color name="brand_gradient_mid">#FFF59A3C</color>
-    <color name="brand_gradient_bot">#FFC2410C</color>
+         for the indigo Play build on the home screen. The cards keep main's shapes;
+         only their colours change: a pale apricot back card and the Play build's
+         indigo as the accent wedge, since main's orange wedge would vanish on amber. -->
+    <color name="brand_gradient_top">#FFE8772A</color>
+    <color name="brand_gradient_bot">#FFA8390A</color>
+    <color name="launcher_card_back">#FFFFD3A6</color>
+    <color name="launcher_card_accent">#FF3C389E</color>
 </resources>

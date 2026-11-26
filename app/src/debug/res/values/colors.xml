@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Emerald-teal launcher + splash gradient for debug builds, so the three installed
+         variants read apart on the home screen: indigo Play build, amber beta, teal debug.
+         Fully saturated at roughly the brand indigo's lightness, so white holds at least
+         3:1 at the light end and ~5.8:1 at the dark end. The cards keep main's shapes;
+         main's orange accent wedge and white front card stay, as orange is teal's
+         complement. Only the gradient and the luminous mint back card change. -->
+    <color name="brand_gradient_top">#FF0DA391</color>
+    <color name="brand_gradient_bot">#FF08707A</color>
+    <color name="launcher_card_back">#FF93E9DC</color>
+</resources>
