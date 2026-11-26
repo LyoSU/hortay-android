@@ -14,9 +14,10 @@ import org.junit.jupiter.api.Test
  * Schema 2 → 3 (2.sqm + [ArchiveMigrations.afterV2]) over a realistic v1 archive.
  *
  * The v1 fixture is written with the schema-2 DDL (PostSnapshot with captured_at_ms,
- * ArchivedMediaFile with ref_count) copied from the last release, then migrated exactly
- * as the Android driver does: the `.sqm` statements and the AfterVersion(2) callback in
- * one transaction. Runs on the JDBC driver's bundled SQLite (version printed by
+ * ArchivedMediaFile with ref_count): 0.12.0's schema 1 after 1.sqm. Schema 2 never shipped
+ * on its own; the real 1 → 3 upgrade from a 0.12.0 file is [ArchiveUpgradeFrom012Test].
+ * Migrated exactly as the Android driver does: the `.sqm` statements and the
+ * AfterVersion(2) callback in one transaction. Runs on the JDBC driver's bundled SQLite (version printed by
  * [jdbcSqliteVersion]), which is newer than Android 8's 3.18 — the SQL itself sticks to
  * 3.18 features (no window functions, no JSON1, no upsert, no RETURNING).
  */
@@ -354,7 +355,7 @@ class ArchiveMigrationTest {
         ) { it.getString(0)!! }.sorted()
 
     private companion object {
-        /** Schema 2 (the last release): PostSnapshot.sq after 1.sqm, ArchivedMediaFile.sq, ArchivedChannel.sq. */
+        /** Schema 2: 0.12.0's PostSnapshot.sq after 1.sqm, ArchivedMediaFile.sq, ArchivedChannel.sq. */
         val V2_DDL = listOf(
             """
             CREATE TABLE PostSnapshot (
