@@ -8,7 +8,7 @@ package dev.lyo.hortay.ui.channels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +31,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +53,7 @@ import dev.lyo.hortay.data.discover.SuggestedGroup
 import dev.lyo.hortay.ui.discover.ChannelDiscoverRow
 import dev.lyo.hortay.ui.discover.SectionHeader
 import dev.lyo.hortay.ui.discover.discoverSuggestions
+import dev.lyo.hortay.ui.discover.rememberHideKeyboardOnDrag
 import dev.lyo.hortay.ui.timeline.formatSubscribers
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -83,8 +87,14 @@ fun AddChannelTdSheet(
     recommended: RecommendedChannelsRepository,
     locale: String,
     onDismiss: () -> Unit,
-    /** Opens a channel from the "Recommended by your channels" section; null keeps rows inert. */
+    /**
+     * Opens a channel from a search result or the "Recommended by your channels" section;
+     * null keeps rows inert. The channel screen is where "Read without joining" lives, so
+     * the rows themselves keep a single Subscribe button.
+     */
     onOpenChannel: ((Long) -> Unit)? = null,
+    /** Channels read without joining: never recommended, the user already reads them. */
+    followedIds: Set<Long> = emptySet(),
 ) {
     val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
@@ -129,12 +139,9 @@ fun AddChannelTdSheet(
     // drops it after the hold, like the curated rows below.
     val holding = remember { mutableStateMapOf<Long, Unit>() }
     val justJoined = remember { mutableStateMapOf<Long, Unit>() }
-    val visibleRecommended by remember {
+    val visibleRecommended by remember(followedIds) {
         derivedStateOf {
-            recommendedState.items.filter { item ->
-                val id = item.channel.chatId
-                id !in justJoined && (!item.channel.isMember || id in holding)
-            }.toImmutableList()
+            visibleRecommendations(recommendedState.items, justJoined.keys, holding.keys, followedIds)
         }
     }
 
@@ -204,13 +211,25 @@ fun AddChannelTdSheet(
     val subscribeLabel = stringResource(R.string.discover_subscribe)
     val subscribedLabel = stringResource(R.string.discover_subscribed)
 
+    val windowHeightPx = LocalWindowInfo.current.containerSize.height
+    val density = LocalDensity.current
+    val sheetContentHeight = remember(windowHeightPx, density) {
+        with(density) { (windowHeightPx * SHEET_HEIGHT_FRACTION).toDp() }
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        // Inside the content: the sheet is its own window, and only its keyboard
+        // controller reaches the IME the search field opened.
+        val hideKeyboardOnDrag = rememberHideKeyboardOnDrag()
         LazyColumn(
             modifier = Modifier
+                .nestedScroll(hideKeyboardOnDrag)
                 .fillMaxWidth()
-                // Bound the height so the LazyColumn never gets an infinite max
-                // constraint from the sheet's wrap-content Column (would crash).
-                .heightIn(max = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.82f)
+                // A fixed height, not a cap, as in the guest sheet: the sheet wraps its
+                // content, so a cap let it shrink and grow as search results came and
+                // went and the search field slid under the finger. Also gives the
+                // LazyColumn the finite max constraint the wrap-content Column lacks.
+                .height(sheetContentHeight)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -227,6 +246,8 @@ fun AddChannelTdSheet(
                     value = query,
                     onValueChange = { query = it },
                     hint = stringResource(R.string.discover_search_hint),
+                    onClear = { query = "" },
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
 
@@ -266,6 +287,7 @@ fun AddChannelTdSheet(
                         subscribedLabel = subscribedLabel,
                         actionEnabled = !subscribed,
                         onAction = remember(channel) { { subscribeResult(channel) } },
+                        onClick = onOpenChannel?.let { open -> remember(channel.chatId, open) { { open(channel.chatId) } } },
                     )
                 }
             } else {
@@ -390,3 +412,21 @@ private fun LaunchedHydration(
 // How long the row's "Subscribed" check-circle confirmation stays on screen before
 // the row is dropped from the list (DESIGN_POLISH H1: "~1.5 s before the row leaves").
 private const val SUBSCRIBE_CONFIRM_HOLD_MS = 1500L
+
+// Share of the window height the sheet's content takes, in every state.
+private const val SHEET_HEIGHT_FRACTION = 0.82f
+
+/**
+ * The "Recommended by your channels" rows to show: drops rows joined from this sheet once
+ * their confirmation hold ended ([justJoined]), members (unless still [holding] their
+ * "Subscribed" state) and channels the user already reads without joining ([followed]).
+ */
+internal fun visibleRecommendations(
+    items: List<RecommendedChannel>,
+    justJoined: Set<Long>,
+    holding: Set<Long>,
+    followed: Set<Long>,
+): ImmutableList<RecommendedChannel> = items.filter { item ->
+    val id = item.channel.chatId
+    id !in justJoined && id !in followed && (!item.channel.isMember || id in holding)
+}.toImmutableList()

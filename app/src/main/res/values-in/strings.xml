@@ -83,7 +83,6 @@
     <string name="web_add_lookup">Cari</string>
     <string name="web_add_confirm">Tambah</string>
     <string name="web_add_curated_title">Kanal populer</string>
-    <string name="web_add_check">Periksa</string>
     <string name="web_add_invalid">Masukkan @username atau tautan t.me/…</string>
     <string name="web_add_not_found">Kanal @%1$s tidak ditemukan</string>
     <string name="web_add_private">Kanal privat. Kiriman publik tidak tersedia</string>

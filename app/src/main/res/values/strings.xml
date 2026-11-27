@@ -87,7 +87,6 @@
     <string name="web_add_lookup">Find</string>
     <string name="web_add_confirm">Add</string>
     <string name="web_add_curated_title">Popular channels</string>
-    <string name="web_add_check">Check</string>
     <string name="web_add_invalid">Enter @username or a t.me/… link</string>
     <string name="web_add_not_found">Channel @%1$s not found</string>
     <string name="web_add_private">Channel is private. Public posts unavailable</string>

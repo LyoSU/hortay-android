@@ -228,7 +228,8 @@ class WebRepository(
      * The username extraction is conservative: we only accept ASCII handles
      * matching Telegram's public-username rules ([A-Za-z][A-Za-z0-9_]{1,31}),
      * lowercased for stable comparison. Anything that doesn't match (private
-     * forwards, t.me/+invite links, group jumps) is silently skipped.
+     * forwards, t.me/+invite links, group jumps) is silently skipped, and so
+     * are bot handles ([isBotUsername]) — never a channel to follow.
      */
     suspend fun mentionedUsernamesFromSubscribed(
         limitPosts: Long = MENTIONS_DEFAULT_LIMIT,
@@ -242,7 +243,7 @@ class WebRepository(
             // mention, not the t.me/<u>/<seq> URL inside an <a>.
             VISIBLE_MENTION_REGEX.findAll(row.text_html).forEach { match ->
                 val u = match.groupValues[1].lowercase()
-                if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN) {
+                if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN && !isBotUsername(u)) {
                     freq.merge(u, 1, Int::plus)
                 }
             }
@@ -252,7 +253,7 @@ class WebRepository(
             row.forwarded_from_json?.let { json ->
                 FORWARD_LINK_REGEX.find(json)?.let { match ->
                     val u = match.groupValues[1].lowercase()
-                    if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN) {
+                    if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN && !isBotUsername(u)) {
                         freq.merge(u, 1, Int::plus)
                     }
                 }
@@ -273,7 +274,8 @@ class WebRepository(
      *    [GuestChannelSource.Known]), with its title, description, avatar and count;
      *  - `channel_suggestion` rows;
      *  - forward sources (name + username) and visible `@mentions` in the newest
-     *    [postSample] posts of followed channels, counted per username.
+     *    [postSample] posts of followed channels, counted per username; bot handles
+     *    ([isBotUsername]) are left out.
      *
      * The curated catalog lives outside web.db; the caller adds it.
      */
@@ -307,12 +309,14 @@ class WebRepository(
         postQueries.selectMentionsSource(postSample).executeAsList().forEach { row ->
             VISIBLE_MENTION_REGEX.findAll(row.text_html).forEach { match ->
                 val u = match.groupValues[1].lowercase()
-                if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN) mentionCount.merge(u, 1, Int::plus)
+                if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN && !isBotUsername(u)) {
+                    mentionCount.merge(u, 1, Int::plus)
+                }
             }
             val forward = row.forwarded_from_json?.let { decodeForward(it) } ?: return@forEach
             val u = FORWARD_URL_REGEX.find(forward.channelLink)?.groupValues?.get(1)?.lowercase()
                 ?: return@forEach
-            if (u.length !in MENTION_MIN_LEN..MENTION_MAX_LEN) return@forEach
+            if (u.length !in MENTION_MIN_LEN..MENTION_MAX_LEN || isBotUsername(u)) return@forEach
             forwardCount.merge(u, 1, Int::plus)
             if (forward.channelName.isNotBlank()) forwardName.putIfAbsent(u, forward.channelName)
         }

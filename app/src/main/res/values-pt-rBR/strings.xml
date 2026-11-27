@@ -85,7 +85,6 @@
     <string name="web_add_lookup">Buscar</string>
     <string name="web_add_confirm">Adicionar</string>
     <string name="web_add_curated_title">Canais populares</string>
-    <string name="web_add_check">Verificar</string>
     <string name="web_add_invalid">Digite @username ou um link t.me/…</string>
     <string name="web_add_not_found">Canal @%1$s não encontrado</string>
     <string name="web_add_private">Canal privado. Publicações públicas indisponíveis</string>

@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -194,6 +195,9 @@ fun WebSearchScreen(
 
     ExpandedFullScreenSearchBar(
         state = searchBarState,
+        // No divider under the input: the header's own tone already separates it, and
+        // the default outline-coloured line read as a stray stripe across the screen.
+        colors = SearchBarDefaults.colors(dividerColor = Color.Transparent),
         inputField = {
             SearchBarDefaults.InputField(
                 textFieldState = textFieldState,

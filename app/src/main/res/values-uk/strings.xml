@@ -86,7 +86,6 @@
     <string name="web_add_lookup">Знайти</string>
     <string name="web_add_confirm">Додати</string>
     <string name="web_add_curated_title">Популярні канали</string>
-    <string name="web_add_check">Перевірити</string>
     <string name="web_add_invalid">Введи @username або посилання t.me/…</string>
     <string name="web_add_not_found">Канал @%1$s не знайдено</string>
     <string name="web_add_private">Канал приватний. Публічні пости недоступні</string>

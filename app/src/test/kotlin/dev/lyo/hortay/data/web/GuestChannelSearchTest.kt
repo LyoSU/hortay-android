@@ -302,4 +302,19 @@ class GuestChannelSearchTest {
             assertNull(probeableUsername("a".repeat(33)))
         }
     }
+
+    @Nested
+    inner class Bots {
+        @Test
+        fun `bot usernames end in bot, any case, plus Telegram's service bots`() {
+            assertTrue(isBotUsername("humanbot"))
+            assertTrue(isBotUsername("BotFather"))
+            assertTrue(isBotUsername("@Stickers"))
+            assertTrue(isBotUsername("PremiumBot"))
+            assertTrue(isBotUsername("@richtextdemo_BOT"))
+            assertFalse(isBotUsername("botanika"))
+            assertFalse(isBotUsername("robotics_news"))
+            assertFalse(isBotUsername("durov"))
+        }
+    }
 }

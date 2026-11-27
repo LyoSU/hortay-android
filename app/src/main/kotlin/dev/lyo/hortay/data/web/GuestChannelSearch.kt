@@ -125,6 +125,24 @@ data class GuestChannelHit(
 )
 
 /**
+ * A bot's username. Telegram requires every bot username to end in "bot" (any case),
+ * and no channel may take one that does; only Telegram's own service bots predate the
+ * rule ([SERVICE_BOT_USERNAMES]). Mentions of bots are common in posts but can never be
+ * followed, so they never become suggestions. Other handles that aren't channels
+ * (people, groups) can't be told from the name; a t.me/s/ lookup sorts those out.
+ */
+fun isBotUsername(username: String): Boolean {
+    val bare = username.removePrefix("@")
+    return bare.endsWith("bot", ignoreCase = true) || bare.lowercase(Locale.ROOT) in SERVICE_BOT_USERNAMES
+}
+
+// Telegram's service and official inline bots whose usernames don't end in "bot".
+private val SERVICE_BOT_USERNAMES = setOf(
+    "botfather", "stickers", "telegraph", "gamee", "gif", "vid", "pic", "bing",
+    "wiki", "imdb", "bold", "youtube", "music", "foursquare", "sticker", "vote", "like",
+)
+
+/**
  * The typed text as a username worth probing live on t.me: Telegram's public-username
  * shape (a Latin letter first, then letters, digits or `_`, 5–32 characters in all),
  * with an optional leading `@`. Shorter handles exist but are rare, and probing every

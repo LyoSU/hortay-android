@@ -85,7 +85,6 @@
     <string name="web_add_lookup">Rechercher</string>
     <string name="web_add_confirm">Ajouter</string>
     <string name="web_add_curated_title">Chaînes populaires</string>
-    <string name="web_add_check">Vérifier</string>
     <string name="web_add_invalid">Entre un @username ou un lien t.me/…</string>
     <string name="web_add_not_found">Chaîne @%1$s introuvable</string>
     <string name="web_add_private">La chaîne est privée. Publications publiques indisponibles</string>

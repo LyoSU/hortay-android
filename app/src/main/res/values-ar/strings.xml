@@ -88,7 +88,6 @@
     <string name="web_add_lookup">بحث</string>
     <string name="web_add_confirm">إضافة</string>
     <string name="web_add_curated_title">قنوات مقترحة</string>
-    <string name="web_add_check">تحقق</string>
     <string name="web_add_invalid">أدخل @username أو رابط t.me/…</string>
     <string name="web_add_not_found">القناة @%1$s غير موجودة</string>
     <string name="web_add_private">القناة خاصة. المنشورات العامة غير متاحة</string>

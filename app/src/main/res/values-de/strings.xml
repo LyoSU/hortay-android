@@ -84,7 +84,6 @@
     <string name="web_add_lookup">Suchen</string>
     <string name="web_add_confirm">Hinzufügen</string>
     <string name="web_add_curated_title">Beliebte Kanäle</string>
-    <string name="web_add_check">Prüfen</string>
     <string name="web_add_invalid">@username oder t.me/…-Link eingeben</string>
     <string name="web_add_not_found">Kanal @%1$s nicht gefunden</string>
     <string name="web_add_private">Kanal ist privat. Öffentliche Beiträge nicht verfügbar</string>

@@ -39,11 +39,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,7 +111,7 @@ fun LazyListScope.discoverSuggestions(
 }
 
 @Composable
-fun SectionHeader(title: String) {
+fun SectionHeader(title: String, modifier: Modifier = Modifier) {
     // Clean canvas: section labels read as quiet structure, not links. `primary`
     // here registered as tappable; `onSurfaceVariant` keeps it a header (DESIGN_POLISH G3).
     Text(
@@ -113,10 +119,32 @@ fun SectionHeader(title: String) {
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(top = 12.dp, bottom = 4.dp),
+            .padding(top = 12.dp, bottom = 4.dp)
+            .semantics { heading() },
     )
+}
+
+/**
+ * Hides the soft keyboard as soon as the reader drags the list it is attached to
+ * (`Modifier.nestedScroll`), so results typed into the search field can be browsed
+ * full height. Only a finger drag counts: a fling's tail and programmatic scrolls
+ * (an item inserted above, `animateScrollToItem`) leave the keyboard alone. Call it
+ * inside a `ModalBottomSheet`'s content: the sheet is a separate window, and a keyboard
+ * controller read outside it can't hide the IME its field opened.
+ */
+@Composable
+fun rememberHideKeyboardOnDrag(): NestedScrollConnection {
+    val keyboard = LocalSoftwareKeyboardController.current
+    return remember(keyboard) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f) keyboard?.hide()
+                return Offset.Zero
+            }
+        }
+    }
 }
 
 /**
@@ -213,6 +241,9 @@ fun ChannelDiscoverRow(
     // Styled title (search results emphasise the matched part); [name] stays the plain
     // text for the avatar initial and the handle comparison.
     nameText: AnnotatedString? = null,
+    // Styled handle for the secondary line (a search match inside the username); must
+    // carry the same text as [handle]. Null draws [handle] plain.
+    handleText: AnnotatedString? = null,
 ) {
     Row(
         modifier = Modifier
@@ -243,10 +274,10 @@ fun ChannelDiscoverRow(
             // Un-hydrated rows fall back to name == "@handle"; repeating the same
             // string on the second line read as a rendering bug. Show the handle
             // only when it adds information beyond the title.
-            val secondary = buildString {
-                if (!name.equals(handle, ignoreCase = true)) append(handle)
+            val secondary = buildAnnotatedString {
+                if (!name.equals(handle, ignoreCase = true)) append(handleText ?: AnnotatedString(handle))
                 if (!subscribers.isNullOrBlank()) {
-                    if (isNotEmpty()) append("  ·  ")
+                    if (length > 0) append("  ·  ")
                     append(subscribers)
                 }
             }

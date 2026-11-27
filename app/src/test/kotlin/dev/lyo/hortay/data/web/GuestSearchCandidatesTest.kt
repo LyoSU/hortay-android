@@ -50,6 +50,7 @@ class GuestSearchCandidatesTest {
                     post(2, "again", WebForwardSource("Beta News", "https://t.me/beta_news/13")),
                     post(3, "read @gamma_chan and @gamma_chan"),
                     post(4, "private", WebForwardSource("Secret", "")),
+                    post(5, "ask @BotFather or @premiumbot", WebForwardSource("Helper", "https://t.me/helper_bot/1")),
                 ),
                 olderCursor = null,
             ),
@@ -69,6 +70,36 @@ class GuestSearchCandidatesTest {
         assertEquals(2, beta.forwardCount)
         assertEquals(2, idx["gamma_chan"]!!.mentionCount)
         assertEquals(listOf("beta_news"), idx.search("beta").map { it.channel.username })
+        assertEquals(null, idx["botfather"])
+        assertEquals(null, idx["helper_bot"])
         assertEquals(4, idx.size)
+    }
+
+    @Test
+    fun mentionedSuggestionsLeaveBotsOut() = runTest {
+        val (repo, _) = newRepo()
+        repo.subscribe("alpha")
+        repo.ingestPage(
+            WebChannelPage(
+                channel = WebChannelInfo(
+                    username = "alpha", title = "Alpha", description = "",
+                    avatarUrl = null, subscribers = null, isVerified = false,
+                ),
+                posts = persistentListOf(
+                    post(1, "@gamma_chan via @BotFather"),
+                    post(2, "@gamma_chan and @premiumbot", WebForwardSource("Helper", "https://t.me/helper_bot/3")),
+                    post(3, "news", WebForwardSource("Beta News", "https://t.me/beta_news/12")),
+                ),
+                olderCursor = null,
+            ),
+            null,
+            null,
+            1_000L,
+        )
+
+        assertEquals(
+            listOf("gamma_chan" to 2, "beta_news" to 1),
+            repo.mentionedUsernamesFromSubscribed(),
+        )
     }
 }

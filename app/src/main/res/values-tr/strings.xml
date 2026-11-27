@@ -84,7 +84,6 @@
     <string name="web_add_lookup">Bul</string>
     <string name="web_add_confirm">Ekle</string>
     <string name="web_add_curated_title">Popüler kanallar</string>
-    <string name="web_add_check">Kontrol et</string>
     <string name="web_add_invalid">@kullanıcıadı veya t.me/… bağlantısı gir</string>
     <string name="web_add_not_found">@%1$s kanalı bulunamadı</string>
     <string name="web_add_private">Kanal özel. Herkese açık gönderiler kullanılamıyor</string>

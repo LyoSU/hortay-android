@@ -84,7 +84,6 @@
     <string name="web_add_lookup">جستجو</string>
     <string name="web_add_confirm">افزودن</string>
     <string name="web_add_curated_title">کانال‌های پرطرفدار</string>
-    <string name="web_add_check">بررسی</string>
     <string name="web_add_invalid">@username یا یک لینک t.me/… وارد کنید</string>
     <string name="web_add_not_found">کانال @%1$s یافت نشد</string>
     <string name="web_add_private">کانال خصوصی است. پست‌های عمومی در دسترس نیستند</string>

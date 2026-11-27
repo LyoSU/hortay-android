@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,10 +40,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -74,7 +80,9 @@ import dev.lyo.hortay.data.web.probeableUsername
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.discover.ChannelDiscoverRow
 import dev.lyo.hortay.ui.discover.DiscoverSearchField
+import dev.lyo.hortay.ui.discover.SectionHeader
 import dev.lyo.hortay.ui.discover.discoverSuggestions
+import dev.lyo.hortay.ui.discover.rememberHideKeyboardOnDrag
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -142,7 +150,11 @@ fun AddChannelSheet(
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val keyboard = LocalSoftwareKeyboardController.current
+    // The sheet's own keyboard controller. ModalBottomSheet hosts its content in a
+    // separate window, so a controller read out here belongs to the Activity window and
+    // its hide() never reaches the IME the sheet's field opened; the content stores the
+    // right one. A plain holder, like lookupJob: nothing renders from it.
+    val sheetKeyboard = remember { arrayOfNulls<SoftwareKeyboardController>(1) }
 
     var input by remember { mutableStateOf("") }
     // A link is resolved, never searched; anything else is a name query.
@@ -204,7 +216,7 @@ fun AddChannelSheet(
         if (username == null) {
             // A name query has its own empty state; only a link that doesn't parse
             // (an invite, a private c/ link) earns the "enter @username" error.
-            if (isLinkLike(input)) showInvalidInput() else keyboard?.hide()
+            if (isLinkLike(input)) showInvalidInput() else sheetKeyboard[0]?.hide()
             return
         }
         lookup(username)
@@ -331,8 +343,12 @@ fun AddChannelSheet(
         }
     }
 
-    // "Mentioned in your channels" — forwards / @mentions from existing subs.
-    val mentionedSuggestions by produceState(
+    // "Mentioned in your channels" — forwards / @mentions from existing subs, most
+    // mentioned first; the repository already leaves bot handles out. Every shown row
+    // hydrates itself through the shared gate; a handle t.me can't show as a channel (a
+    // person, a group, a private or deleted channel) drops out, and the next one moves
+    // up, so the section only ever offers rows a tap can actually subscribe to.
+    val mentionedAll by produceState(
         initialValue = emptyList<MentionedChannel>(),
         subscribedSet,
     ) {
@@ -341,11 +357,33 @@ fun AddChannelSheet(
         } else {
             repository
                 .mentionedUsernamesFromSubscribed()
-                .asSequence()
-                .filter { (u, _) -> u !in subscribedSet }
-                .take(6)
+                .take(MENTIONED_CANDIDATES)
                 .map { (u, count) -> MentionedChannel(u, count) }
-                .toList()
+        }
+    }
+    val mentionDropped = remember { mutableStateMapOf<String, Unit>() }
+    // Lookups that ended without a verdict (rate limit, network) — not retried while
+    // the sheet is open, but the row stays: the handle may well be a channel.
+    val mentionAttempted = remember { HashSet<String>() }
+    val mentionedSuggestions = remember(mentionedAll, subscribedSet, holdVisible.keys.toList(), mentionDropped.keys.toList()) {
+        mentionedAll.asSequence()
+            .filter { (it.username !in subscribedSet || it.username in holdVisible) && it.username !in mentionDropped }
+            .take(MENTIONED_MAX_ROWS)
+            .toList()
+            .toImmutableList()
+    }
+
+    suspend fun hydrateMention(username: String) {
+        if (hydrated.containsKey(username) || username in mentionDropped || username in mentionAttempted) return
+        gate.withPermit {
+            when (val r = client.lookupChannel(username, useCache = true)) {
+                is LookupResult.Found -> hydrated[username] = r.channel.toCardData()
+                is LookupResult.Empty -> hydrated[username] = r.channel.toCardData()
+                LookupResult.NotFound, LookupResult.Private, LookupResult.ParseFailure ->
+                    mentionDropped[username] = Unit
+                is LookupResult.RateLimited, is LookupResult.NetworkError -> Unit
+            }
+            mentionAttempted += username
         }
     }
 
@@ -522,8 +560,12 @@ fun AddChannelSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
+        sheetKeyboard[0] = LocalSoftwareKeyboardController.current
+        // Read inside the sheet's content for the same reason (its own window).
+        val hideKeyboardOnDrag = rememberHideKeyboardOnDrag()
         LazyColumn(
             modifier = Modifier
+                .nestedScroll(hideKeyboardOnDrag)
                 .fillMaxWidth()
                 // A fixed height, not a cap: the sheet wraps its content, so a cap let it
                 // shrink with every keystroke that left fewer results and the search
@@ -605,9 +647,10 @@ fun AddChannelSheet(
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             if (state.isPrivate && onSignIn != null) {
-                                TextButton(onClick = { signIn(onSignIn) }) {
-                                    Text(stringResource(R.string.web_add_signin_for_private))
-                                }
+                                InlineTextButton(
+                                    text = stringResource(R.string.web_add_signin_for_private),
+                                    onClick = { signIn(onSignIn) },
+                                )
                             }
                         }
                     }
@@ -672,20 +715,33 @@ fun AddChannelSheet(
 
             if (!searchActive && mentionedSuggestions.isNotEmpty()) {
                 item(key = "mentioned_header", contentType = "discover_header") {
-                    Text(
-                        text = stringResource(R.string.web_add_mentioned_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-                    )
+                    SectionHeader(stringResource(R.string.web_add_mentioned_title))
                 }
-                items(mentionedSuggestions, key = { "m_${it.username}" }) { suggestion ->
-                    MentionedRow(
-                        suggestion = suggestion,
-                        onTap = {
-                            input = suggestion.username
-                            lookup(suggestion.username)
-                        },
+                items(
+                    items = mentionedSuggestions,
+                    key = { "m_${it.username}" },
+                    contentType = { "discover_row" },
+                ) { suggestion ->
+                    val username = suggestion.username
+                    LaunchedEffect(username) { hydrateMention(username) }
+                    val card = hydrated[username]
+                    ChannelDiscoverRow(
+                        name = card?.title?.takeIf { it.isNotBlank() } ?: "@$username",
+                        handle = "@$username",
+                        subscribers = card?.subscribersText,
+                        description = pluralStringResource(
+                            R.plurals.web_add_mentioned_count,
+                            suggestion.mentionCount,
+                            suggestion.mentionCount,
+                        ),
+                        avatarThumb = null,
+                        avatarFileId = null,
+                        avatarUrl = card?.avatarUrl,
+                        actionLabel = addLabel,
+                        subscribedLabel = subscribedLabel,
+                        actionEnabled = username !in subscribedSet,
+                        // No title captured: addChannel reads the live card's title itself.
+                        onAction = remember(username) { { addChannel(username, null) } },
                     )
                 }
             }
@@ -767,56 +823,28 @@ private fun ChannelPreviewCard(channel: WebChannelInfo, onConfirm: () -> Unit) {
  * @mentions in posts they already follow). The row shows the mention count, which
  * is the social-proof cue a flat description can't carry.
  */
+@androidx.compose.runtime.Immutable
 private data class MentionedChannel(
     val username: String,
     val mentionCount: Int,
 )
 
-@Composable
-private fun MentionedRow(suggestion: MentionedChannel, onTap: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("@${suggestion.username}", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = pluralStringResource(
-                    R.plurals.web_add_mentioned_count,
-                    suggestion.mentionCount,
-                    suggestion.mentionCount,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        TextButton(onClick = onTap) {
-            Text(stringResource(R.string.web_add_check))
-        }
-    }
-}
-
-/** "N channels found", announced politely as the count changes while typing. */
+/**
+ * "N channels found" in the shared section-header style, announced politely as the
+ * count changes while typing.
+ */
 @Composable
 private fun SearchResultsHeader(count: Int) {
-    Text(
-        text = pluralStringResource(R.plurals.web_add_search_results, count, count),
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp, bottom = 4.dp)
-            .semantics { liveRegion = LiveRegionMode.Polite },
+    SectionHeader(
+        title = pluralStringResource(R.plurals.web_add_search_results, count, count),
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
 }
 
 /**
- * One local search result on the shared discover row. The matched part of the title
- * (or of the handle, for a channel known only by its username) is drawn in `primary`.
+ * One local search result on the shared discover row. The matched parts of the title
+ * and of the `@handle` line are drawn in `primary`, so a hit inside the username (or a
+ * channel known only by its username) shows why it matched.
  * Live card data fills what the index lacks; the emphasis applies only while the shown
  * title is the one the index matched against.
  */
@@ -833,9 +861,13 @@ private fun SearchHitRow(
     val handle = "@${channel.username}"
     val title = channel.title ?: card?.title?.takeIf { it.isNotBlank() }
     val accent = MaterialTheme.colorScheme.primary
+    // Ranges index the bare username; the shown handle has a leading "@".
+    val handleText = remember(hit, accent) {
+        emphasised(handle, hit.usernameRanges.map { (it.first + 1)..(it.last + 1) }, accent)
+    }
     val nameText = remember(hit, title, accent) {
         when {
-            title == null -> emphasised(handle, hit.usernameRanges.map { (it.first + 1)..(it.last + 1) }, accent)
+            title == null -> handleText
             title == channel.title -> emphasised(title, hit.titleRanges, accent)
             else -> AnnotatedString(title)
         }
@@ -863,6 +895,7 @@ private fun SearchHitRow(
         actionEnabled = !subscribed,
         onAction = onAdd,
         nameText = nameText,
+        handleText = handleText,
     )
 }
 
@@ -883,8 +916,10 @@ private fun ProbeLoadingRow(username: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            // The same 6 dp + 48 dp (the subscribe button's touch target) as a found
+            // row, so the slot keeps its height when the probe resolves.
             .padding(vertical = 6.dp)
+            .heightIn(min = 48.dp)
             .semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -928,12 +963,32 @@ private fun SearchEmptyState(onSignIn: (() -> Unit)?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (onSignIn != null) {
-            TextButton(onClick = onSignIn) {
-                Text(stringResource(R.string.web_add_search_sign_in))
-            }
+            InlineTextButton(
+                text = stringResource(R.string.web_add_search_sign_in),
+                onClick = onSignIn,
+            )
         }
     }
 }
+
+/**
+ * A text button whose label starts where the text above it starts: pulled back by the
+ * button's own start padding, which would otherwise indent the label. The touch target
+ * and ripple keep their full size.
+ */
+@Composable
+private fun InlineTextButton(text: String, onClick: () -> Unit) {
+    val inset = ButtonDefaults.TextButtonContentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    TextButton(onClick = onClick, modifier = Modifier.offset(x = -inset)) {
+        Text(text)
+    }
+}
+
+private fun WebChannelInfo.toCardData() = ChannelCardData(
+    title = title,
+    subscribersText = subscribers,
+    avatarUrl = avatarUrl,
+)
 
 /** A t.me / tg:// link: resolved by lookup, never searched by name. */
 private fun isLinkLike(input: String): Boolean {
@@ -972,6 +1027,11 @@ private const val HYDRATE_DEBOUNCE_MS = 400L
 
 // How many of the top search results may be hydrated.
 private const val HYDRATE_TOP_RESULTS = 8
+
+// Most-mentioned handles read for the "Mentioned in your channels" section, and how
+// many of them it shows; the spares replace rows that turn out not to be channels.
+private const val MENTIONED_CANDIDATES = 12
+private const val MENTIONED_MAX_ROWS = 5
 
 // Concurrent t.me/s card fetches across catalog and search hydration.
 private const val HYDRATE_CONCURRENCY = 4
