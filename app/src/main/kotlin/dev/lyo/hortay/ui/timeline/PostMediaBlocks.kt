@@ -717,4 +717,4 @@ private fun Modifier.letterboxBackdrop(progress: () -> Float): Modifier = this
     }
 
 private val LETTERBOX_BLUR_RADIUS = 24.dp
-private const val LETTERBOX_SCRIM_ALPHA = 0.35f
+private const val LETTERBOX_SCRIM_ALPHA = 0.25f
