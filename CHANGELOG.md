@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-11-27
+
 ### Added
 - In guest mode you can read the comments under a post, with new ones arriving while the post is open.
 - After a week of regular use, the app asks once whether you want to rate it on Google Play.
@@ -16,13 +18,11 @@
 ### Changed
 - In guest mode, a t.me link to a channel you already follow opens the channel instead of the Add channel sheet.
 - In guest mode, long quotes collapse to a few lines as they do when signed in, and “Show more” opens the post with its comments.
+- A run of a channel's posts replying to the same post now reads as one thread joined by a thin line, instead of every post repeating the same reply quote.
 
 ### Fixed
 - Guest-mode channels load older posts as you scroll back, instead of ending at the last few posts the app had fetched.
 - In guest mode, Settings no longer says you need to sign in to see comments, and the Privacy row no longer mentions invisible reading.
-
-### Changed
-- A run of a channel's posts replying to the same post now reads as one thread joined by a thin line, instead of every post repeating the same reply quote.
 
 ## [0.13.0] — 2026-11-26
 
