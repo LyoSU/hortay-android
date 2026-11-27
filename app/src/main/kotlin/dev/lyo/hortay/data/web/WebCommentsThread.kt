@@ -23,14 +23,28 @@ import kotlinx.coroutines.sync.withLock
  *
  * Loading order follows the widget: the embed page brings the newest comments first,
  * [loadOlder] walks back with `before_id` as the reader reaches the top of what is loaded,
- * [loadAround] swaps in the window around a quoted comment (`comment_id`), and [keepLive]
- * asks for newer ones with `after_id` every [POLL_INTERVAL_MS] while the screen is
- * resumed. Comments are kept by id, so a page or poll that repeats one (edited text,
- * new reactions) replaces it in place.
+ * and [loadAround] swaps in the window around a quoted comment (`comment_id`). Comments are
+ * kept by id, so a page or poll that repeats one (edited text, new reactions) replaces it
+ * in place.
+ *
+ * Live refresh ([keepLive], every [POLL_INTERVAL_MS] while the screen is resumed). The
+ * widget itself only ever appends comments after its `data-after` marker and never
+ * refreshes the ones it already shows, so their edits, reactions and deletions would stay
+ * stale for as long as the screen is open. Instead, each tick asks for `after_id` = one
+ * below the lowest comment id on screen ([onVisibleRange]): the reply (up to
+ * [WIDGET_PAGE_SIZE] comments in ascending order) re-sends the visible comments in their
+ * current form AND carries any new ones, so one request covers both in the common case.
+ * Because the loaded comments are one contiguous run (pages only ever extend it at its
+ * edges, and [loadAround] replaces it), a loaded comment whose id falls inside the range
+ * the reply covered but which is missing from it was deleted, and is dropped. Only when
+ * that window is cut at the page size (or comes back empty) does the same tick also ask
+ * for the comments after the newest known one, as the widget does. With nothing on screen
+ * yet, the tick is just that newer-comments poll.
  *
  * Degradation: a failed first load is [ThreadState.LoadFailed], a post the widget won't
  * show is [ThreadState.Error] — never an empty [ThreadState.Ready]. A failed later page
- * or poll leaves what is on screen alone; older pages report it through [older].
+ * or poll leaves what is on screen alone; older pages report it through [older]. A refresh
+ * only prunes on a successful, non-empty reply, and only inside the id range it covered.
  */
 class WebCommentsThread(
     private val client: WebDiscussionClient,
@@ -54,6 +68,9 @@ class WebCommentsThread(
     private var afterCursor: Long? = null
     private var totalCount: Int? = null
     private var bootstrap: Job? = null
+
+    /** Lowest visible comment id, from [onVisibleRange]; written from the UI, read by the poll. */
+    @Volatile private var viewportFirstId: Long? = null
 
     /** Synthetic chat id the thread's comments share; see [WebPostAdapter.commentToTimelinePost]. */
     private val threadChatId = WebPostAdapter.stableChatId("$channel/$postId#discussion")
@@ -136,17 +153,54 @@ class WebCommentsThread(
         }
     }
 
+    override fun onVisibleRange(firstId: Long, lastId: Long) {
+        viewportFirstId = firstId
+    }
+
+    /** One live tick: see the class KDoc. Internal for tests — [keepLive] loops over it. */
     internal suspend fun pollOnce() = mutex.withLock {
         val current = session ?: return@withLock
-        val cursor = afterCursor ?: comments.keys.maxOrNull() ?: return@withLock
+        val anchor = viewportFirstId?.takeIf { it in comments }
+        if (anchor == null || !refreshFromLocked(current, anchor)) {
+            pollNewerLocked(session ?: current)
+        }
+    }
+
+    /**
+     * Re-reads the comments from [anchor] on and merges them in place. Returns whether the
+     * reply reached the newest end of the thread, so no separate newer-comments poll is needed.
+     */
+    private suspend fun refreshFromLocked(current: DiscussionSession, anchor: Long): Boolean {
+        val newestLoaded = comments.keys.max()
+        val fetched = client.loadComments(current, CommentsCursor.After(anchor - 1)) as? CommentsFetch.Ok
+            ?: return true // A failed refresh leaves the screen alone and spends no second request.
+        session = fetched.session
+        fetched.totalCount?.let { totalCount = it }
+        val returned = fetched.fragment.comments
+        if (returned.isEmpty()) return false
+        val lastReturned = returned.maxOf { it.id }
+        val returnedIds = returned.mapTo(HashSet()) { it.id }
+        comments.keys.removeAll { it in anchor..lastReturned && it !in returnedIds }
+        returned.forEach { comments[it.id] = it }
+        val reachedNewest = returned.size < WIDGET_PAGE_SIZE && lastReturned >= newestLoaded
+        if (reachedNewest) {
+            val marker = fetched.fragment.afterCursor ?: lastReturned
+            afterCursor = maxOf(afterCursor ?: marker, marker)
+        }
+        publish()
+        return reachedNewest
+    }
+
+    /** The widget's own live poll: comments after the newest known one. */
+    private suspend fun pollNewerLocked(current: DiscussionSession) {
+        val cursor = afterCursor ?: comments.keys.maxOrNull() ?: return
         val fetched = client.loadComments(current, CommentsCursor.After(cursor)) as? CommentsFetch.Ok
-            ?: return@withLock
+            ?: return
         session = fetched.session
         fetched.totalCount?.let { totalCount = it }
         fetched.fragment.comments.forEach { comments[it.id] = it }
-        afterCursor = fetched.fragment.afterCursor
-            ?: fetched.fragment.comments.maxOfOrNull { it.id }?.let { maxOf(it, cursor) }
-            ?: cursor
+        val marker = fetched.fragment.afterCursor ?: fetched.fragment.comments.maxOfOrNull { it.id }
+        afterCursor = maxOf(cursor, marker ?: cursor)
         publish()
     }
 
@@ -183,6 +237,13 @@ class WebCommentsThread(
          * gentler cadence costs Telegram a fifth of the requests.
          */
         const val POLL_INTERVAL_MS = 15_000L
+
+        /**
+         * Most comments one `loadComments` reply carries (probed 2026-11-27: `after_id` on an
+         * 86-comment thread returned 50, then the remaining 36). A refresh window of this size
+         * may have been cut short, so the newest comments get their own poll.
+         */
+        internal const val WIDGET_PAGE_SIZE = 50
         private const val MAX_DEPTH = 3
         private const val UNAVAILABLE = "discussion unavailable"
     }

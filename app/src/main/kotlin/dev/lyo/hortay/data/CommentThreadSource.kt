@@ -33,7 +33,20 @@ interface CommentThreadSource {
      */
     suspend fun loadAround(commentId: Long): Boolean
 
-    /** Polls for new comments until cancelled. Run only while the screen is open and resumed. */
+    /**
+     * Tells the source which loaded comments are on screen: [firstId] and [lastId] are the
+     * lowest and highest message ids among the visible comment rows (thread order is not id
+     * order, so these are a min and a max, not the first and last row). Called on every
+     * change of the visible set; a source that has no use for it ignores it. [keepLive] uses
+     * it to refresh what the reader is looking at, not only to append newer comments.
+     */
+    fun onVisibleRange(firstId: Long, lastId: Long) = Unit
+
+    /**
+     * Keeps the thread live until cancelled: new comments, and edits, reactions and
+     * deletions of the comments around the last [onVisibleRange]. Run only while the
+     * screen is open and resumed.
+     */
     suspend fun keepLive()
 }
 

@@ -617,6 +617,26 @@ fun CommentsScreen(
                 }
         }
     }
+    // Guest thread: tell the source which comments are on screen, so its live poll refreshes
+    // their edits, reactions and deletions too (see [WebCommentsThread]). Same Long-key filter
+    // as the dwell above — only comment rows carry a Long key. Thread order is not id order,
+    // so the range is the min and max id of the visible rows.
+    if (guestThread != null && disabledOverride == null) {
+        LaunchedEffect(listState, guestThread) {
+            snapshotFlow {
+                var first = Long.MAX_VALUE
+                var last = Long.MIN_VALUE
+                listState.layoutInfo.visibleItemsInfo.forEach { item ->
+                    val id = item.key as? Long ?: return@forEach
+                    if (id < first) first = id
+                    if (id > last) last = id
+                }
+                if (first <= last) first to last else null
+            }
+                .distinctUntilChanged()
+                .collect { range -> range?.let { (first, last) -> guestThread.onVisibleRange(first, last) } }
+        }
+    }
 
     // The rows the LazyColumn emits above the first comment. The list body gates its
     // items on these same flags, so [leadingItemCount] + an index into [threadItems] is

@@ -52,7 +52,10 @@ import kotlin.coroutines.resumeWithException
  *
  * Load is kept far below the widget's own: one page GET per open, older pages only as the
  * reader asks for them, and a live poll every [WebCommentsThread.POLL_INTERVAL_MS] while the
- * screen is open and resumed (the widget polls every 3 s).
+ * screen is open and resumed (the widget polls every 3 s). That poll is usually one
+ * `after_id` request starting at the comments on screen, which refreshes their edits and
+ * reactions and picks up new comments at once (the widget never refreshes shown comments);
+ * a second request follows only when that window was cut at the page size.
  */
 class WebDiscussionClient(
     private val transport: DiscussionTransport,
