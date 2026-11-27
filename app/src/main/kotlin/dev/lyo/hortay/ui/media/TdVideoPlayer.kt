@@ -89,6 +89,15 @@ fun TdVideoPlayer(
      */
     initialAspect: Float = 0f,
     /**
+     * When > 0, the video keeps exactly this frame aspect and the decoded stream is
+     * centre-cropped into it instead of re-letterboxing to the stream's own aspect. Inline
+     * feed slots pass the poster's aspect: TDLib's declared width / height sometimes
+     * disagrees with the real stream (screen recordings, rotated phone video), and a fitted
+     * player then visibly shrank the picture inside its frame the moment playback replaced
+     * the poster. 0f = fit to the stream (fullscreen viewer).
+     */
+    lockedAspect: Float = 0f,
+    /**
      * Fired once per decoded source when ExoPlayer renders its first frame to the
      * texture ([Player.Listener.onRenderedFirstFrame]). The fullscreen viewer keeps
      * the item's poster composited under the (transparent) TextureView and uses this
@@ -317,6 +326,10 @@ fun TdVideoPlayer(
                 // legitimately depends on the live [videoAspect] state
                 // and stays in [update].
                 val texture = TextureView(ctx).apply { isOpaque = false }
+                // The crop transform depends on the view's size, known only after layout.
+                texture.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                    (v as TextureView).applyCenterCrop()
+                }
                 exoPlayer.setVideoTextureView(texture)
                 AspectRatioFrameLayout(ctx).apply {
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -325,7 +338,15 @@ fun TdVideoPlayer(
                 }
             },
             update = { frame ->
-                if (videoAspect > 0f) frame.setAspectRatio(videoAspect)
+                val texture = frame.getChildAt(0) as TextureView
+                if (lockedAspect > 0f) {
+                    frame.setAspectRatio(lockedAspect)
+                    texture.tag = CropAspects(video = videoAspect, frame = lockedAspect)
+                } else if (videoAspect > 0f) {
+                    frame.setAspectRatio(videoAspect)
+                    texture.tag = null
+                }
+                texture.applyCenterCrop()
             },
             onRelease = { frame ->
                 exoPlayer.clearVideoTextureView(frame.getChildAt(0) as TextureView)
@@ -412,3 +433,29 @@ private val FILE_GONE_ERRORS = setOf(
     PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
     PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
 )
+
+/** Stream vs frame aspect for [applyCenterCrop], carried on the [TextureView]'s tag. */
+private class CropAspects(val video: Float, val frame: Float)
+
+/**
+ * A [TextureView] stretches its content to its bounds; scaling the longer axis back by
+ * frame / video aspect restores the stream's proportions and lets the view's own bounds
+ * crop the overflow — a centre crop without resizing the view. Identity when the tag
+ * carries no [CropAspects] or either aspect is still unknown.
+ */
+private fun TextureView.applyCenterCrop() {
+    val aspects = tag as? CropAspects
+    val w = width.toFloat()
+    val h = height.toFloat()
+    if (aspects == null || aspects.video <= 0f || aspects.frame <= 0f || w <= 0f || h <= 0f) {
+        setTransform(null)
+        return
+    }
+    val matrix = android.graphics.Matrix()
+    if (aspects.video > aspects.frame) {
+        matrix.setScale(aspects.video / aspects.frame, 1f, w / 2f, h / 2f)
+    } else {
+        matrix.setScale(1f, aspects.frame / aspects.video, w / 2f, h / 2f)
+    }
+    setTransform(matrix)
+}
