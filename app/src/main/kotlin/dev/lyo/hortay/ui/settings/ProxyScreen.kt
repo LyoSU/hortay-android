@@ -65,6 +65,7 @@ import dev.lyo.hortay.data.proxy.ProxyKind
 import dev.lyo.hortay.data.proxy.ProxyRepository
 import dev.lyo.hortay.data.proxy.ProxyUi
 import dev.lyo.hortay.data.proxy.TestResult
+import dev.lyo.hortay.data.proxy.carriesWebTraffic
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
@@ -78,12 +79,17 @@ import kotlinx.coroutines.launch
  * and directly from [dev.lyo.hortay.ui.auth.AuthScreen] before sign-in (proxy methods work
  * pre-authorization; see [ProxyRepository] KDoc). All proxy state and persistence live in TDLib;
  * this screen is a thin view over [ProxyRepository.state].
+ *
+ * [readingWithoutAccount] (guest mode) marks the proxies that can't carry guest mode's HTTPS —
+ * MTProto and HTTP-only, see [dev.lyo.hortay.data.proxy.WebProxyRoute] — so a user in a blocked
+ * network isn't left believing t.me goes through a proxy that the app can't use for it.
  */
 @Composable
 internal fun ProxyScreen(
     repo: ProxyRepository,
     contentPadding: PaddingValues,
     onBack: () -> Unit,
+    readingWithoutAccount: Boolean = false,
 ) {
     val state by repo.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -206,6 +212,7 @@ internal fun ProxyScreen(
                             entry = entry,
                             index = index,
                             count = state.entries.size,
+                            notUsedForGuest = readingWithoutAccount && !entry.kind.carriesWebTraffic(),
                             onActivate = { scope.launch { repo.enable(entry.id) } },
                             onTest = { scope.launch { repo.ping(entry.id) } },
                             onRemove = { scope.launch { repo.remove(entry.id) } },
@@ -258,6 +265,7 @@ private fun ProxyRow(
     entry: ProxyUi,
     index: Int,
     count: Int,
+    notUsedForGuest: Boolean,
     onActivate: () -> Unit,
     onTest: () -> Unit,
     onRemove: () -> Unit,
@@ -272,21 +280,30 @@ private fun ProxyRow(
         ),
         leadingContent = { RadioButton(selected = entry.isEnabled, onClick = onActivate) },
         supportingContent = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(healthColor(entry.health)),
-                )
-                Text(
-                    text = "${entry.kind.protocolLabel()} · ${healthLabel(entry.health)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Column {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(healthColor(entry.health)),
+                    )
+                    Text(
+                        text = "${entry.kind.protocolLabel()} · ${healthLabel(entry.health)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (notUsedForGuest) {
+                    Text(
+                        text = stringResource(R.string.proxy_not_used_for_guest),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         trailingContent = {

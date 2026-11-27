@@ -148,9 +148,10 @@ fun SettingsScreen(
      */
     archiveLossOnLogout: Boolean = false,
     /**
-     * Proxy support. Non-null only in TDLib mode — proxy targets the MTProto transport, which
-     * guest mode (anonymous `t.me/s/`) doesn't use. When null the Privacy page hides its proxy
-     * row entirely.
+     * Proxy support, in both modes: TDLib uses it for MTProto, and the app's own HTTPS (guest
+     * mode's `t.me/s/` pages and media) follows it through
+     * [dev.lyo.hortay.data.proxy.WebProxyRouting] — SOCKS5 and HTTP-with-CONNECT only, which
+     * the Proxy screen spells out in guest mode. When null the Privacy page hides its proxy row.
      */
     proxy: dev.lyo.hortay.data.proxy.ProxyRepository? = null,
     /**
@@ -265,7 +266,13 @@ fun SettingsScreen(
             }
             entry<SettingsNavKey.Proxy> {
                 proxy?.let { repo ->
-                    ProxyScreen(repo = repo, contentPadding = contentPadding, onBack = pop)
+                    ProxyScreen(
+                        repo = repo,
+                        contentPadding = contentPadding,
+                        onBack = pop,
+                        // Guest mode is the one with a web cache to clear (see the class KDoc).
+                        readingWithoutAccount = onClearWebCache != null,
+                    )
                 }
             }
             entry<SettingsNavKey.About> {

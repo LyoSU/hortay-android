@@ -548,7 +548,7 @@ class AppGraph(context: Context) {
     // scroll past video cards essentially free at the player layer.
     // Idle pooled players are drained when the app leaves the foreground (and on
     // onTrimMemory, see HortayApp) so their decoders don't outlive the visible session.
-    val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context).also { pool ->
+    val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context, httpCallFactory = { webMediaHttpClient }).also { pool ->
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) = pool.drainIdle()
         })
@@ -640,6 +640,14 @@ class AppGraph(context: Context) {
     val webRepository: WebRepository = WebRepository(webDatabase, res)
 
     /**
+     * Sends the app's own HTTPS traffic through the proxy TDLib has enabled — the same pool in
+     * guest and signed-in mode. Installed on [webHttpClient], and so on everything derived from
+     * it ([webMediaHttpClient]). See [dev.lyo.hortay.data.proxy.WebProxyRouting] KDoc.
+     */
+    val webProxyRouting: dev.lyo.hortay.data.proxy.WebProxyRouting =
+        dev.lyo.hortay.data.proxy.WebProxyRouting(proxyRepository.state, appScope)
+
+    /**
      * Anonymous web-mode HTTP client. Reads public channel previews via
      * t.me/s/<username> with no Telegram authentication required. The shared
      * 10 MB OkHttp [Cache] under `cacheDir/web-http/` persists ETag /
@@ -654,10 +662,26 @@ class AppGraph(context: Context) {
      * connection-pool reuse + the ETag-aware [okhttp3.Cache] under
      * `cacheDir/web-http/` cuts a 200-channel sweep ~80-90% on a warm cache, and a
      * cold TGS resolve hits the same H2 connection that the JSON resolve already
-     * opened to t.me.
+     * opened to t.me. Carries the user's proxy via [webProxyRouting]; a proxy change
+     * evicts the connection pool so no pooled connection keeps the old route.
      */
     val webHttpClient: okhttp3.OkHttpClient =
-        WebTelegramClient.defaultHttpClient(File(context.cacheDir, "web-http"))
+        WebTelegramClient.defaultHttpClient(File(context.cacheDir, "web-http"), webProxyRouting::install)
+            .also { client -> webProxyRouting.onRouteChanged { client.connectionPool.evictAll() } }
+
+    /**
+     * [webHttpClient] for URL media: Coil image loads (HortayApp's image loader) and ExoPlayer
+     * URL streams ([exoPlayerPool]). `newBuilder()` keeps the connection pool, dispatcher and the
+     * proxy routing; it follows redirects like a media client should, skips the OkHttp cache
+     * (Coil has its own disk cache, streams aren't cached) and drops the call timeout, which
+     * would otherwise cut a video stream after 20 s.
+     */
+    val webMediaHttpClient: okhttp3.OkHttpClient = webHttpClient.newBuilder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .cache(null)
+        .callTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     val webClient: WebTelegramClient = WebTelegramClient(webHttpClient)
 

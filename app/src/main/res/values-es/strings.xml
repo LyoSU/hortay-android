@@ -848,6 +848,7 @@
     <string name="proxy_test">Probar</string>
     <string name="proxy_remove">Eliminar</string>
     <string name="proxy_health_unknown">Sin probar</string>
+    <string name="proxy_not_used_for_guest">No se usa para leer sin cuenta</string>
     <string name="proxy_health_checking">Comprobando…</string>
     <string name="proxy_health_latency">%1$d ms</string>
     <string name="proxy_health_unreachable">Inaccesible</string>

@@ -655,6 +655,9 @@ fun WebModeScaffold(graph: AppGraph) {
                                                 contentPadding = homePadding,
                                                 onLogout = null,
                                                 onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
+                                                // TDLib runs (unauthorised) in guest mode too, so the
+                                                // same proxy pool routes guest HTTPS — see WebProxyRouting.
+                                                proxy = graph.proxyRepository,
                                                 // Combined wipe-and-refetch so the user sees fresh
                                                 // content immediately, not an empty feed waiting for
                                                 // the next tier-2 sweep. Subscriptions survive. The

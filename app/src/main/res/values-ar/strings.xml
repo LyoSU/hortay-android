@@ -909,6 +909,7 @@
     <string name="proxy_test">اختبار</string>
     <string name="proxy_remove">إزالة</string>
     <string name="proxy_health_unknown">لم يُختبر</string>
+    <string name="proxy_not_used_for_guest">لا يُستخدم للقراءة بدون حساب</string>
     <string name="proxy_health_checking">جارٍ التحقق…</string>
     <string name="proxy_health_latency">%1$d مللي ثانية</string>
     <string name="proxy_health_unreachable">غير قابل للوصول</string>

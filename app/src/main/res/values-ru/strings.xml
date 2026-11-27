@@ -869,6 +869,7 @@
     <string name="proxy_test">Проверить</string>
     <string name="proxy_remove">Удалить</string>
     <string name="proxy_health_unknown">Не проверено</string>
+    <string name="proxy_not_used_for_guest">Не используется для чтения без аккаунта</string>
     <string name="proxy_health_checking">Проверка…</string>
     <string name="proxy_health_latency">%1$d мс</string>
     <string name="proxy_health_unreachable">Недоступен</string>

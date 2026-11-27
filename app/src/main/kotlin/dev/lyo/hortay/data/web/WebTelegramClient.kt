@@ -444,8 +444,14 @@ class WebTelegramClient(
          * Cache size: 10 MB. Enough room for ~150 channel preview pages (each
          * ~30-100 KB compressed). DiskLruCache evicts least-recently-used entries
          * when full so a 200-channel rotation degrades gracefully.
+         *
+         * [configure] runs last, before `build()` — the app graph installs the proxy routing
+         * there ([dev.lyo.hortay.data.proxy.WebProxyRouting.install]).
          */
-        fun defaultHttpClient(cacheDir: File? = null): OkHttpClient {
+        fun defaultHttpClient(
+            cacheDir: File? = null,
+            configure: (OkHttpClient.Builder) -> OkHttpClient.Builder = { it },
+        ): OkHttpClient {
             val builder = OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
@@ -468,7 +474,7 @@ class WebTelegramClient(
                 if (!cacheDir.exists()) cacheDir.mkdirs()
                 builder.cache(Cache(cacheDir, HTTP_CACHE_SIZE_BYTES))
             }
-            return builder.build()
+            return configure(builder).build()
         }
 
         private const val HTTP_CACHE_SIZE_BYTES = 10L * 1024 * 1024

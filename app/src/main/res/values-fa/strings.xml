@@ -823,6 +823,7 @@
     <string name="proxy_test">آزمایش</string>
     <string name="proxy_remove">حذف</string>
     <string name="proxy_health_unknown">آزمایش‌نشده</string>
+    <string name="proxy_not_used_for_guest">برای خواندن بدون حساب استفاده نمی‌شود</string>
     <string name="proxy_health_checking">در حال بررسی…</string>
     <string name="proxy_health_latency">%1$d میلی‌ثانیه</string>
     <string name="proxy_health_unreachable">در دسترس نیست</string>

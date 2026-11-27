@@ -48,6 +48,13 @@ import java.util.ArrayDeque
  */
 class ExoPlayerPool(
     private val context: Context,
+    /**
+     * HTTP stack for URL media (guest-mode WebM / video). The app's shared web client, so URL
+     * streams follow the user's proxy ([dev.lyo.hortay.data.proxy.WebProxyRouting]) — ExoPlayer's
+     * default `DefaultHttpDataSource` uses `HttpURLConnection` and would bypass it. Local
+     * `file://` media (everything TDLib downloads) still goes through `DefaultDataSource`.
+     */
+    private val httpCallFactory: () -> okhttp3.Call.Factory,
     private val maxSize: Int = DEFAULT_MAX_SIZE,
 ) {
 
@@ -136,6 +143,14 @@ class ExoPlayerPool(
             // wake mode entirely prevents ExoPlayer's `WakeLockManager` from acquiring
             // its partial wakelock during the brief window between play() and pause().
             setWakeMode(C.WAKE_MODE_NONE)
+            setMediaSourceFactory(
+                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
+                    androidx.media3.datasource.DefaultDataSource.Factory(
+                        context,
+                        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(httpCallFactory()),
+                    ),
+                ),
+            )
         }
         return builder.build()
     }

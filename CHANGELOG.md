@@ -6,6 +6,7 @@
 
 ### Added
 - After a week of regular use, the app asks once whether you want to rate it on Google Play.
+- Reading without an account now goes through your SOCKS5 or HTTP proxy, photos and videos included.
 - Posts you read in guest mode now count in the channels' view counters, as on the t.me website — Settings → Privacy can turn this off.
 - The Channels tab can export your channel list as text or a file and import one back, and sharing channel links to Hortay offers to follow them.
 

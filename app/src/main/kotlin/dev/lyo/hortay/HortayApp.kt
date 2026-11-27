@@ -12,6 +12,7 @@ import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import dev.lyo.hortay.data.LocaleStore
 
@@ -75,6 +76,10 @@ class HortayApp : Application(), SingletonImageLoader.Factory {
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
         .crossfade(true)
+        // URL images (guest-mode CDN photos, avatars) go through the shared web client so they
+        // follow the user's proxy (see WebProxyRouting) instead of Coil's own direct client.
+        // A component added here takes precedence over the service-loaded default fetcher.
+        .components { add(OkHttpNetworkFetcherFactory(callFactory = { graph.webMediaHttpClient })) }
         .memoryCache {
             // 10% of Java heap leaves headroom for our MutableStateFlow snapshots, the
             // PersistentList feed, TDLib's working set and Compose buffers. 20% defaults

@@ -429,6 +429,9 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.common)
+    // URL media (guest-mode WebM / video) streams through the shared web OkHttp client so it
+    // honours the user's proxy — DefaultHttpDataSource (HttpURLConnection) would bypass it.
+    implementation(libs.media3.datasource.okhttp)
 
     implementation(libs.kotlinx.collections.immutable)
 
