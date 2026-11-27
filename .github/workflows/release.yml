@@ -18,6 +18,11 @@ on:
       version:
         description: "Version name, e.g. 0.11.0 (a v-prefixed tag is created)."
         required: true
+      track:
+        description: "Google Play track. A tag push always uploads to internal."
+        type: choice
+        options: [internal, production]
+        default: internal
 
 # Never build two releases for the same ref at once.
 concurrency:
@@ -210,12 +215,14 @@ jobs:
           PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: printf '%s' "$PLAY_JSON" > "$RUNNER_TEMP/play-account.json"
 
-      - name: Upload AAB to Google Play (internal track)
+      - name: Upload AAB to Google Play
         if: steps.play.outputs.enabled == 'true'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJson: ${{ runner.temp }}/play-account.json
           packageName: dev.lyo.hortay
           releaseFiles: ${{ steps.artifacts.outputs.dir }}/hortay-${{ steps.ver.outputs.version }}.aab
-          track: internal
+          # Choice input, so only the listed values can reach here; tag pushes have no
+          # inputs and fall back to internal.
+          track: ${{ github.event.inputs.track || 'internal' }}
           status: completed
