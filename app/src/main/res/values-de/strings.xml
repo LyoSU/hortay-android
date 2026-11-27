@@ -408,6 +408,8 @@
     <string name="settings_section_privacy">Datenschutz</string>
     <string name="settings_hide_online_title">Online-Status verbergen</string>
     <string name="settings_hide_online_subtitle">Zeigt deinen Telegram-Kontakten nicht an, dass du online bist, während du Hortay liest. Die offizielle Telegram-App behält ihr übliches Statusverhalten. Diese Einstellung betrifft nur Hortay-Sitzungen.</string>
+    <string name="settings_count_web_views_title">Meine Aufrufe für Kanäle zählen</string>
+    <string name="settings_count_web_views_subtitle">Kanäle zählen dich bei ihren Aufrufen mit, und Telegram sieht, welche Beiträge du liest.</string>
     <string name="timeline_unread_boundary">Ungelesen</string>
     <string name="settings_section_traffic">Datenverkehr</string>
     <string name="settings_section_storage">Speicher</string>

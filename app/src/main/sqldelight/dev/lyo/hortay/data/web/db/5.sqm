@@ -1,0 +1,12 @@
+-- Schema migration: version 5 → 6.
+--
+-- The channel's real Telegram id, read from the `data-view` token every t.me/s/ post
+-- carries (see TmePageParser.channelIdFromViewToken). Nullable: rows written before this
+-- version, and pages without a token, keep NULL until the next full fetch fills it in.
+-- No index — it is only ever read for one row at a time, by username.
+--
+-- Additive only, plain ALTER TABLE ADD COLUMN (Android 8 SQLite 3.18).
+
+ALTER TABLE channel ADD COLUMN channel_id INTEGER;
+
+PRAGMA user_version = 6;

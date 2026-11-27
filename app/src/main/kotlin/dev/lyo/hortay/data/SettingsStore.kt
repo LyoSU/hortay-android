@@ -364,6 +364,22 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * Guest mode only: report the posts the user reads to `t.me/v/`, so they count in the
+     * channel's view counter like a browser reader on t.me/s/ would. Telegram then learns
+     * which posts this device read (it already sees which pages it fetches). Default
+     * true — a reader who counts is what channel owners expect, and the setting sits in
+     * Settings → Privacy for anyone who'd rather not. See
+     * [dev.lyo.hortay.data.web.WebViewReporter].
+     */
+    val countWebViews: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_COUNT_WEB_VIEWS] ?: true
+    }
+
+    suspend fun setCountWebViews(enabled: Boolean) {
+        dataStore.edit { it[KEY_COUNT_WEB_VIEWS] = enabled }
+    }
+
+    /**
      * Epoch-ms of the last successful TDLib [TdApi.OptimizeStorage] sweep. Read by
      * [TdClient] to throttle the cleanup to once per [STORAGE_OPTIMIZE_INTERVAL_MS] —
      * scanning a multi-GB tdlib-files directory on every cold start used to add real
@@ -386,6 +402,7 @@ class SettingsStore(context: Context) {
         val KEY_QUICK_REACTION_OFF = booleanPreferencesKey("quick_reaction_off")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
+        val KEY_COUNT_WEB_VIEWS = booleanPreferencesKey("count_web_views")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_PURE_BLACK = booleanPreferencesKey("pure_black")
         val KEY_TEXT_SCALE = stringPreferencesKey("text_scale")

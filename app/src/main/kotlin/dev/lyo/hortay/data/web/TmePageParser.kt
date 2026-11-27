@@ -1,6 +1,11 @@
 package dev.lyo.hortay.data.web
 
 import kotlinx.collections.immutable.toPersistentList
+import kotlinx.collections.immutable.toPersistentMap
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -47,6 +52,7 @@ object TmePageParser {
         if (posts.isEmpty() && expectsPosts) return null
         // Cursor is the seq id of the OLDEST post; caller paginates with `?before=<seq>`.
         val olderCursor = posts.minByOrNull { it.seq }?.seq?.toString()
+        val viewTokens = parseViewTokens(doc)
         return WebChannelPage(
             channel = channel,
             posts = posts.toPersistentList(),
@@ -54,8 +60,46 @@ object TmePageParser {
             listedSeqs = doc.select(".tgme_widget_message[data-post]:not(.service_message)")
                 .mapNotNull { it.attr("data-post").substringAfterLast('/').toLongOrNull() }
                 .toPersistentList(),
+            channelId = viewTokens.values.firstNotNullOfOrNull(::channelIdFromViewToken),
+            viewTokens = viewTokens.toPersistentMap(),
         )
     }
+
+    /**
+     * Each listed post carries `data-view="<token>"` — what t.me's own page script hands
+     * back to `POST t.me/v/` to count an anonymous view (see [WebViewReporter]). Keyed by
+     * the same `<channel>/<seq>` id as [WebPost.id]. Service rows are skipped like in
+     * [parsePosts]; a token that isn't plain base64 is dropped, since it ends up joined by
+     * `;` into a form field.
+     */
+    private fun parseViewTokens(doc: Document): Map<String, String> =
+        doc.select(".tgme_widget_message[data-post][data-view]:not(.service_message)")
+            .mapNotNull { msg ->
+                val dataPost = msg.attr("data-post")
+                val seq = dataPost.substringAfterLast('/').toLongOrNull()
+                val token = msg.attr("data-view").trim()
+                if (seq == null || !VIEW_TOKEN_REGEX.matches(token)) null
+                else "${dataPost.substringBeforeLast('/').lowercase()}/$seq" to token
+            }
+            .toMap()
+
+    /**
+     * The channel's real id, read from a `data-view` token: unpadded base64 of a JSON
+     * object like `{"c":-1006503122,"p":574,"t":…,"h":"…"}`, where `c` is the NEGATED
+     * channel id (TDLib chat id `-100<id>`). Only `c` is read: `p` is a string for album
+     * posts (`"70596g"`), and `t` / `h` change on every fetch. Returns the positive id,
+     * or null for anything malformed — the callers treat a missing id as "unknown".
+     */
+    internal fun channelIdFromViewToken(token: String): Long? = runCatching {
+        // URL-safe alphabet folded to the standard one; java.util.Base64's basic decoder
+        // accepts a missing `=` padding.
+        val normalized = token.replace('-', '+').replace('_', '/')
+        val json = String(java.util.Base64.getDecoder().decode(normalized), Charsets.UTF_8)
+        val c = ((Json.parseToJsonElement(json) as? JsonObject)?.get("c") as? JsonPrimitive)
+            ?.takeUnless { it.isString }
+            ?.longOrNull
+        c?.takeIf { it < 0 && it != Long.MIN_VALUE }?.let { -it }
+    }.getOrNull()
 
     private fun parseChannelInfo(doc: Document, fallbackUsername: String): WebChannelInfo? {
         // Real markup: `<div class="tgme_channel_info_header_title"><span dir="auto">…</span></div>`
@@ -546,6 +590,9 @@ object TmePageParser {
 
     private val BACKGROUND_URL_REGEX =
         Regex("""background-image\s*:\s*url\(\s*['"]?([^'")]+)['"]?\s*\)""")
+
+    /** A `data-view` token: base64 (either alphabet), no `;` or whitespace. */
+    private val VIEW_TOKEN_REGEX = Regex("""[A-Za-z0-9+/_=-]{1,512}""")
 
     private val PADDING_PCT_REGEX =
         Regex("""padding-(top|bottom)\s*:\s*([\d.]+)%""")

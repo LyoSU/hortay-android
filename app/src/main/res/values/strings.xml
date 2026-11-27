@@ -409,6 +409,8 @@
     <string name="settings_section_privacy">Privacy</string>
     <string name="settings_hide_online_title">Hide online status</string>
     <string name="settings_hide_online_subtitle">Do not show your Telegram contacts that you are online while reading Hortay. The official Telegram app keeps its usual status behavior. This setting only affects Hortay sessions.</string>
+    <string name="settings_count_web_views_title">Count my views for channels</string>
+    <string name="settings_count_web_views_subtitle">Channels see you in their view counts, and Telegram sees which posts you read.</string>
     <string name="timeline_unread_boundary">New posts</string>
     <string name="settings_section_traffic">Traffic</string>
     <string name="settings_section_storage">Storage</string>

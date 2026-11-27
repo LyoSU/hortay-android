@@ -137,10 +137,10 @@ class WebRepository(
     /** All known channels, including soft-deleted (`is_subscribed = 0`). */
     fun observeAllChannels(): Flow<PersistentList<ChannelEntry>> =
         channelQueries
-            .selectAll(mapper = ::channelEntryMapper)
+            .selectAll()
             .asFlow()
             .mapToList(ioDispatcher)
-            .map { it.toPersistentList() }
+            .map { rows -> rows.map(::channelEntry).toPersistentList() }
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
 
@@ -272,6 +272,7 @@ class WebRepository(
                 lastEtag = etag,
                 lastModified = lastModified,
                 olderCursor = page.olderCursor,
+                channelId = page.channelId,
             )
             channelQueries.upsertFromFetchUpdate(
                 username = ch.username,
@@ -284,6 +285,7 @@ class WebRepository(
                 lastEtag = etag,
                 lastModified = lastModified,
                 olderCursor = page.olderCursor,
+                channelId = page.channelId,
             )
             for (post in page.posts) {
                 ingestPost(post, ch.username, fetchedAtMs, forceMediaRefresh)
@@ -612,6 +614,7 @@ class WebRepository(
                         subscribers = row.subscribers,
                         isVerified = row.is_verified,
                         isSubscribed = row.is_subscribed,
+                        channelId = row.channel_id,
                     )
                 }
                 val lowerState = postQueries.selectUserStateByChannel(lower).executeAsList()
@@ -738,6 +741,15 @@ class WebRepository(
      * re-emits and the [dev.lyo.hortay.ui.timeline.UnreadStrip] for cards at
      * or below this seq fades out.
      */
+    /**
+     * The real Telegram channel id behind [username] (`channel.channel_id`), or null when
+     * no full fetch has seen one yet. Lets a signed-in run tell offline whether the
+     * account already follows the channel (see `KnownChannelMembership`).
+     */
+    suspend fun channelIdFor(username: String): Long? = withContext(ioDispatcher) {
+        channelQueries.selectChannelId(username).executeAsOneOrNull()?.channel_id
+    }
+
     suspend fun markChannelRead(username: String, postSeq: Long) = withContext(ioDispatcher) {
         db.transaction {
             readCursorQueries.markReadInsert(username, postSeq)
@@ -950,43 +962,23 @@ class WebRepository(
     /** Keyed by post id; sized above the feed window ([DEFAULT_FEED_LIMIT]) plus a channel screen. */
     private val postMemo = dev.lyo.hortay.ui.media.boundedLruCache<String, PostMemo>(POST_MEMO_SIZE, accessOrder = true)
 
-    // Same convention as [rowToTimelinePost]: `_`-prefixed params are columns the
-    // SQL projection emits but [ChannelEntry] doesn't need. Dropped here:
-    //   `_last_etag` / `_last_modified` — HTTP cache validators consumed by the
-    //   fetcher, never surfaced to the UI.
-    //   `_older_cursor` — pagination cursor, used by the fetcher.
-    private fun channelEntryMapper(
-        username: String,
-        title: String,
-        description: String,
-        avatar_url: String?,
-        subscribers: String?,
-        is_verified: Boolean,
-        is_subscribed: Boolean,
-        last_fetched_at_ms: Long?,
-        _last_etag: String?,
-        _last_modified: String?,
-        _older_cursor: String?,
-        fetch_status: String,
-        fetch_error: String?,
-        fetch_retry_after_ms: Long?,
-    ): ChannelEntry {
-        return ChannelEntry(
-            info = WebChannelInfo(
-                username = username,
-                title = title,
-                description = description,
-                avatarUrl = avatar_url,
-                subscribers = subscribers,
-                isVerified = is_verified,
-            ),
-            isSubscribed = is_subscribed,
-            lastFetchedAtMs = last_fetched_at_ms,
-            status = ChannelFetchStatus.fromDb(fetch_status),
-            error = fetch_error,
-            retryAfterMs = fetch_retry_after_ms,
-        )
-    }
+    // The HTTP validators (`last_etag` / `last_modified`), the pagination cursor and
+    // `channel_id` are fetcher-side state, never surfaced to the UI.
+    private fun channelEntry(row: dev.lyo.hortay.data.web.db.Channel): ChannelEntry = ChannelEntry(
+        info = WebChannelInfo(
+            username = row.username,
+            title = row.title,
+            description = row.description,
+            avatarUrl = row.avatar_url,
+            subscribers = row.subscribers,
+            isVerified = row.is_verified,
+        ),
+        isSubscribed = row.is_subscribed,
+        lastFetchedAtMs = row.last_fetched_at_ms,
+        status = ChannelFetchStatus.fromDb(row.fetch_status),
+        error = row.fetch_error,
+        retryAfterMs = row.fetch_retry_after_ms,
+    )
 
     private fun decodeMedia(jsonStr: String): PersistentList<WebMedia> = runCatching {
         json.decodeFromString(mediaListSerializer, jsonStr).toPersistentList()

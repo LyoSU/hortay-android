@@ -394,6 +394,8 @@
     <string name="settings_section_privacy">Privasi</string>
     <string name="settings_hide_online_title">Sembunyikan status online</string>
     <string name="settings_hide_online_subtitle">Tidak menampilkan kepada kontak Telegram bahwa kamu sedang online saat membaca Hortay. Aplikasi Telegram resmi tetap menampilkan status seperti biasa. Pengaturan ini hanya berlaku untuk sesi Hortay.</string>
+    <string name="settings_count_web_views_title">Hitung tayangan saya</string>
+    <string name="settings_count_web_views_subtitle">Kanal menghitungmu dalam jumlah tayangan, dan Telegram melihat postingan mana yang kamu baca.</string>
     <string name="timeline_unread_boundary">Belum dibaca</string>
     <string name="settings_section_traffic">Data</string>
     <string name="settings_section_storage">Penyimpanan</string>

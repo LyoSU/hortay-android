@@ -408,6 +408,8 @@
     <string name="settings_section_privacy">Gizlilik</string>
     <string name="settings_hide_online_title">Çevrimiçi durumunu gizle</string>
     <string name="settings_hide_online_subtitle">Hortay\'ı okurken Telegram kişilerine çevrimiçi göründüğünü gizler. Resmi Telegram uygulaması normal durum davranışını korur. Bu ayar yalnızca Hortay oturumlarını etkiler.</string>
+    <string name="settings_count_web_views_title">Görüntülemelerimi say</string>
+    <string name="settings_count_web_views_subtitle">Kanallar seni görüntülenme sayısına katar, Telegram da hangi gönderileri okuduğunu görür.</string>
     <string name="timeline_unread_boundary">Okunmamış</string>
     <string name="settings_section_traffic">Trafik</string>
     <string name="settings_section_storage">Depolama</string>

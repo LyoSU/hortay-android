@@ -4,6 +4,7 @@ import android.util.Log
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.PublicChatLookup
+import dev.lyo.hortay.data.warnUnlessCancelled
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -29,6 +30,14 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * Cancellation is cooperative between channels (and inside the throttle delay), so a
  * cancelled run stops without draining the rest of the list.
+ *
+ * Already a member: before any RPC, [isAlreadyMember] gets a chance to say the account
+ * follows the channel already (an offline check, see [KnownChannelMembership]). Such a
+ * channel counts as joined — the migration then moves it out of the guest list like any
+ * other success — costs no request and no throttle delay. The check runs per channel at
+ * run time, not when the account signs in: right after sign-in TDLib may not have
+ * loaded the chat list yet, and a channel joined meanwhile in another client would be
+ * missed.
  */
 class ThrottledChannelJoiner(
     private val channels: ChannelDirectory,
@@ -36,6 +45,7 @@ class ThrottledChannelJoiner(
     private val floodWaitUntilMs: StateFlow<Long>,
     private val throttleMs: Long = THROTTLE_MS,
     private val nowMs: () -> Long = System::currentTimeMillis,
+    private val isAlreadyMember: suspend (username: String) -> Boolean = { false },
 ) {
 
     /**
@@ -59,7 +69,11 @@ class ThrottledChannelJoiner(
             if (stopOnFloodWait && isFloodLimited()) floodLimited = true
             if (floodLimited) break
             val cleaned = username.removePrefix("@").trim().lowercase()
-            if (cleaned.isNotEmpty()) {
+            if (cleaned.isNotEmpty() && alreadyMember(cleaned)) {
+                onProgress(i, cleaned)
+                joined += cleaned
+                onJoined(cleaned)
+            } else if (cleaned.isNotEmpty()) {
                 onProgress(i, cleaned)
                 val ok = joinOne(cleaned, joined, notFound, failed, onJoined)
                 // A failure that registered a FLOOD_WAIT ends the run at the top of the
@@ -114,6 +128,12 @@ class ThrottledChannelJoiner(
         }
         return true
     }
+
+    /** [isAlreadyMember], with a failing check read as "not a member" (then we just join). */
+    private suspend fun alreadyMember(cleaned: String): Boolean =
+        runCatching { isAlreadyMember(cleaned) }
+            .warnUnlessCancelled(TAG, "membership check for $cleaned")
+            .getOrDefault(false)
 
     private fun isFloodLimited(): Boolean = floodWaitUntilMs.value > nowMs()
 

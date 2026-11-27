@@ -93,6 +93,12 @@ class WebFeedSource(
      * archive DB before [WebRepository.ingestPage] overwrites them.
      */
     private val archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
+    /**
+     * Gets the `data-view` tokens of every page this source fetches — the full page,
+     * `?after=` walks, gap back-fill and older-page media repairs — whether or not the
+     * ingest then writes anything. Optional so tests don't need one. See [WebViewReporter].
+     */
+    private val viewReporter: WebViewReporter? = null,
 ) : FeedSource {
 
     private val webPostDiff = WebPostDiff()
@@ -584,6 +590,7 @@ class WebFeedSource(
                     client.fetchChannelPage(username, before = (seq + 1).toString(), useCache = false)
                 }
                 if (result is FetchResult.Page) {
+                    viewReporter?.recordPage(result.page)
                     repository.refreshExistingPosts(username, result.page.posts, System.currentTimeMillis())
                 } else {
                     Log.w(TAG, "older-page media refetch for $username before ${seq + 1}: $result")
@@ -662,6 +669,7 @@ class WebFeedSource(
                 repository.markNotModified(username, fetchedAtMs)
                 return FetchOutcome.Fresh
             }
+            viewReporter?.recordPage(result.page)
             val posts = result.page.posts
             val newest = posts.maxOfOrNull { it.seq }
             if (newest == null || newest <= after) {
@@ -708,7 +716,9 @@ class WebFeedSource(
                     client.fetchChannelPage(username, before = floor.toString(), useCache = false)
                 }
                 // Not a page: keep the record, the next sweep retries from [floor].
-                val posts = (result as? FetchResult.Page)?.page?.posts ?: return
+                val page = (result as? FetchResult.Page)?.page ?: return
+                viewReporter?.recordPage(page)
+                val posts = page.posts
                 val olderFloor = posts.minOfOrNull { it.seq }
                 // No posts, or a page that doesn't go further back: nothing left below.
                 if (olderFloor == null || olderFloor >= floor) {
@@ -816,6 +826,7 @@ class WebFeedSource(
             }
             when (result) {
                 is FetchResult.Page -> {
+                    viewReporter?.recordPage(result.page)
                     // A page with zero posts for a channel we already hold posts for
                     // is a degraded parse (selectors silently stopped matching), not
                     // a channel that deleted its history — surface it as such instead
@@ -1128,6 +1139,8 @@ class WebFeedSource(
                 staleRefetchCooldown.clear()
                 staleUrlCooldown.clear()
                 synchronized(staleOlderPageCooldown) { staleOlderPageCooldown.clear() }
+                // Tokens of the wiped pages; the refetch below brings fresh ones.
+                viewReporter?.clear()
                 // Reset the staleness gate so the refresh below isn't bounced by the
                 // 30-second cooldown — the user just asked for fresh data.
                 lastSuccessfulRefreshAtMs = 0L

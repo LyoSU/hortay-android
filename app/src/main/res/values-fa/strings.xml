@@ -406,6 +406,8 @@
     <string name="settings_section_privacy">حریم خصوصی</string>
     <string name="settings_hide_online_title">پنهان کردن وضعیت آنلاین</string>
     <string name="settings_hide_online_subtitle">هنگام خواندن Hortay، وضعیت آنلاین شما برای مخاطبان Telegram نمایش داده نمی‌شود. رفتار وضعیت در برنامه رسمی Telegram تغییر نمی‌کند. این تنظیم فقط روی نشست‌های Hortay تأثیر می‌گذارد.</string>
+    <string name="settings_count_web_views_title">شمارش بازدیدهای من</string>
+    <string name="settings_count_web_views_subtitle">کانال‌ها شما را در شمار بازدیدها حساب می‌کنند و Telegram می‌بیند کدام پست‌ها را می‌خوانید.</string>
     <string name="timeline_unread_boundary">خوانده‌نشده</string>
     <string name="settings_section_traffic">ترافیک</string>
     <string name="settings_section_storage">حافظه</string>

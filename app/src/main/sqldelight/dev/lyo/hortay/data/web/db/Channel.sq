@@ -25,7 +25,11 @@ CREATE TABLE channel (
     -- One of: idle | loading | ok | not_found | private | rate_limited | error | parse_failure
     fetch_status TEXT NOT NULL DEFAULT 'idle',
     fetch_error TEXT,
-    fetch_retry_after_ms INTEGER
+    fetch_retry_after_ms INTEGER,
+    -- Real Telegram channel id (positive), from the page's `data-view` token. NULL until
+    -- a full fetch has seen one. Added by 5.sqm, hence last. Used to tell whether a
+    -- signed-in account already follows the channel (MigrationCoordinator / import).
+    channel_id INTEGER
 );
 
 CREATE INDEX channel_subscribed_idx ON channel(is_subscribed);
@@ -44,6 +48,9 @@ SELECT username FROM channel;
 -- older_cursor = smallest seq on the channel's newest page (only the latest-page
 -- ingest writes it). The stale-media path compares a post's seq against it to
 -- decide whether the post sits on page 1 or needs a `?before=` fetch.
+selectChannelId:
+SELECT channel_id FROM channel WHERE username = :username;
+
 selectOlderCursor:
 SELECT username, older_cursor FROM channel WHERE username = :username;
 
@@ -71,11 +78,11 @@ upsertFromFetchInsert:
 INSERT OR IGNORE INTO channel(
     username, title, description, avatar_url, subscribers, is_verified,
     is_subscribed, last_fetched_at_ms, last_etag, last_modified, older_cursor,
-    fetch_status, fetch_error, fetch_retry_after_ms
+    fetch_status, fetch_error, fetch_retry_after_ms, channel_id
 ) VALUES (
     :username, :title, :description, :avatarUrl, :subscribers, :isVerified,
     0, :lastFetchedAtMs, :lastEtag, :lastModified, :olderCursor,
-    'ok', NULL, NULL
+    'ok', NULL, NULL, :channelId
 );
 
 upsertFromFetchUpdate:
@@ -91,7 +98,9 @@ UPDATE channel SET
     older_cursor = :olderCursor,
     fetch_status = 'ok',
     fetch_error = NULL,
-    fetch_retry_after_ms = NULL
+    fetch_retry_after_ms = NULL,
+    -- A page without a token must not erase an id an earlier page supplied.
+    channel_id = COALESCE(:channelId, channel_id)
 WHERE username = :username;
 
 -- Status update for fetch outcomes that don't carry a parsed page (errors, 304,
@@ -181,8 +190,8 @@ selectByUsername:
 SELECT * FROM channel WHERE username = :username;
 
 -- Creates the lowercase row for a mixed-case one that has no lowercase twin yet,
--- carrying its subscription flag. Validators / cursor deliberately NOT copied: the
--- next fetch of the lowercase row then starts from a full page.
+-- carrying its subscription flag and channel id. Validators / cursor deliberately NOT
+-- copied: the next fetch of the lowercase row then starts from a full page.
 insertNormalized:
-INSERT OR IGNORE INTO channel(username, title, description, avatar_url, subscribers, is_verified, is_subscribed)
-VALUES (:username, :title, :description, :avatarUrl, :subscribers, :isVerified, :isSubscribed);
+INSERT OR IGNORE INTO channel(username, title, description, avatar_url, subscribers, is_verified, is_subscribed, channel_id)
+VALUES (:username, :title, :description, :avatarUrl, :subscribers, :isVerified, :isSubscribed, :channelId);

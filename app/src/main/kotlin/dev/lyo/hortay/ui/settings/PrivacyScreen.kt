@@ -37,7 +37,8 @@ import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 
 /**
- * Privacy & safety sub-screen. "Invisible reading" toggle (TDLib mode only) + the two
+ * Privacy & safety sub-screen. "Invisible reading" toggle (TDLib mode only), "Count my
+ * views for channels" (guest mode only) + the two
  * CSAE policy links (kept discoverable for Play review). Pushed from the Main page.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +47,7 @@ internal fun PrivacyScreen(
     settings: SettingsStore,
     contentPadding: PaddingValues,
     privacyTogglesAvailable: Boolean,
+    countViewsAvailable: Boolean,
     onOpenProxy: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
@@ -94,6 +96,17 @@ internal fun PrivacyScreen(
                     HideOnlineStatusRow(
                         enabled = hideOnline,
                         onToggle = { next -> if (next != hideOnline) scope.launch { settings.setHideOnlineStatus(next) } },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            if (countViewsAvailable) {
+                val countViews by settings.countWebViews.collectAsStateWithLifecycle(true)
+                SectionLabel(stringResource(R.string.settings_section_privacy))
+                SettingsGroup {
+                    CountWebViewsRow(
+                        enabled = countViews,
+                        onToggle = { next -> if (next != countViews) scope.launch { settings.setCountWebViews(next) } },
                     )
                 }
                 Spacer(Modifier.height(8.dp))

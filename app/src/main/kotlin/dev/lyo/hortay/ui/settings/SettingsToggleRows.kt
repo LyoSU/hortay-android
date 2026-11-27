@@ -619,3 +619,41 @@ private fun ReadingTextSize.labelRes(): Int = when (this) {
     ReadingTextSize.Large -> R.string.settings_text_size_large
     ReadingTextSize.ExtraLarge -> R.string.settings_text_size_extra_large
 }
+
+/**
+ * Guest mode: whether the posts read here count in the channels' view counters
+ * ([dev.lyo.hortay.data.SettingsStore.countWebViews]). The subtitle says plainly what it
+ * costs — Telegram learns which posts were read.
+ */
+@Composable
+internal fun CountWebViewsRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val shapes = settingsGroupedShapes()
+    SegmentedListItem(
+        onClick = { onToggle(!enabled) },
+        shapes = shapes,
+        colors = settingsRowColors(),
+        leadingContent = {
+            SettingsIconTile(symbol = "visibility", active = enabled)
+        },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.settings_count_web_views_subtitle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_count_web_views_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}

@@ -416,6 +416,8 @@
     <string name="settings_section_privacy">Privacidad</string>
     <string name="settings_hide_online_title">Ocultar estado en línea</string>
     <string name="settings_hide_online_subtitle">No muestra a tus contactos de Telegram que estás en línea mientras lees Hortay. La app oficial de Telegram mantiene su comportamiento habitual. Este ajuste solo afecta las sesiones de Hortay.</string>
+    <string name="settings_count_web_views_title">Contar mis visualizaciones</string>
+    <string name="settings_count_web_views_subtitle">Los canales te cuentan en sus visualizaciones, y Telegram ve qué publicaciones lees.</string>
     <string name="timeline_unread_boundary">Sin leer</string>
     <string name="settings_section_traffic">Tráfico</string>
     <string name="settings_section_storage">Almacenamiento</string>

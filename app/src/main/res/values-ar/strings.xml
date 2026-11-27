@@ -454,6 +454,8 @@
     <string name="settings_section_privacy">الخصوصية</string>
     <string name="settings_hide_online_title">إخفاء حالة الاتصال</string>
     <string name="settings_hide_online_subtitle">لا يُظهر لجهات اتصال Telegram أنك متصل أثناء قراءة Hortay. يحتفظ تطبيق Telegram الرسمي بسلوكه المعتاد. يؤثر هذا الإعداد على جلسات Hortay فقط.</string>
+    <string name="settings_count_web_views_title">احتساب مشاهداتي</string>
+    <string name="settings_count_web_views_subtitle">تحتسبك القنوات في عدد المشاهدات، ويرى Telegram المنشورات التي تقرأها.</string>
     <string name="timeline_unread_boundary">غير مقروء</string>
     <string name="settings_section_traffic">الاستخدام</string>
     <string name="settings_section_storage">التخزين</string>

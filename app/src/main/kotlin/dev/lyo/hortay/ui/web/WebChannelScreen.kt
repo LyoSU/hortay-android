@@ -206,14 +206,11 @@ fun WebChannelScreen(
     // guest read is a local cursor bump — [WebRepository.markChannelRead] MAX-clamps
     // the channel's row to the highest seq seen, which clears the unread strip via
     // [LocalReadCursors]. Every post here belongs to [username], so the batch maps to
-    // one cursor write.
+    // one cursor write. [WebReadAck] also hands the read posts to the view reporter, the
+    // same way the guest feed does.
     val markAsRead: suspend (List<dev.lyo.hortay.data.TimelinePost>) -> Unit =
-        remember(graph.webRepository, username) {
-            { batch ->
-                if (batch.isNotEmpty()) {
-                    graph.webRepository.markChannelRead(username.lowercase(), batch.maxOf { it.id })
-                }
-            }
+        remember(graph.webReadAck, username) {
+            { batch -> graph.webReadAck.onRead(batch, channel = username) }
         }
     val ackedRead = rememberReadAckDwell(
         listState = listState,

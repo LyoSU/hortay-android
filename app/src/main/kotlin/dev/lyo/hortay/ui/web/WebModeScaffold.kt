@@ -297,20 +297,14 @@ fun WebModeScaffold(graph: AppGraph) {
     // Result mirrors TDLib's "lastReadInboxMessageId moved up to message X":
     // the channel_read_cursor row gets MAX-clamped to the freshest seen post.
     //
-    // `remember`-wrapped on graph.webRepository so the lambda instance is stable
+    // `remember`-wrapped on graph.webReadAck so the lambda instance is stable
     // across WebModeScaffold recompositions. TimelineScreen uses this as a key for
     // `interactions = remember(...)` / `ackedRead = remember(markAsRead)`; a fresh
     // closure per recompose would invalidate those blocks and trigger redundant
-    // markChannelRead writes on every dwell-batch evaluation.
-    val webMarkAsRead: suspend (List<TimelinePost>) -> Unit = remember(graph.webRepository) {
-        { batch ->
-            batch.groupBy { it.senderHandle?.removePrefix("@")?.lowercase() ?: "" }
-                .forEach { (username, group) ->
-                    if (username.isNotEmpty()) {
-                        graph.webRepository.markChannelRead(username, group.maxOf { it.id })
-                    }
-                }
-        }
+    // markChannelRead writes on every dwell-batch evaluation. [WebReadAck] also hands the
+    // read posts to the view reporter (shared with WebChannelScreen).
+    val webMarkAsRead: suspend (List<TimelinePost>) -> Unit = remember(graph.webReadAck) {
+        { batch -> graph.webReadAck.onRead(batch) }
     }
 
     // Reverse-lookup chatId → username. WebPostAdapter.stableChatId is a stable

@@ -432,6 +432,8 @@
     <string name="settings_section_privacy">Конфиденциальность</string>
     <string name="settings_hide_online_title">Скрыть статус онлайн</string>
     <string name="settings_hide_online_subtitle">Не показывает контактам Telegram, что вы в сети, пока читаете Hortay. В официальном Telegram статус работает как обычно. Настройка действует только для сессий Hortay.</string>
+    <string name="settings_count_web_views_title">Учитывать мои просмотры</string>
+    <string name="settings_count_web_views_subtitle">Каналы видят вас в счётчике просмотров, а Telegram — какие посты вы читаете.</string>
     <string name="timeline_unread_boundary">Непрочитанное</string>
     <string name="settings_section_traffic">Трафик</string>
     <string name="settings_section_storage">Хранилище</string>

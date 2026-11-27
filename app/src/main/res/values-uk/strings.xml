@@ -427,6 +427,8 @@
     <string name="settings_section_privacy">Приватність</string>
     <string name="settings_hide_online_title">Без онлайн-статусу</string>
     <string name="settings_hide_online_subtitle">Не показує контактам Telegram, що ти в мережі, поки читаєш Hortay. В офіційному застосунку Telegram статус працює як завжди. Діє лише в Hortay.</string>
+    <string name="settings_count_web_views_title">Враховувати мої перегляди</string>
+    <string name="settings_count_web_views_subtitle">Канали бачать тебе в лічильнику переглядів, а Telegram — які пости ти читаєш.</string>
     <string name="timeline_unread_boundary">Нові пости</string>
     <string name="settings_section_traffic">Трафік</string>
     <string name="settings_section_storage">Сховище</string>

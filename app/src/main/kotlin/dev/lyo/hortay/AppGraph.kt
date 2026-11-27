@@ -54,6 +54,7 @@ import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.subscriptions.SubscriptionTransfer
+import dev.lyo.hortay.data.subscriptions.KnownChannelMembership
 import dev.lyo.hortay.data.subscriptions.ThrottledChannelJoiner
 import dev.lyo.hortay.data.web.GuestModeStore
 import dev.lyo.hortay.data.web.MigrationCoordinator
@@ -64,7 +65,9 @@ import dev.lyo.hortay.data.web.WebCustomEmojiResolver
 import dev.lyo.hortay.data.web.WebFeedScheduler
 import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
+import dev.lyo.hortay.data.web.WebReadAck
 import dev.lyo.hortay.data.web.WebTelegramClient
+import dev.lyo.hortay.data.web.WebViewReporter
 import dev.lyo.hortay.data.archive.ArchiveRepository
 import dev.lyo.hortay.data.archive.ArchiveSettings
 import dev.lyo.hortay.data.archive.ArchiveSettingsStore
@@ -88,6 +91,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -730,6 +734,26 @@ class AppGraph(context: Context) {
      * `channels` flows; the source itself is process-singleton because the
      * DataStore→DB sync needs exactly one observer to avoid double-writes.
      */
+    /**
+     * Counts guest reads as channel views via `t.me/v/`, as the t.me/s/ page does — see
+     * [WebViewReporter]. Active only while the "Count my views" setting is on AND the app
+     * is in guest mode without a signed-in account; signing in, leaving guest mode or
+     * turning the setting off drops everything it holds, unsent. Not account state, so
+     * no [session] hook: a TDLib logout can't leave guest tokens behind (there are none
+     * while signed in).
+     */
+    val webViewReporter: WebViewReporter = WebViewReporter(
+        scope = appScope,
+        transport = webClient::postViews,
+        enabled = combine(
+            settingsStore.countWebViews,
+            guestMode.isGuest,
+            tdClient.authStage,
+        ) { on, guest, auth -> on && guest && auth != AuthStage.Ready }
+            .stateIn(appScope, SharingStarted.Eagerly, initialValue = false),
+        isGated = { webClient.isGateActive },
+    ).also { it.bind(lifecycleBridge.foreground) }
+
     val webFeedSource: WebFeedSource = WebFeedSource(
         client = webClient,
         repository = webRepository,
@@ -738,7 +762,11 @@ class AppGraph(context: Context) {
         ignoredChannels = ignoredChannels,
         mutedWords = mutedWords,
         archiveRepository = archiveRepository,
+        viewReporter = webViewReporter,
     )
+
+    /** The guest read-ack: local read cursor + view report. See [WebReadAck]. */
+    val webReadAck: WebReadAck = WebReadAck(webRepository, webViewReporter)
 
     /**
      * Tier-2 foreground polling for the web pipeline. Bound here so the
@@ -799,6 +827,10 @@ class AppGraph(context: Context) {
         channels = channelDirectory,
         channelActions = channelActions,
         floodWaitUntilMs = tdClient.floodWaitUntilMs,
+        isAlreadyMember = KnownChannelMembership(
+            channelIdOf = webRepository::channelIdFor,
+            supergroup = chatRegistry::supergroup,
+        )::isMember,
     )
 
     /**

@@ -257,6 +257,8 @@ fun SettingsScreen(
                     settings = settings,
                     contentPadding = contentPadding,
                     privacyTogglesAvailable = stats != null,
+                    // Guest mode is the one with a web cache to clear (see the class KDoc).
+                    countViewsAvailable = onClearWebCache != null,
                     onOpenProxy = proxy?.let { { settingsBackStack.add(SettingsNavKey.Proxy) } },
                     onBack = pop,
                 )

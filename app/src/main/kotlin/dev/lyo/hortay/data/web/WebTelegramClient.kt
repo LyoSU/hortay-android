@@ -295,6 +295,46 @@ class WebTelegramClient(
         }
     }
 
+    /** True while a 429 / 5xx / connection-error backoff holds every t.me request back. */
+    val isGateActive: Boolean get() = gateUntilMs.get() > System.currentTimeMillis()
+
+    /**
+     * Report anonymous views the way t.me's own page script does: `POST t.me/v/` with the
+     * form field `views=<token>;<token>;…`, the tokens being the `data-view` attributes of
+     * the posts read (see [WebViewReporter], which batches one channel per call). Same
+     * browser headers as the page fetch, plus the `X-Requested-With` an XHR carries and
+     * the channel page as `Referer`, as the browser sends them.
+     *
+     * Fire and forget: the response body is ignored and always closed, a failure is only
+     * logged, nothing is retried. A 429 still pushes the shared gate, so the next page
+     * fetch backs off too. Never waits on the gate — the caller skips the send instead.
+     */
+    suspend fun postViews(username: String, tokens: List<String>) {
+        if (tokens.isEmpty()) return
+        val referer = buildTmePreviewUrl(username, before = null, after = null) ?: return
+        val request = Request.Builder()
+            .url(VIEWS_URL)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept-Language", ACCEPT_LANGUAGE)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Referer", referer)
+            .post(okhttp3.FormBody.Builder().add("views", tokens.joinToString(";")).build())
+            .build()
+        withContext(Dispatchers.IO) {
+            try {
+                execute(request).use { response ->
+                    if (response.code == HTTP_TOO_MANY_REQUESTS) {
+                        val retrySec = response.header("Retry-After")?.toLongOrNull() ?: DEFAULT_BACKOFF_SEC
+                        pushGate(retrySec.coerceAtMost(MAX_BACKOFF_SEC) * 1000L)
+                    }
+                    if (!response.isSuccessful) Log.w(TAG, "postViews: HTTP ${response.code}")
+                }
+            } catch (error: IOException) {
+                Log.w(TAG, "postViews failed: ${error.message}")
+            }
+        }
+    }
+
     private suspend fun awaitGate() {
         // Loop, not single-shot: with [fetchSemaphore] permitting up to 6 concurrent
         // fetchChannelPage calls, all six can read [gateUntilMs] before the first
@@ -343,6 +383,10 @@ class WebTelegramClient(
         private const val PAGE_TAIL_CHARS = 256
 
         private const val TAG = "WebTelegram"
+
+        /** t.me's anonymous view counter, the endpoint its page script posts to. */
+        private const val VIEWS_URL = "https://t.me/v/"
+        private const val HTTP_TOO_MANY_REQUESTS = 429
 
         // Desktop-Chrome UA. Telegram's edge serves THREE different versions of t.me/<u>:
         //   • mobile UA → ~2 KB "Open in app" landing page

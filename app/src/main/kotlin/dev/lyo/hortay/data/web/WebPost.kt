@@ -2,7 +2,9 @@ package dev.lyo.hortay.data.web
 
 import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.serialization.Serializable
 
 /**
@@ -47,6 +49,19 @@ data class WebChannelPage(
      * `WebRepository.ingestPage`. Empty when the caller built the page by hand.
      */
     val listedSeqs: ImmutableList<Long> = persistentListOf(),
+    /**
+     * The channel's real Telegram id (positive; TDLib chat id is `-100<id>`), read from
+     * the page's first `data-view` token. Null when the page carries none. Survives a
+     * username change, unlike the handle — stored as `channel.channel_id`.
+     */
+    val channelId: Long? = null,
+    /**
+     * Post id (`<channel>/<seq>`, as [WebPost.id]) → that post's `data-view` token, for
+     * [WebViewReporter]. Deliberately NOT on [WebPost] and never stored: the token
+     * changes on every fetch, so carrying it in the post would defeat the ingest
+     * fingerprint guard and rewrite every row on every sweep.
+     */
+    val viewTokens: ImmutableMap<String, String> = persistentMapOf(),
 )
 
 @Immutable
