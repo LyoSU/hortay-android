@@ -54,6 +54,8 @@ import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.subscriptions.TransferMode
 import dev.lyo.hortay.ui.channels.ChannelListTransferMenu
+import dev.lyo.hortay.ui.channels.ChannelSectionHeader
+import androidx.compose.runtime.saveable.rememberSaveable
 import dev.lyo.hortay.data.web.ChannelEntry
 import dev.lyo.hortay.data.web.ChannelFetchStatus
 import dev.lyo.hortay.data.web.WebPostAdapter
@@ -71,7 +73,10 @@ import kotlinx.coroutines.launch
  * status indicator folded into the supporting line.
  *
  * Unsubscribe affordance: explicit trailing `close` icon button on each row, plus
- * a confirmation dialog. Long-press alone was discoverability-hostile.
+ * a confirmation dialog. Long-press alone was discoverability-hostile. *
+ * Sections ([partitionGuestChannels]): followed channels, then "Other" — channels left
+ * after unsubscribing or only seen through a forward or a link — collapsed by default,
+ * each with a single "subscribe again" action.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -94,7 +99,12 @@ fun WebChannelsScreen(
         rememberTopAppBarState(),
     )
 
-    val subscribed = channels.filter { it.isSubscribed }
+    // Followed channels first; "Other" holds the rest of web.db's channel table (left after
+    // unsubscribing, or only seen through a forward or a link), collapsed by default.
+    val sections = remember(channels) { partitionGuestChannels(channels) }
+    val subscribed = sections.following
+    val others = sections.other
+    var otherExpanded by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     var pendingUnsubscribe by remember { mutableStateOf<ChannelEntry?>(null) }
 
@@ -119,7 +129,7 @@ fun WebChannelsScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        if (subscribed.isEmpty()) {
+        if (subscribed.isEmpty() && others.isEmpty()) {
             // Curated quick-picks now live in the add-channel sheet (grouped, with
             // live avatars + subscriber counts), so the empty state just routes the
             // user there via the CTA.
@@ -150,6 +160,16 @@ fun WebChannelsScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
         ) {
+            // Headers only when there is an "Other" section to tell apart.
+            if (others.isNotEmpty() && subscribed.isNotEmpty()) {
+                item(key = "section_following", contentType = "section_header") {
+                    ChannelSectionHeader(
+                        title = stringResource(R.string.web_channels_section_following),
+                        count = subscribed.size,
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            }
             itemsIndexed(subscribed, key = { _, it -> it.info.username }) { index, entry ->
                 val chatId = remember(entry.info.username) {
                     WebPostAdapter.stableChatId(entry.info.username)
@@ -164,6 +184,33 @@ fun WebChannelsScreen(
                     onHideToggle = { scope.launch { graph.ignoredChannels.toggle(chatId) } },
                     onUnsubscribeClick = { pendingUnsubscribe = entry },
                 )
+            }
+            if (others.isNotEmpty()) {
+                item(key = "section_other", contentType = "section_header") {
+                    ChannelSectionHeader(
+                        title = stringResource(R.string.channels_section_other),
+                        count = others.size,
+                        expanded = otherExpanded,
+                        onToggle = { otherExpanded = !otherExpanded },
+                        modifier = Modifier.animateItem().padding(top = 8.dp),
+                    )
+                }
+                if (otherExpanded) {
+                    itemsIndexed(others, key = { _, other -> "other_${other.info.username}" }) { index, entry ->
+                        OtherChannelRow(
+                            entry = entry,
+                            index = index,
+                            count = others.size,
+                            onClick = { onChannelClick(entry.info.username) },
+                            onSubscribeClick = {
+                                scope.launch {
+                                    graph.webFeedSource.subscribeAndRefresh(entry.info.username, entry.info.title)
+                                }
+                            },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                }
             }
         }
         }
@@ -369,6 +416,56 @@ private fun ChannelRow(
                     )
                 }
             }
+        },
+    )
+}
+
+/**
+ * A channel in "Other": seen or once followed, not followed now. Plain row with one trailing
+ * action — follow it again; no hide toggle (it isn't in the feed) and no unsubscribe.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun OtherChannelRow(
+    entry: ChannelEntry,
+    index: Int,
+    count: Int,
+    onClick: () -> Unit,
+    onSubscribeClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = ListItemDefaults.segmentedShapes(index = index, count = count, defaultShapes = ListItemDefaults.shapes()),
+        modifier = modifier,
+        leadingContent = { ChannelAvatar(name = entry.info.title, avatarUrl = entry.info.avatarUrl) },
+        supportingContent = {
+            Text(
+                text = "@${entry.info.username}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        trailingContent = {
+            IconButton(onClick = onSubscribeClick) {
+                Symbol(
+                    name = "add",
+                    contentDescription = stringResource(R.string.web_subscribe_to, entry.info.title),
+                    tint = MaterialTheme.colorScheme.primary,
+                    size = 22.dp,
+                )
+            }
+        },
+        content = {
+            Text(
+                text = entry.info.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
     )
 }

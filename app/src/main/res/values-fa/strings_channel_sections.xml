@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Channels tab sections (signed-in: Joined / Not joined / Other; guest: Following / Other). -->
+<resources>
+    <string name="channels_section_joined">عضو شده</string>
+    <string name="channels_section_other">سایر</string>
+    <string name="channels_section_expand">نمایش</string>
+    <string name="channels_section_collapse">پنهان کردن</string>
+    <string name="web_channels_section_following">دنبال‌شده</string>
+    <string name="web_subscribe_to">عضویت در %1$s</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Channels tab sections (signed-in: Joined / Not joined / Other; guest: Following / Other). -->
+<resources>
+    <string name="channels_section_joined">Подписки</string>
+    <string name="channels_section_other">Другие</string>
+    <string name="channels_section_expand">Показать</string>
+    <string name="channels_section_collapse">Скрыть</string>
+    <string name="web_channels_section_following">Подписки</string>
+    <string name="web_subscribe_to">Подписаться на %1$s</string>
+</resources>

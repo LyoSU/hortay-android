@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Channels tab sections (signed-in: Joined / Not joined / Other; guest: Following / Other). -->
+<resources>
+    <string name="channels_section_joined">Abone olunanlar</string>
+    <string name="channels_section_other">Diğer</string>
+    <string name="channels_section_expand">Göster</string>
+    <string name="channels_section_collapse">Gizle</string>
+    <string name="web_channels_section_following">Takip edilenler</string>
+    <string name="web_subscribe_to">%1$s kanalına abone ol</string>
+</resources>

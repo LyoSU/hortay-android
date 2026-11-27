@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Channels tab sections (signed-in: Joined / Not joined / Other; guest: Following / Other). -->
+<resources>
+    <string name="channels_section_joined">Abonniert</string>
+    <string name="channels_section_other">Weitere</string>
+    <string name="channels_section_expand">Einblenden</string>
+    <string name="channels_section_collapse">Ausblenden</string>
+    <string name="web_channels_section_following">Abonniert</string>
+    <string name="web_subscribe_to">%1$s abonnieren</string>
+</resources>

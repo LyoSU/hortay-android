@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Channels tab sections (signed-in: Joined / Not joined / Other; guest: Following / Other). -->
+<resources>
+    <string name="channels_section_joined">Diikuti</string>
+    <string name="channels_section_other">Lainnya</string>
+    <string name="channels_section_expand">Tampilkan</string>
+    <string name="channels_section_collapse">Sembunyikan</string>
+    <string name="web_channels_section_following">Diikuti</string>
+    <string name="web_subscribe_to">Ikuti %1$s</string>
+</resources>

@@ -131,8 +131,13 @@ import androidx.compose.ui.text.intl.Locale
  * - **Read without joining** — followed channels are unioned in from the followed store
  *   ([channelSummaries]), so one with no post in the slice (just followed, Unavailable) still
  *   has a row. Their unread badge counts slice posts above the local cursor — Telegram keeps
- *   no unread count for a non-member — and they sit under the "Not joined" chip. A long-press
- *   offers Join and Stop reading; the subtitle changes only for an Unavailable channel.
+ *   no unread count for a non-member. A long-press offers Join and Stop reading; the
+ *   subtitle changes only for an Unavailable channel.
+ * - **Sections** ([partitionChannels]) — Joined (main or archive chat list), Not joined (the
+ *   followed store) and Other: channels the slice only carries because an update brought
+ *   them in (a forward, an opened preview). Other comes last, collapsed, and its rows offer
+ *   Join / Read without joining. The filter chips and the search narrow every section; bulk
+ *   actions never touch Other — it isn't in the feed.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -193,7 +198,6 @@ fun ChannelsScreen(
                         }
                         ChannelsFilter.Today -> ch.lastPostDate >= dayAgo
                         ChannelsFilter.Hidden -> ch.chatId in hiddenChatIds
-                        ChannelsFilter.NotJoined -> ch.isFollowed
                     }
                 }
             }
@@ -224,6 +228,15 @@ fun ChannelsScreen(
         val q = query.trim()
         if (q.isEmpty()) base else base.filter { it.title.contains(q, ignoreCase = true) }
     }
+    // Joined / Not joined / Other. The filters and the search above apply across all three;
+    // "Other" (channels only met through updates) starts collapsed.
+    val mainIds by repo.mainChatIds.collectAsStateWithLifecycle()
+    val archivedIds by repo.archivedChatIds.collectAsStateWithLifecycle()
+    val joinedIds = remember(mainIds, archivedIds) { mainIds + archivedIds }
+    val sections = remember(shown, joinedIds, followed) { partitionChannels(shown, joinedIds, followed.keys) }
+    var otherExpanded by rememberSaveable { mutableStateOf(false) }
+    // Headers only when the list really is split; a single section needs no label.
+    val showHeaders = sections.count { it.value.isNotEmpty() } > 1
     val listState = rememberLazyListState()
     // One "away from the top" signal drives both the header tint and the FAB collapse.
     val scrolledAway by remember { derivedStateOf { listState.canScrollBackward } }
@@ -244,7 +257,13 @@ fun ChannelsScreen(
     // Followed (read-without-joining) channels are included because their posts reach the
     // same merged feed: "Hide all" leaving them visible, or "Mark all read" leaving their
     // unread strips, would read as the bulk action having failed.
-    val bulkScope = { repo.feedChannelIds().ifEmpty { channels.map { it.chatId }.toSet() } }
+    // Never the "Other" section: those channels are not in the feed.
+    val bulkScope = {
+        repo.feedChannelIds().ifEmpty {
+            channels.filter { channelSection(it.chatId, joinedIds, followed.keys) != ChannelSection.Other }
+                .mapTo(HashSet()) { it.chatId }
+        }
+    }
 
     bulkConfirm?.let { action ->
         AlertDialog(
@@ -397,7 +416,25 @@ fun ChannelsScreen(
                         }
                     }
                 }
-                itemsIndexed(items = shown, key = { _, it -> it.chatId }) { index, ch ->
+                for ((section, rows) in sections.filterValues { it.isNotEmpty() }) {
+                    val collapsed = section == ChannelSection.Other && !otherExpanded
+                    if (showHeaders) {
+                        item(key = "section_${section.name}", contentType = "section_header") {
+                            ChannelSectionHeader(
+                                title = stringResource(section.title),
+                                count = rows.size,
+                                expanded = !collapsed,
+                                onToggle = if (section == ChannelSection.Other) {
+                                    { otherExpanded = !otherExpanded }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier.animateItem().padding(top = 8.dp),
+                            )
+                        }
+                    }
+                    if (showHeaders && collapsed) continue
+                    itemsIndexed(items = rows, key = { _, it -> it.chatId }) { index, ch ->
                     val isHidden = ch.chatId in hiddenChatIds
                     // Honest per-post unread, identical rule to PostCard's strip:
                     // newest (album-aware) id above the chat's read cursor.
@@ -419,11 +456,16 @@ fun ChannelsScreen(
                     } else {
                         unreadCounts[ch.chatId] ?: 0
                     }
-                    val followActions = if (ch.isFollowed && follow != null) {
-                        remember(ch.chatId, ch.title, follow) {
-                            FollowedRowActions(
+                    // Not joined: Join / Stop reading. Other: Join / Read without joining.
+                    val rowActions = if (section != ChannelSection.Joined && follow != null) {
+                        val followedRow = section == ChannelSection.NotJoined
+                        remember(ch.chatId, ch.title, follow, followedRow) {
+                            ChannelRowActions(
+                                isFollowed = followedRow,
                                 onJoin = { graph.session.scope.launch { graph.channelActions.joinChat(ch.chatId) } },
-                                onStopReading = { follow.stopReading(ch.chatId, ch.title) },
+                                onFollowToggle = {
+                                    if (followedRow) follow.stopReading(ch.chatId, ch.title) else follow.follow(ch.chatId)
+                                },
                             )
                         }
                     } else {
@@ -432,15 +474,16 @@ fun ChannelsScreen(
                     ChannelRow(
                         channel = ch,
                         index = index,
-                        count = shown.size,
+                        count = rows.size,
                         isHidden = isHidden,
                         isUnread = isUnread,
                         unreadCount = unreadCount,
                         onClick = onClick,
                         onHideToggle = onHideToggle,
-                        followActions = followActions,
+                        rowActions = rowActions,
                         modifier = Modifier.animateItem(),
                     )
+                    }
                 }
             }
             }
@@ -486,8 +529,8 @@ private fun ChannelRow(
     onClick: () -> Unit,
     onHideToggle: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Join / Stop reading for a channel read without joining; null for joined rows. */
-    followActions: FollowedRowActions? = null,
+    /** Long-press actions of a row not joined (read without joining, or "Other"); null for joined rows. */
+    rowActions: ChannelRowActions? = null,
 ) {
     val shapes = ListItemDefaults.segmentedShapes(
         index = index,
@@ -515,7 +558,9 @@ private fun ChannelRow(
     val hasSupportingLine = unavailable || isHidden || channel.lastPostExcerpt.isNotBlank()
     var menuOpen by remember { mutableStateOf(false) }
     val joinLabel = stringResource(R.string.channels_join)
-    val stopLabel = stringResource(R.string.follow_stop_reading)
+    val followToggleLabel = stringResource(
+        if (rowActions?.isFollowed == false) R.string.follow_read_without_joining else R.string.follow_stop_reading,
+    )
     val menuLabel = stringResource(R.string.follow_row_actions)
     // At large font scale the title and excerpt may wrap to a second line instead of
     // truncating after a word or two.
@@ -525,9 +570,9 @@ private fun ChannelRow(
         modifier = modifier.semantics {
             customActions = buildList {
                 add(CustomAccessibilityAction(toggleLabel) { currentToggle(); true })
-                if (followActions != null) {
-                    add(CustomAccessibilityAction(joinLabel) { followActions.onJoin(); true })
-                    add(CustomAccessibilityAction(stopLabel) { followActions.onStopReading(); true })
+                if (rowActions != null) {
+                    add(CustomAccessibilityAction(joinLabel) { rowActions.onJoin(); true })
+                    add(CustomAccessibilityAction(followToggleLabel) { rowActions.onFollowToggle(); true })
                 }
             }
         },
@@ -565,10 +610,11 @@ private fun ChannelRow(
         Box {
         SegmentedListItem(
             onClick = onClick,
-            // Followed rows: long-press opens Join / Stop reading (also offered to screen
-            // readers as custom actions above). Joined rows keep plain taps.
-            onLongClick = followActions?.let { { menuOpen = true } },
-            onLongClickLabel = followActions?.let { menuLabel },
+            // Rows not joined: long-press opens Join / Stop reading (or Read without
+            // joining), also offered to screen readers as custom actions above. Joined
+            // rows keep plain taps.
+            onLongClick = rowActions?.let { { menuOpen = true } },
+            onLongClickLabel = rowActions?.let { menuLabel },
             shapes = shapes,
             colors = ListItemDefaults.colors(containerColor = channelsRowColor()),
             leadingContent = {
@@ -669,17 +715,19 @@ private fun ChannelRow(
                 )
             },
         )
-        if (followActions != null) {
+        if (rowActions != null) {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text(joinLabel) },
                     leadingIcon = { Symbol(name = "add", contentDescription = null) },
-                    onClick = { menuOpen = false; followActions.onJoin() },
+                    onClick = { menuOpen = false; rowActions.onJoin() },
                 )
                 DropdownMenuItem(
-                    text = { Text(stopLabel) },
-                    leadingIcon = { Symbol(name = "close", contentDescription = null) },
-                    onClick = { menuOpen = false; followActions.onStopReading() },
+                    text = { Text(followToggleLabel) },
+                    leadingIcon = {
+                        Symbol(name = if (rowActions.isFollowed) "close" else "rss_feed", contentDescription = null)
+                    },
+                    onClick = { menuOpen = false; rowActions.onFollowToggle() },
                 )
             }
         }
@@ -687,9 +735,19 @@ private fun ChannelRow(
     }
 }
 
-/** Long-press actions of a row read without joining. */
+/**
+ * Long-press actions of a row the account hasn't joined: Join, and Stop reading for a
+ * followed channel ([isFollowed]) or Read without joining for one in "Other".
+ */
 @Immutable
-internal class FollowedRowActions(val onJoin: () -> Unit, val onStopReading: () -> Unit)
+internal class ChannelRowActions(val isFollowed: Boolean, val onJoin: () -> Unit, val onFollowToggle: () -> Unit)
+
+private val ChannelSection.title: Int
+    get() = when (this) {
+        ChannelSection.Joined -> R.string.channels_section_joined
+        ChannelSection.NotJoined -> R.string.follow_not_joined
+        ChannelSection.Other -> R.string.channels_section_other
+    }
 
 /**
  * TDLib's unread count as a Telegram-style pill. Muted (neutral tone) for channels hidden
@@ -895,8 +953,6 @@ internal enum class ChannelsFilter(@param:StringRes val label: Int) {
     Unread(R.string.channels_filter_unread),
     Today(R.string.channels_filter_today),
     Hidden(R.string.channels_filter_hidden),
-    /** Channels read without joining; the chip appears only when there is one. */
-    NotJoined(R.string.follow_not_joined),
 }
 
 /**
