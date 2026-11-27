@@ -332,6 +332,12 @@
         <item quantity="many">%d komentarzy</item>
         <item quantity="other">%d komentarza</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="one">Pokaż jeszcze %d odpowiedź</item>
+        <item quantity="few">Pokaż jeszcze %d odpowiedzi</item>
+        <item quantity="many">Pokaż jeszcze %d odpowiedzi</item>
+        <item quantity="other">Pokaż jeszcze %d odpowiedzi</item>
+    </plurals>
     <string name="comments_empty_title">Brak komentarzy</string>
     <string name="comments_open_original">Oryginalny wpis w %1$s</string>
     <string name="comments_empty_body">Nowe komentarze będą pojawiać się tutaj na bieżąco</string>

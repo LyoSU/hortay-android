@@ -26,7 +26,15 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentSet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -384,9 +392,16 @@ fun CommentsScreen(
     // the rows they index always come from one emission.
     val threadState = state
     val readyRows = (threadState as? CommentsRepository.ThreadState.Ready)?.rows
-    val threadRailSegments = remember(readyRows) {
-        readyRows?.let { rows -> threadRails(rows.map { it.depth.coerceAtMost(MAX_VISUAL_DEPTH) }) }.orEmpty()
+    // Top-level comments whose long reply branch the reader opened (see [visibleThreadItems]).
+    // Saveable in this entry's scope, so popping back from a pushed screen keeps both the
+    // open branches and the restored scroll position that was measured against them.
+    var expandedBranches by rememberSaveable(stateSaver = ExpandedBranchesSaver) {
+        mutableStateOf(persistentSetOf<Long>())
     }
+    val threadItems = remember(readyRows, expandedBranches) {
+        readyRows?.let { visibleThreadItems(it, expandedBranches, MAX_VISUAL_DEPTH) } ?: persistentListOf()
+    }
+    val threadRailSegments = remember(threadItems) { threadRails(threadItems.map { it.railDepth }) }
 
     val viewer = LocalMediaViewer.current
     val context = LocalContext.current
@@ -601,6 +616,40 @@ fun CommentsScreen(
                     scope.launch { liveRepo.viewMessages(ready.threadChatId, fresh) }
                 }
         }
+    }
+
+    // The rows the LazyColumn emits above the first comment. The list body gates its
+    // items on these same flags, so [leadingItemCount] + an index into [threadItems] is
+    // always that comment's list index.
+    val forwardedFrom = anchor.forwardOrigin as? ForwardOrigin.Channel
+    val showOriginalRow = onForwardSourceClick != null && forwardedFrom?.sourceMessageId != null
+    val showRichFooter = feedRepo != null && richPartialActive
+    val showOlderRow = guestThread != null && guestOlder != OlderComments.None
+    val leadingItemCount = 1 + listOf(showOriginalRow, showRichFooter, showOlderRow).count { it }
+    val latestThreadItems = rememberUpdatedState(threadItems)
+    val latestLeadingCount = rememberUpdatedState(leadingItemCount)
+
+    /**
+     * Scrolls to comment [commentId] of [rows], opening its collapsed branch first, and lights
+     * [excerpt] in it. Waits for the list to lay out the opened branch, so the index it
+     * scrolls to is the comment's and not a row that sat there before. False when the
+     * comment never shows up (gone from the thread, or the layout didn't settle in time).
+     */
+    suspend fun revealComment(rows: List<ThreadRow>, commentId: Long, excerpt: String): Boolean {
+        val root = branchRootOf(rows, commentId) ?: return false
+        if (root !in expandedBranches) expandedBranches = expandedBranches.add(root)
+        val listIndex = withTimeoutOrNull(QUOTE_JUMP_SETTLE_MS) {
+            snapshotFlow {
+                val items = latestThreadItems.value
+                val leading = latestLeadingCount.value
+                val at = items.indexOfFirst { (it as? ThreadItem.Comment)?.row?.message?.id == commentId }
+                if (at >= 0 && listState.layoutInfo.totalItemsCount == leading + items.size) leading + at else -1
+            }.first { it >= 0 }
+        } ?: return false
+        val quoted = rows.first { it.message.id == commentId }.message
+        QuoteHighlights.show(quoted.chatId, quoted.id, excerpt)
+        listState.animateScrollToItem(listIndex)
+        return true
     }
 
     // A hot LRU hit on a previously-opened thread or a fast cold-path resolve
@@ -833,8 +882,7 @@ fun CommentsScreen(
             // card is its count, and the original's thread lives in another channel that
             // would need its own fetch. So the comments here stay the forward's, and this
             // row is the visible way to the original post and its own discussion.
-            val forwardedFrom = anchor.forwardOrigin as? ForwardOrigin.Channel
-            if (onForwardSourceClick != null && forwardedFrom?.sourceMessageId != null) {
+            if (showOriginalRow && onForwardSourceClick != null && forwardedFrom != null) {
                 item(key = "forward-original") {
                     OriginalPostRow(origin = forwardedFrom, onClick = { onForwardSourceClick(anchor) })
                 }
@@ -844,7 +892,7 @@ fun CommentsScreen(
             // rich body is a single LazyColumn item, so the fetched remainder appends below and the
             // already-read upper part keeps its position; on success the post is no longer partial
             // and this footer drops out.
-            if (feedRepo != null && richPartialActive) {
+            if (showRichFooter && feedRepo != null) {
                 item(key = "rich-full-load") {
                     RichPartialFooter(
                         status = richFullStatus,
@@ -902,7 +950,7 @@ fun CommentsScreen(
                         )
                     }
                 } else {
-                    if (guestThread != null && guestOlder != OlderComments.None) {
+                    if (showOlderRow && guestThread != null) {
                         item(key = "older") {
                             EarlierCommentsRow(
                                 state = guestOlder,
@@ -911,7 +959,26 @@ fun CommentsScreen(
                             )
                         }
                     }
-                    itemsIndexed(items = s.rows, key = { _, row -> row.message.id }) { index, row ->
+                    itemsIndexed(
+                        items = threadItems,
+                        key = { _, item -> item.key },
+                        contentType = { _, item -> if (item is ThreadItem.Comment) "comment" else "more-replies" },
+                    ) { index, item ->
+                        val rails = threadRailSegments.getOrNull(index) ?: RailSegments.None
+                        if (item is ThreadItem.MoreReplies) {
+                            MoreRepliesRow(
+                                item = item,
+                                rails = rails,
+                                onClick = { expandedBranches = expandedBranches.add(item.rootId) },
+                                modifier = Modifier.animateItem(
+                                    fadeInSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
+                                    placementSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>(),
+                                    fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
+                                ),
+                            )
+                            return@itemsIndexed
+                        }
+                        val row = (item as ThreadItem.Comment).row
                         // [s.threadChatId] is the linked discussion supergroup — the
                         // chat reactions live in for every comment. Captured fresh
                         // per `Ready` emission so a re-resolved anchor (rare, but
@@ -925,7 +992,7 @@ fun CommentsScreen(
                         CommentNode(
                             row = row,
                             effectRequest = reactionEffect,
-                            rails = threadRailSegments.getOrNull(index) ?: RailSegments.None,
+                            rails = rails,
                             // Inserted / removed / reordered comments fade and glide instead of
                             // teleporting. Comment rows only: the pinned post item stays
                             // unanimated because the hero-open scroll and the restored-scroll
@@ -942,13 +1009,9 @@ fun CommentsScreen(
                             onQuoteClick = { reply ->
                                 // Jump to the quoted comment, or to the post above the thread
                                 // when the quote is from it, and light up the quoted words.
-                                val target = s.rows.indexOfFirst { it.message.id == reply.replyToMessageId }
-                                if (target >= 0) {
-                                    val quoted = s.rows[target].message
-                                    QuoteHighlights.show(quoted.chatId, quoted.id, reply.excerpt)
-                                    // Rows are the list's tail: index from the end.
-                                    val listIndex = listState.layoutInfo.totalItemsCount - s.rows.size + target
-                                    scope.launch { listState.animateScrollToItem(listIndex.coerceAtLeast(0)) }
+                                // A quoted comment hidden in a collapsed branch opens it first.
+                                if (s.rows.any { it.message.id == reply.replyToMessageId }) {
+                                    scope.launch { revealComment(s.rows, reply.replyToMessageId, reply.excerpt) }
                                 } else if (quotesAnchor(reply, anchor, s.threadChatId)) {
                                     QuoteHighlights.show(anchor.chatId, anchor.id, reply.excerpt)
                                     scope.launch { listState.animateScrollToItem(0) }
@@ -956,12 +1019,10 @@ fun CommentsScreen(
                                     // A guest thread holds only part of the comments: fetch the
                                     // window around the quoted one, then jump to it once listed.
                                     scope.launch {
-                                        jumpToLoadedComment(
-                                            source = guestThread,
-                                            commentId = reply.replyToMessageId,
-                                            excerpt = reply.excerpt,
-                                            listState = listState,
-                                        )
+                                        if (guestThread.loadAround(reply.replyToMessageId)) {
+                                            val loaded = guestThread.state.value as? CommentsRepository.ThreadState.Ready
+                                            if (loaded != null) revealComment(loaded.rows, reply.replyToMessageId, reply.excerpt)
+                                        }
                                     }
                                 }
                                 // Otherwise the quoted comment isn't loaded (older page, deleted):
@@ -1263,33 +1324,76 @@ private fun EarlierCommentsRow(state: OlderComments, autoLoad: Boolean, onLoad: 
     }
 }
 
+/** How long a quote jump waits for loaded or opened rows to reach the list. */
+private const val QUOTE_JUMP_SETTLE_MS = 2_000L
+
+/** Saves the opened branches of [CommentsScreen] as their top-level comment ids. */
+private val ExpandedBranchesSaver = Saver<PersistentSet<Long>, LongArray>(
+    save = { it.toLongArray() },
+    restore = { it.toList().toPersistentSet() },
+)
+
 /**
- * Loads the window around a quoted comment of a guest thread, waits until it is listed, and
- * scrolls to it with the quoted words lit — the guest counterpart of the in-thread jump.
- * Gives up quietly when the comment can't be fetched (deleted, network).
+ * The quiet "Show N more replies" row closing a collapsed reply branch (see
+ * [visibleThreadItems]). It sits at reply depth, so the branch's connector rail elbows into
+ * the first face exactly as it would into a reply's avatar: the faces start at the depth-1
+ * avatar's x and centre on the same line ([BUBBLE_VERTICAL_DP] + half a reply avatar, which
+ * is half of the row's 48 dp minimum height). Tapping it opens the branch in place — the
+ * hidden replies slot in under it while every row above keeps its key, so the list stays put.
  */
-private suspend fun jumpToLoadedComment(
-    source: CommentThreadSource,
-    commentId: Long,
-    excerpt: String,
-    listState: androidx.compose.foundation.lazy.LazyListState,
+@Composable
+private fun MoreRepliesRow(
+    item: ThreadItem.MoreReplies,
+    rails: RailSegments,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    if (!source.loadAround(commentId)) return
-    val ready = source.state.value as? CommentsRepository.ThreadState.Ready ?: return
-    val target = ready.rows.indexOfFirst { it.message.id == commentId }
-    if (target < 0) return
-    val quoted = ready.rows[target].message
-    // The list re-measures with the new rows on the next frame; rows are its tail.
-    val total = withTimeoutOrNull(QUOTE_JUMP_SETTLE_MS) {
-        snapshotFlow { listState.layoutInfo.totalItemsCount }
-            .first { it >= ready.rows.size }
-    } ?: return
-    QuoteHighlights.show(quoted.chatId, quoted.id, excerpt)
-    listState.animateScrollToItem((total - ready.rows.size + target).coerceAtLeast(0))
+    val label = pluralStringResource(R.plurals.comments_more_replies, item.hiddenCount, item.hiddenCount)
+    val ring = MaterialTheme.colorScheme.background
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = MORE_REPLIES_MIN_HEIGHT_DP.dp)
+            .drawThreadRails(rails, visualDepth = 1, color = MaterialTheme.colorScheme.outlineVariant)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(start = (ROW_HORIZONTAL_DP + INDENT_STEP_DP).dp, end = ROW_HORIZONTAL_DP.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (item.faces.isNotEmpty()) {
+            // Decorative: the label already says what the row does.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy((-MORE_REPLIES_FACE_OVERLAP_DP).dp),
+                modifier = Modifier.clearAndSetSemantics {},
+            ) {
+                item.faces.forEach { face ->
+                    TdAvatar(
+                        name = face.senderName,
+                        thumb = face.avatarThumb,
+                        fileId = face.avatarFileId,
+                        remoteUrl = face.avatarUrl,
+                        size = MORE_REPLIES_FACE_DP.dp,
+                        textStyle = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.border(1.5.dp, ring, CircleShape),
+                    )
+                }
+            }
+            Spacer(Modifier.width(HortaySpacing.sm))
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = HortaySpacing.xs),
+        )
+    }
 }
 
-/** How long a quote jump waits for the freshly loaded rows to reach the list. */
-private const val QUOTE_JUMP_SETTLE_MS = 2_000L
+/** Minimum height of the "Show N more replies" row — a full touch target. */
+private const val MORE_REPLIES_MIN_HEIGHT_DP = 48
+/** Diameter of a commenter face on the "Show N more replies" row. */
+private const val MORE_REPLIES_FACE_DP = 20
+/** How far each face on that row tucks under the one before it. */
+private const val MORE_REPLIES_FACE_OVERLAP_DP = 6
 
 /**
  * E1/E2 — one comment row.

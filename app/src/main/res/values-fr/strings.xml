@@ -325,6 +325,11 @@
         <item quantity="many">%d commentaires</item>
         <item quantity="other">%d commentaires</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="one">Afficher %d autre réponse</item>
+        <item quantity="many">Afficher %d autres réponses</item>
+        <item quantity="other">Afficher %d autres réponses</item>
+    </plurals>
     <string name="comments_empty_title">Aucun commentaire pour l\'instant</string>
     <string name="comments_open_original">Publication originale dans %1$s</string>
     <string name="comments_empty_body">Les nouveaux commentaires apparaîtront ici à leur arrivée</string>
