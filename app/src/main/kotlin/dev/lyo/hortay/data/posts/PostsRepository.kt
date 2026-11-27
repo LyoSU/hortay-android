@@ -26,6 +26,7 @@ import dev.lyo.hortay.data.TdSender
 import dev.lyo.hortay.data.PinnedPreview
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TimelineSnapshotStore
+import dev.lyo.hortay.data.discover.isChannelMember
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.archive.ArchiveRepository
 import dev.lyo.hortay.data.archive.ArchiveRecorder
@@ -46,6 +47,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
@@ -71,6 +73,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
@@ -183,6 +186,25 @@ class PostsRepository(
      * tests and call sites that don't wire it keep the backfill's unconditional pace.
      */
     private val historyWindow: HistoryRequestWindow = HistoryRequestWindow(),
+    /**
+     * Public channels the account reads WITHOUT joining
+     * ([dev.lyo.hortay.data.subscriptions.FollowedChannelsStore.ids]). [subscribedPosts]
+     * admits their posts next to the joined channels'. Defaults keep tests and call sites
+     * without the feature unchanged. See ARCHITECTURE.md → "Read without joining".
+     */
+    private val followedChatIds: StateFlow<Set<Long>> = MutableStateFlow(emptySet()),
+    /**
+     * The followed channels' LOCAL read cursors
+     * ([dev.lyo.hortay.data.subscriptions.FollowedChannelsStore.readCursors]). Telegram has
+     * no read state for a chat the account is not in, so these are max-merged into
+     * [chatReadCursors] — the one cursor map the UI reads.
+     */
+    private val followedReadCursors: Flow<Map<Long, Long>> = flowOf(emptyMap()),
+    /**
+     * Sink for a read position the user reached in a followed channel ([viewMessages],
+     * [markChannelsRead]) — persists it in the store. Called with a positive id only.
+     */
+    private val onFollowedRead: (chatId: Long, messageId: Long) -> Unit = { _, _ -> },
 ) : FeedSource {
 
     /**
@@ -412,10 +434,17 @@ class PostsRepository(
     // channel, public-handle search preview, etc.). Single-channel surfaces
     // (ChannelScreen) keep using [posts] and filter per-chat themselves.
     //
-    // Pre-bootstrap (`_mainChatIds` empty) we don't filter — the cold-start
-    // refresh harvests `Chat.lastMessage` straight into `_posts` and the
-    // ChatListMain list arrives concurrently; gating on an empty set would
-    // produce a blank feed for the first ~1–2 s.
+    // Channels read without joining ([followedChatIds]) are admitted next to the joined
+    // ones (ARCHITECTURE.md → "Read without joining").
+    //
+    // Pre-bootstrap we don't filter — the cold-start refresh harvests `Chat.lastMessage`
+    // straight into `_posts` and the ChatListMain list arrives concurrently; gating on an
+    // empty set would produce a blank feed for the first ~1–2 s. The bypass holds only
+    // while the initial sync is NOT done AND both chat lists are still empty
+    // ([FeedMembership.bypass]): after the sync an account with no joined channel must not
+    // see every drill / preview row forever, and followed ids are deliberately left out of
+    // the condition — they arrive from DataStore early and would otherwise end the bypass
+    // before the joined channels' membership landed, hiding them at launch.
     // `by lazy` because `_mainChatIds` / `_archivedChatIds` are declared later
     // in this file (forward reference). Lazy defers `combine(...)` evaluation
     // to first access, by which point both fields are initialised. No race:
@@ -467,11 +496,16 @@ class PostsRepository(
         // typed 5-arg overload (there is no typed 6-arg form — the vararg variant erases
         // to Array<Any>, which we'd then have to cast at every read).
         val archiveAuxFlow = combine(tombstonesFlow, revisionCountsFlow) { t, r -> t to r }
-        combine(_posts, _mainChatIds, _archivedChatIds, feedFilterFlow, archiveAuxFlow) { all, mainIds, archivedIds, feedFilter, archiveAux ->
+        // Chat-list membership, followed channels and the sync flag travel as one value for
+        // the same five-flow reason.
+        val membershipFlow = combine(_mainChatIds, _archivedChatIds, followedChatIds, _initialSyncDone) {
+                main, archived, followed, syncDone ->
+            FeedMembership(main, archived, followed, syncDone)
+        }
+        combine(_posts, membershipFlow, feedFilterFlow, archiveAuxFlow) { all, membership, feedFilter, archiveAux ->
             val (ignored, muted, saved) = feedFilter
             val (tombstones, revCounts) = archiveAux
-            val subscribed = if (mainIds.isEmpty() && archivedIds.isEmpty()) all
-            else all.filter { it.chatId in mainIds || it.chatId in archivedIds }
+            val subscribed = if (membership.bypass) all else all.filter { membership.admits(it.chatId) }
             val shown = if (ignored.isEmpty()) subscribed
             else subscribed.filter { it.chatId !in ignored }
             val gated = mutedWordsFilter.apply(shown, muted, saved)
@@ -506,8 +540,7 @@ class PostsRepository(
             val ghosts = tombstones.asSequence()
                 .filter { t ->
                     (t.chatId to t.primaryMessageId) !in livePresence &&
-                        (mainIds.isEmpty() && archivedIds.isEmpty() ||
-                            t.chatId in mainIds || t.chatId in archivedIds) &&
+                        (membership.bypass || membership.admits(t.chatId)) &&
                         t.chatId !in ignored
                 }
                 .map { reuseGhost(it) }
@@ -700,6 +733,13 @@ class PostsRepository(
             .onEach { update ->
                 runCatching { onUpdate(update) }.warnUnlessCancelled(TAG, update.javaClass.simpleName)
             }
+            .launchIn(scope)
+
+        // Followed (not joined) channels have no TDLib read state, so their local cursors
+        // are max-merged in through the same monotonic clamp as the TDLib echo. Without
+        // this a followed chat had no entry at all and its posts read as "read" forever.
+        followedReadCursors
+            .onEach { cursors -> for ((chatId, cursor) in cursors) advanceReadCursor(chatId, cursor) }
             .launchIn(scope)
 
         // Persist a tiny snapshot of the top of the feed whenever the app goes to the
@@ -923,8 +963,24 @@ class PostsRepository(
      * with 404 immediately (~ms), so calling this on a warm feed costs nothing.
      */
     override suspend fun refresh() {
+        // Fire-and-forget: the followed-channel refresher re-checks its channels on this
+        // signal, but pull-to-refresh's spinner tracks only the chat-list drain below.
+        _userRefreshes.tryEmit(Unit)
         runTriggerInitialSync("refresh", surfaceErrors = true)
     }
+
+    private val _userRefreshes = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * One emission per user-initiated [refresh] (pull-to-refresh). Consumed by
+     * [dev.lyo.hortay.data.subscriptions.FollowedChannelsRefresher], which marks its channels
+     * due — the followed channels have no update stream that a `LoadChats` drain could
+     * replay, so a pull would otherwise not refresh them at all.
+     */
+    val userRefreshes: SharedFlow<Unit> = _userRefreshes.asSharedFlow()
 
     /**
      * Soft refresh: skip if the last successful drain is within [REFRESH_STALE_MS].
@@ -1682,7 +1738,12 @@ class PostsRepository(
      * locally) and the optimistic reaction flips elsewhere in the app.
      */
     suspend fun viewMessages(chatId: Long, messageIds: List<Long>) {
-        messageIds.maxOrNull()?.let { advanceReadCursor(chatId, it) }
+        messageIds.maxOrNull()?.let { newest ->
+            advanceReadCursor(chatId, newest)
+            // A followed (not joined) channel has no server read cursor: the store's local
+            // one is the only record. ViewMessages below still goes out — it counts views.
+            if (newest > 0L && chatId in followedChatIds.value) onFollowedRead(chatId, newest)
+        }
         val open = ChatPresence.isOpen(chatId)
         ChatPresence.viewMessages(
             td = td,
@@ -1721,14 +1782,24 @@ class PostsRepository(
      * retried once — a FLOOD_WAIT reply arms the central gate, so the retry waits the
      * penalty out instead of walking back into it. A second confirmation while a run is
      * still trickling out is ignored (returns 0).
+     *
+     * Followed (not joined) channels take a local branch: Telegram keeps no unread count or
+     * read cursor for them, so [_chatUnreadCounts] would skip them forever. Their local
+     * cursor moves to the newest post the feed holds for the chat, persisted through
+     * [onFollowedRead]; no server call.
      */
     suspend fun markChannelsRead(chatIds: Collection<Long>): Int {
         if (!markReadMutex.tryLock()) return 0
         try {
             val unread = _chatUnreadCounts.value
+            val followed = followedChatIds.value
             var acked = 0
             var sent = false
             for (chatId in chatIds) {
+                if (chatId in followed) {
+                    if (markFollowedRead(chatId)) acked++
+                    continue
+                }
                 if ((unread[chatId] ?: 0) <= 0) continue
                 val lastId = runCatching { td.send(TdApi.GetChat(chatId)) }
                     .warnUnlessCancelled(TAG, "markChannelsRead/getChat")
@@ -1747,6 +1818,180 @@ class PostsRepository(
     }
 
     private val markReadMutex = Mutex()
+
+    /** [markChannelsRead]'s local branch for a followed channel; true when the cursor moved. */
+    private fun markFollowedRead(chatId: Long): Boolean {
+        val newest = newestKnownMessageId(chatId) ?: return false
+        if (newest <= (_chatReadCursors.value[chatId] ?: 0L)) return false
+        advanceReadCursor(chatId, newest)
+        onFollowedRead(chatId, newest)
+        return true
+    }
+
+    /** Highest message id (album members included) the post pool holds for [chatId]. */
+    private fun newestKnownMessageId(chatId: Long): Long? =
+        _posts.value.asSequence()
+            .filter { it.chatId == chatId && !it.isDeleted }
+            .maxOfOrNull { post -> post.albumMessageIds.maxOrNull() ?: post.id }
+
+    /**
+     * Push a followed channel's LOCAL read position to Telegram once the account has joined
+     * it: before the join the server held no cursor, so the joined channel would otherwise
+     * open with everything unread. `force_read = true` — the chat need not be open.
+     * NonCancellable: the caller removes the followed entry right after, and a cancelled
+     * ack would lose the position for good. Retried once like [markChannelsRead].
+     */
+    suspend fun pushFollowedReadPosition(chatId: Long, messageId: Long): Boolean {
+        if (messageId <= 0L) return true
+        return withContext(NonCancellable) {
+            ackForced(chatId, messageId) || ackForced(chatId, messageId)
+        }
+    }
+
+    private suspend fun ackForced(chatId: Long, messageId: Long): Boolean =
+        ChatPresence.viewMessages(
+            td = td,
+            chatId = chatId,
+            messageIds = listOf(messageId),
+            source = TdApi.MessageSourceChatHistory(),
+            forceRead = true,
+        )
+
+    /**
+     * Fetch the newest page of a channel the account reads WITHOUT joining and fold it into
+     * the feed — the whole refresh for one followed channel
+     * ([dev.lyo.hortay.data.subscriptions.FollowedChannelsRefresher] and
+     * the seed on follow both call it). See ARCHITECTURE.md → "Read without joining".
+     *
+     * Exactly ONE networked `GetChatHistory` (from the top, [limit] messages). Never a
+     * multi-page walk: TDLib may serve a short page, but the refresher re-checks on its own
+     * schedule and a walk would multiply the call count the shared window budgets for.
+     * Albums are coalesced OFFLINE only ([AlbumCoalescer.coalesce] with `onlyLocal = true`);
+     * a degraded album is completed by the Layer-2 focus repair when the user reads it.
+     *
+     * No deletion inference: a message missing from the page (an id gap) is NOT treated as
+     * deleted — TDLib pages can under-return, and live deletes for a closed chat simply don't
+     * arrive. No snackbar on failure: this runs in the background and reports through the
+     * result only.
+     *
+     * @param sinceMessageId the newest id the caller already knew
+     *   ([dev.lyo.hortay.data.subscriptions.FollowedChannel.lastSeenMessageId]);
+     *   [FollowedRefresh.NewPosts] means the page carried something newer than it AND than
+     *   anything the feed held for the chat.
+     */
+    suspend fun refreshFollowedChannel(
+        chatId: Long,
+        limit: Int = FOLLOWED_REFRESH_LIMIT,
+        sinceMessageId: Long = 0L,
+    ): FollowedRefresh {
+        val epoch = sessionEpoch.get()
+        val chat = registry.chat(chatId) ?: return FollowedRefresh.Unavailable
+        if (!chat.isChannel()) return FollowedRefresh.Unavailable
+        val result = suspendRunCatching { td.send(TdApi.GetChatHistory(chatId, 0, 0, limit, false)) }
+        val err = result.exceptionOrNull()
+        if (err != null) {
+            runCatching { Log.w(TAG, "refreshFollowedChannel($chatId) failed: ${err.message}") }
+            return classifyFollowedError(err)
+        }
+        val page = result.getOrNull()?.messages.orEmpty().toList()
+        if (page.isEmpty()) return FollowedRefresh.NoChange
+        val raw = albums.coalesce(chatId, page, onlyLocal = true)
+        val mapped = raw.map { mapper.toChannelPost(it, chat) }
+        // Session-epoch guard, exactly like [loadChannelHistoryLocked]: a logout during the
+        // fetch / mapping must not re-inject the previous account's posts.
+        if (sessionEpoch.get() != epoch) return FollowedRefresh.Failed
+        val fresh = mapped.withoutRecentlyDeleted()
+        val pageNewest = page.maxOf { it.id }
+        var knownNewest = sinceMessageId
+        _posts.update { current ->
+            // Pure: reads only `current` and locals fixed before the update.
+            var newest = sinceMessageId
+            for (post in current) {
+                if (post.chatId != chatId) continue
+                val id = post.albumMessageIds.maxOrNull() ?: post.id
+                if (id > newest) newest = id
+            }
+            knownNewest = newest
+            if (fresh.isEmpty()) current else foldRawIntoCurrent(current, fresh)
+        }
+        return if (pageNewest > knownNewest) FollowedRefresh.NewPosts(pageNewest) else FollowedRefresh.NoChange
+    }
+
+    /**
+     * One recovery attempt for a followed channel whose refresh came back
+     * [FollowedRefresh.Unavailable]. Some of those are not final: after a cache clear the
+     * chat object is missing from TDLib's memory and local database (so [ChatRegistry.chat]
+     * is null), or the handle-level access hash went stale and the history call answered
+     * 400. `SearchPublicChat([username])` asks the server for the chat again and puts it
+     * back into TDLib's store.
+     *
+     * True only when the handle still resolves to the SAME [chatId] and that chat is still a
+     * channel the account is not a member of; the caller then retries its single-page fetch
+     * once. A handle now pointing at another channel (renamed, re-registered) is NOT
+     * followed over: the entry stays Unavailable, because silently swapping the channel the
+     * user chose would be worse than a dead row they can unfollow.
+     *
+     * `SearchPublicChat` is a server-side `contacts.resolveUsername`, which Telegram
+     * throttles hard (about one call per 3 s per account before FLOOD_WAIT); the caller
+     * ([dev.lyo.hortay.data.subscriptions.FollowedChannelsRefresher]) spaces consecutive
+     * calls at least [dev.lyo.hortay.data.subscriptions.FOLLOWED_REHYDRATE_SPACING_MS] apart.
+     */
+    suspend fun rehydrateFollowedChannel(chatId: Long, username: String): Boolean {
+        val chat = suspendRunCatching { td.send(TdApi.SearchPublicChat(username)) }
+            .warnUnlessCancelled(TAG, "rehydrate($chatId)")
+            .getOrNull() ?: return false
+        if (chat.id != chatId) return false
+        val type = chat.type as? TdApi.ChatTypeSupergroup ?: return false
+        if (!type.isChannel) return false
+        val group = suspendRunCatching { td.send(TdApi.GetSupergroup(type.supergroupId)) }.getOrNull() ?: return false
+        if (!group.isChannel || isChannelMember(group.status)) return false
+        registry.rememberChat(chat)
+        return true
+    }
+
+    /**
+     * 400 / 403 are the "this chat is gone for us" family (CHANNEL_PRIVATE, CHANNEL_INVALID,
+     * "Chat not found", banned): retrying the same call won't help, though a handle
+     * re-resolve sometimes does ([rehydrateFollowedChannel]). Rate limits stop the sweep; anything
+     * else (timeouts, 5xx, auth races) is a plain failure the schedule retries later.
+     */
+    private fun classifyFollowedError(err: Throwable): FollowedRefresh {
+        val code = (err as? TdClient.TdException)?.code ?: return FollowedRefresh.Failed
+        return when {
+            TdClient.isFloodWaitCode(code) -> FollowedRefresh.FloodWait
+            code == 400 || code == 403 -> FollowedRefresh.Unavailable
+            else -> FollowedRefresh.Failed
+        }
+    }
+
+    /**
+     * Cold-start restore for followed channels, offline only: [lastSeen] maps each followed
+     * chat to its [dev.lyo.hortay.data.subscriptions.FollowedChannel.lastSeenMessageId]; that message is read with
+     * `GetMessageLocally` and its album completed through the offline coalesce. A followed
+     * chat never gets an `UpdateNewChat` lead in the cold-start drain (it is in no chat
+     * list), so without this it would show nothing until the refresher reaches it. No
+     * network: `GetChat` / `GetMessageLocally` are served from TDLib's local store.
+     *
+     * Folded as the WEAKER side (like [mergeSnapshotIntoFeed]): anything the live stream or
+     * a refresh already delivered for the same ids wins. Session-guarded.
+     */
+    suspend fun restoreFollowedLocally(lastSeen: Map<Long, Long>) {
+        val epoch = sessionEpoch.get()
+        val restored = ArrayList<TimelinePost>()
+        for ((chatId, messageId) in lastSeen) {
+            if (messageId <= 0L) continue
+            val chat = registry.chat(chatId) ?: continue
+            if (!chat.isChannel()) continue
+            val message = suspendRunCatching { td.send(TdApi.GetMessageLocally(chatId, messageId)) }
+                .getOrNull() ?: continue
+            val raw = albums.coalesce(chatId, listOf(message), onlyLocal = true)
+            raw.mapTo(restored) { mapper.toChannelPost(it, chat) }
+        }
+        if (restored.isEmpty() || sessionEpoch.get() != epoch) return
+        val fresh = restored.withoutRecentlyDeleted().toPersistentList()
+        if (fresh.isEmpty()) return
+        _posts.update { current -> foldRawIntoCurrent(current = fresh, raw = current) }
+    }
 
     private suspend fun ackNewest(chatId: Long, messageId: Long): Boolean =
         ChatPresence.viewMessages(
@@ -2880,6 +3125,21 @@ class PostsRepository(
     private val _mainChatIds = MutableStateFlow<Set<Long>>(emptySet())
 
     /**
+     * Read-only [_mainChatIds] (every chat in `ChatListMain`, channels or not). With
+     * [archivedChatIds] it is the "joined" signal the followed-channel join handoff watches:
+     * a non-member chat sits in no chat list.
+     */
+    val mainChatIds: StateFlow<Set<Long>> = _mainChatIds.asStateFlow()
+
+    /**
+     * Every channel in the merged "All" feed: the joined ones ([subscribedChatIds]) plus the
+     * ones read without joining. The scope of the Channels tab's bulk "Hide all / Show all /
+     * Mark all read". Export and the recommendation scan stay on [subscribedChatIds] —
+     * those are about the account's memberships.
+     */
+    fun feedChannelIds(): Set<Long> = subscribedChatIds() + followedChatIds.value
+
+    /**
      * Every CHANNEL the account is subscribed to (Main + Archive membership), whether or
      * not it has a post in [posts] yet — the scope of the Channels tab's "Hide all / Show
      * all in feed" so a channel whose post hasn't landed is not left out. Private chats
@@ -3136,6 +3396,22 @@ internal fun TdApi.Chat.isChannel(): Boolean {
     return type is TdApi.ChatTypeSupergroup && type.isChannel
 }
 
+/**
+ * Inputs of [PostsRepository.subscribedPosts]' subscription gate. [bypass] — see the comment
+ * above that property — admits everything only before the initial sync with both chat lists
+ * still empty.
+ */
+private class FeedMembership(
+    val main: Set<Long>,
+    val archived: Set<Long>,
+    val followed: Set<Long>,
+    val syncDone: Boolean,
+) {
+    val bypass: Boolean get() = !syncDone && main.isEmpty() && archived.isEmpty()
+
+    fun admits(chatId: Long): Boolean = chatId in main || chatId in archived || chatId in followed
+}
+
 /** Layer-2 album repair queue item: the focused degraded album to network-rebuild. */
 private data class AlbumRepairRequest(val chatId: Long, val anchorId: Long, val mediaAlbumId: Long)
 
@@ -3193,6 +3469,35 @@ const val BACKFILL_THROTTLE_MS = 300L
  * the send, which never wait.
  */
 const val BACKFILL_WINDOW_CEILING = 25
+
+/**
+ * Messages one [PostsRepository.refreshFollowedChannel] page asks for. The call costs the
+ * same at 1 or 100 (the budget is per call); 10 covers a busy channel's posts between two
+ * checks at the shortest backoff step without pulling deep history into the feed.
+ */
+const val FOLLOWED_REFRESH_LIMIT = 10
+
+/** Outcome of [PostsRepository.refreshFollowedChannel]. */
+sealed interface FollowedRefresh {
+    /** The page carried posts newer than anything known; [newestId] is the newest of them. */
+    data class NewPosts(val newestId: Long) : FollowedRefresh
+
+    /** Fetched fine, nothing newer than what the caller and the feed already had. */
+    data object NoChange : FollowedRefresh
+
+    /**
+     * Private now, deleted, banned, not a channel, or its chat object is gone from TDLib's
+     * store. The refresher first tries [PostsRepository.rehydrateFollowedChannel]; only
+     * if that fails is the channel marked unavailable (and then re-checked rarely).
+     */
+    data object Unavailable : FollowedRefresh
+
+    /** Telegram rate-limited the account (420 / 429): stop the sweep. */
+    data object FloodWait : FollowedRefresh
+
+    /** Anything else (timeout, transient error, a logout mid-fetch): retry on schedule. */
+    data object Failed : FollowedRefresh
+}
 
 /** Gap between the per-channel acks of [PostsRepository.markChannelsRead]. */
 private const val MARK_READ_SPACING_MS = 120L

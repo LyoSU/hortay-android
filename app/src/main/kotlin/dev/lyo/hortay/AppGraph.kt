@@ -53,7 +53,12 @@ import dev.lyo.hortay.data.DataStoreTimelineSnapshotStore
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.data.subscriptions.DataStoreFollowedChannelsDisk
+import dev.lyo.hortay.data.subscriptions.FollowedChannels
+import dev.lyo.hortay.data.subscriptions.FollowedChannelsRefresher
+import dev.lyo.hortay.data.subscriptions.FollowedChannelsStore
 import dev.lyo.hortay.data.subscriptions.SubscriptionTransfer
+import dev.lyo.hortay.data.subscriptions.followedChannelsDataStore
 import dev.lyo.hortay.data.subscriptions.KnownChannelMembership
 import dev.lyo.hortay.data.subscriptions.ThrottledChannelJoiner
 import dev.lyo.hortay.data.web.GuestModeStore
@@ -328,6 +333,15 @@ class AppGraph(context: Context) {
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
+    /**
+     * Public channels the account reads without joining (ARCHITECTURE.md → "Read without
+     * joining"). Declared before [postsRepository], whose feed filter and read cursors read
+     * it. Account-bound: wiped on logout.
+     */
+    val followedChannelsStore: FollowedChannelsStore =
+        FollowedChannelsStore(DataStoreFollowedChannelsDisk(followedChannelsDataStore(context)), appScope)
+            .also { store -> session.onEnd("followedChannels") { store.clear() } }
+
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
         mapper = messageMapper,
@@ -345,6 +359,9 @@ class AppGraph(context: Context) {
         archiveRepository = archiveRepository,
         archiveRecorder = archiveRecorder,
         historyWindow = tdClient.historyWindow,
+        followedChatIds = followedChannelsStore.ids,
+        followedReadCursors = followedChannelsStore.readCursors,
+        onFollowedRead = followedChannelsStore::advanceReadCursor,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(
@@ -367,6 +384,27 @@ class AppGraph(context: Context) {
         authStage = tdClient.authStage,
         posts = postsRepository.posts,
         scope = appScope,
+    )
+
+    /** Follow / unfollow, cold-start restore and join hand-off for [followedChannelsStore]. */
+    val followedChannels: FollowedChannels = FollowedChannels(tdClient, followedChannelsStore, postsRepository)
+
+    /**
+     * Foreground-only poller for the followed channels. Runs while the app is in the
+     * foreground, startup is [StartupCoordinator.Phase.Active] and the account is ready;
+     * started per session (below), so a logout cancels it with [session]'s scope.
+     */
+    val followedChannelsRefresher: FollowedChannelsRefresher = FollowedChannelsRefresher(
+        store = followedChannelsStore,
+        refresh = { chatId, since -> postsRepository.refreshFollowedChannel(chatId, sinceMessageId = since) },
+        historyWindow = tdClient.historyWindow,
+        active = combine(lifecycleBridge.foreground, startupCoordinator.phase, tdClient.authStage) { fg, phase, stage ->
+            fg && phase == StartupCoordinator.Phase.Active && stage is AuthStage.Ready
+        },
+        refreshRequests = postsRepository.userRefreshes,
+        isChatOpen = { chatId -> dev.lyo.hortay.data.ChatPresence.isOpen(chatId) },
+        nowMs = { android.os.SystemClock.elapsedRealtime() },
+        rehydrate = { chatId, username -> postsRepository.rehydrateFollowedChannel(chatId, username) },
     )
 
     /**
@@ -396,6 +434,10 @@ class AppGraph(context: Context) {
             tdClient.authStage
                 .collectLatest { stage ->
                     if (stage !is AuthStage.Ready) return@collectLatest
+                    // Session-scoped and offline until the refresher's Active gate opens:
+                    // the followed channels' local restore runs alongside the drain.
+                    followedChannels.start(session.scope)
+                    followedChannelsRefresher.start(session.scope)
                     postsRepository.triggerInitialSync()
                     // Backfill runs AFTER the chat-list drain returns so
                     // [PostsRepository._mainChatIds] / the chat registry have a

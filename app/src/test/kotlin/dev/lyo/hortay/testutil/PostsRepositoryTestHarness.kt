@@ -42,7 +42,18 @@ import org.drinkless.tdlib.TdApi
  * can override via `td.onNext { ... }` before the mapping call.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class PostsRepositoryTestHarness(private val outerScope: TestScope) {
+class PostsRepositoryTestHarness(
+    private val outerScope: TestScope,
+    /** Followed (not joined) channel ids fed to the repository; tests mutate it directly. */
+    val followedIds: MutableStateFlow<Set<Long>> = MutableStateFlow(emptySet()),
+    /** Followed channels' local read cursors fed to the repository. */
+    val followedCursors: MutableStateFlow<Map<Long, Long>> = MutableStateFlow(emptyMap()),
+    /** Receives the repository's followed-read callbacks; defaults to recording into [followedReads]. */
+    onFollowedRead: ((Long, Long) -> Unit)? = null,
+) {
+    /** Every `(chatId, messageId)` the repository reported as read in a followed channel. */
+    val followedReads: MutableList<Pair<Long, Long>> = java.util.Collections.synchronizedList(mutableListOf())
+
     /**
      * Scope for the repository's long-lived coroutines. Uses [UnconfinedTestDispatcher] so
      * `.launchIn` subscribers run eagerly (inline) whenever the upstream SharedFlow emits —
@@ -93,7 +104,8 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
     }
 
     private val connection = MutableStateFlow(ConnectionStatus.Ready)
-    private val userMessages = UserMessageBus()
+    /** Exposed so tests can assert that background paths post no snackbar. */
+    val userMessages = UserMessageBus()
     private val mapper = MessageMapper(td, FakeStrings)
 
     /**
@@ -133,6 +145,9 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         res = FakeStrings,
         coldStartBackfill = coldStartBackfill,
         historyWindow = historyWindow,
+        followedChatIds = followedIds,
+        followedReadCursors = followedCursors,
+        onFollowedRead = onFollowedRead ?: { chatId, messageId -> followedReads += chatId to messageId },
     )
 
     fun runCurrent() {

@@ -16,8 +16,9 @@ import java.util.concurrent.atomic.AtomicReference
  *
  *  - **[scope]** — a child of the app scope that is cancelled and replaced when the
  *    session ends. It is the intended home for work that belongs to the account, so a
- *    logout would cancel it structurally. **Today nothing launches in it**: the
- *    first-sign-in backfill, history prefetches and the cold-start ingest queue still
+ *    logout would cancel it structurally. Some account work runs in it (bulk mark-read,
+ *    channel recommendations, subscription transfer, the followed-channel watchers and
+ *    refresher), but the first-sign-in backfill, history prefetches and the cold-start ingest queue still
  *    run in the app scope / view-model scopes and protect themselves with
  *    `PostsRepository`'s session epoch (re-checked after each suspend point) plus their
  *    own [onEnd] wipes. Moving that work here is a follow-up; until then do not rely on

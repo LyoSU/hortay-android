@@ -206,10 +206,13 @@ fun ChannelsScreen(
     var addSheetOpen by remember { mutableStateOf(false) }
     var feedMenuOpen by remember { mutableStateOf(false) }
     var bulkConfirm by remember { mutableStateOf<FeedBulkAction?>(null) }
-    // Bulk hide/show acts on every subscribed channel, not just the rows on screen: a
-    // channel whose post hasn't landed yet would otherwise slip past "Hide all", and a
-    // transient drill/deep-link row of an unsubscribed chat would be hidden for good.
-    val bulkScope = { repo.subscribedChatIds().ifEmpty { channels.map { it.chatId }.toSet() } }
+    // Bulk hide/show acts on every subscribed or followed channel, not just the rows on
+    // screen: a channel whose post hasn't landed yet would otherwise slip past "Hide all",
+    // and a transient drill/deep-link row of an unsubscribed chat would be hidden for good.
+    // Followed (read-without-joining) channels are included because their posts reach the
+    // same merged feed: "Hide all" leaving them visible, or "Mark all read" leaving their
+    // unread strips, would read as the bulk action having failed.
+    val bulkScope = { repo.feedChannelIds().ifEmpty { channels.map { it.chatId }.toSet() } }
 
     bulkConfirm?.let { action ->
         AlertDialog(

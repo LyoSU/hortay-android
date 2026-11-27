@@ -349,28 +349,20 @@ class TimelineViewModel(
         // Drives the "user opens a fresh channel filter → loadChannelHistory back-fills 80
         // older posts → none of those should be pending, but a later UpdateNewMessage on
         // that channel should be" path.
+        //
+        // The same pass PRUNES marks of channels that left the feed. A kept mark outlived
+        // its posts: unfollowing a channel read without joining and undoing it re-seeds that
+        // channel's history, and every seeded post newer than the stale mark raised the
+        // "new posts" pill for history the user had already seen. Pruned, the returning
+        // channel is "brand new" again and seeded at its max date like any other. Skipped
+        // on an empty feed, which is a transient wipe rather than every channel leaving.
         viewModelScope.launch {
             bootstrapped.first { it }
             livePosts.collect { live ->
                 // Re-armed after a session end (see [resetSessionState]): the bootstrap
                 // re-seeds the whole map, so seeding here first would be overwritten anyway.
                 if (!bootstrapped.value) return@collect
-                val knownChats = seenHighWater.value.keys
-                val unseenChats = HashSet<Long>()
-                for (p in live) {
-                    if (p.chatId !in knownChats) unseenChats += p.chatId
-                }
-                if (unseenChats.isEmpty()) return@collect
-                seenHighWater.update { current ->
-                    val updated = HashMap(current)
-                    for (chatId in unseenChats) {
-                        val maxDate = live.asSequence()
-                            .filter { it.chatId == chatId }
-                            .maxOfOrNull { it.date } ?: continue
-                        updated.putIfAbsent(chatId, maxDate)
-                    }
-                    updated
-                }
+                seenHighWater.update { current -> reconcileHighWater(current, live) ?: current }
             }
         }
         // Snapshot restore is fired immediately. The session-start
@@ -544,6 +536,28 @@ class TimelineViewModel(
         // looked at in days) as stale.
         const val PENDING_NEW_RECENCY_WINDOW_MS = 6L * 60L * 60L * 1000L
     }
+}
+
+/**
+ * The post-bootstrap upkeep of [TimelineViewModel]'s per-channel high-water marks against the
+ * live feed: channels new to the feed are seeded at their newest post's date (so back-filled
+ * history never reads as pending), and channels no longer in the feed lose their mark (see
+ * the init block for why a stale mark is harmful). An empty [live] prunes nothing — that is
+ * a transient wipe, not every channel leaving. Returns null when nothing changes.
+ */
+internal fun reconcileHighWater(current: Map<Long, Long>, live: List<TimelinePost>): Map<Long, Long>? {
+    val newestByChat = HashMap<Long, Long>()
+    for (p in live) {
+        val prev = newestByChat[p.chatId]
+        if (prev == null || p.date > prev) newestByChat[p.chatId] = p.date
+    }
+    val unseen = newestByChat.keys.filter { it !in current }
+    val gone = if (live.isEmpty()) emptyList() else current.keys.filter { it !in newestByChat }
+    if (unseen.isEmpty() && gone.isEmpty()) return null
+    val updated = HashMap(current)
+    gone.forEach { updated.remove(it) }
+    unseen.forEach { chatId -> updated[chatId] = newestByChat.getValue(chatId) }
+    return updated
 }
 
 /**
