@@ -201,6 +201,13 @@ class TdClient private constructor(
     private val _floodWaitUntilMs = MutableStateFlow(0L)
     val floodWaitUntilMs: StateFlow<Long> = _floodWaitUntilMs.asStateFlow()
 
+    /**
+     * Every networked [TdApi.GetChatHistory] this client sent in the server's per-account
+     * budget window, recorded by [send]. Background history fetchers wait below a ceiling
+     * here so user-driven loads keep their share — see [HistoryRequestWindow].
+     */
+    val historyWindow = HistoryRequestWindow()
+
     fun start() {
         if (this::client.isInitialized) return
         // Configure TDLib's native logging BEFORE spawning the client.
@@ -579,6 +586,9 @@ class TdClient private constructor(
      */
     override suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T {
         if (!isOfflineRequest(query)) awaitFloodGate()
+        // Counted here, past the gate, so every caller lands in the window without
+        // per-call-site bookkeeping. `onlyLocal` reads never reach the server.
+        if (query is TdApi.GetChatHistory && !query.onlyLocal) historyWindow.record()
         return try {
             if (query is TdApi.SetTdlibParameters) {
                 sendRaw(query)

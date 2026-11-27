@@ -344,6 +344,7 @@ class AppGraph(context: Context) {
         coldStartBackfill = coldStartBackfillStore,
         archiveRepository = archiveRepository,
         archiveRecorder = archiveRecorder,
+        historyWindow = tdClient.historyWindow,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(

@@ -2,6 +2,7 @@ package dev.lyo.hortay.data
 
 import dev.lyo.hortay.data.posts.BACKFILL_POSTS_PER_CHAT
 import dev.lyo.hortay.data.posts.BACKFILL_TOP_K
+import dev.lyo.hortay.data.posts.BACKFILL_WINDOW_CEILING
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
 import kotlinx.coroutines.test.runTest
@@ -27,6 +28,9 @@ import org.junit.jupiter.api.Test
  *   - **Clean completion** marks the flag.
  *   - **Throttle** between RPCs honours Levin's 30-per-30s cap
  *     (tdlib/td#743) — tested via virtual time.
+ *   - **Shared window**: the loop yields when user-driven `GetChatHistory` calls
+ *     already fill the account's window to [BACKFILL_WINDOW_CEILING], and runs at
+ *     its normal pace when they don't.
  *
  * Tests use [kotlinx.coroutines.test.runTest]'s virtual time so the
  * [dev.lyo.hortay.data.posts.BACKFILL_THROTTLE_MS] throttle doesn't actually slow the suite down; `advanceUntilIdle` advances
@@ -396,5 +400,59 @@ class PostsRepositoryBackfillTest {
         val expectedTopK = (0 until BACKFILL_TOP_K).map { -10_000L - it }
         assertEquals(expectedTopK, visited,
             "the long-tail (bottom 5 channels) must be untouched")
+    }
+
+    @Test
+    fun `backfill waits for the shared history window to drain below the ceiling`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatIds = listOf(-13_000L, -13_001L)
+        chatIds.forEachIndexed { i, chatId ->
+            harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(
+                id = chatId,
+                lastMessage = harness.fakeChannelMessage(chatId, 1300L + i),
+                mainListOrder = 100L - i,
+            )))
+        }
+        harness.advanceUntilIdle()
+
+        // User-driven history loads already filled the window to the ceiling.
+        val filledAt = testScheduler.currentTime
+        repeat(BACKFILL_WINDOW_CEILING) { harness.historyWindow.record() }
+
+        val sentAt = mutableListOf<Long>()
+        harness.td.onAny("GetChatHistory") {
+            sentAt.add(testScheduler.currentTime)
+            TdApi.Messages(0, emptyArray())
+        }
+        harness.repo.runFirstSignInBackfill()
+        harness.advanceUntilIdle()
+
+        assertEquals(2, sentAt.size, "the backfill must proceed once the window drains")
+        assertEquals(filledAt + HistoryRequestWindow.WINDOW_MS, sentAt.first(),
+            "the first GetChatHistory must wait exactly until the filled window ages out")
+        assertTrue(harness.coldStartBackfill.done)
+    }
+
+    @Test
+    fun `backfill does not wait on an empty history window`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -13_100L
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(
+            id = chatId,
+            lastMessage = harness.fakeChannelMessage(chatId, 1310L),
+            mainListOrder = 100L,
+        )))
+        harness.advanceUntilIdle()
+
+        val startedAt = testScheduler.currentTime
+        var sentAt: Long? = null
+        harness.td.onAny("GetChatHistory") {
+            sentAt = testScheduler.currentTime
+            TdApi.Messages(0, emptyArray())
+        }
+        harness.repo.runFirstSignInBackfill()
+        harness.advanceUntilIdle()
+
+        assertEquals(startedAt, sentAt, "an empty window must not delay the first GetChatHistory")
     }
 }

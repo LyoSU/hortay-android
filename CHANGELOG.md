@@ -7,6 +7,7 @@
 ### Fixed
 - A video or GIF playing in the feed no longer shows a sharp second copy of itself around the picture — the edges are a soft blurred backdrop instead.
 - In guest mode, edits, reactions and deletions of the comments on screen now update while the post is open, not only new comments.
+- Opening channels while the first fill-in after signing in is still running no longer risks a Telegram rate limit.
 
 ## [0.14.0] — 2026-11-27
 

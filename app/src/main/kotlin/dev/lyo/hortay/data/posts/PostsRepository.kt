@@ -5,6 +5,7 @@ import dev.lyo.hortay.data.ChatPresence
 import dev.lyo.hortay.data.ColdStartBackfillStore
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FeedSource
+import dev.lyo.hortay.data.HistoryRequestWindow
 import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.ChatRegistry
 import dev.lyo.hortay.data.MessageContentMapper
@@ -175,6 +176,13 @@ class PostsRepository(
      * without the archive feature); [archiveRepository] stays the read side.
      */
     private val archiveRecorder: ArchiveRecorder? = null,
+    /**
+     * Account-wide count of networked `GetChatHistory` calls ([TdClient.historyWindow] in
+     * production, which records every caller). [runFirstSignInBackfill] waits below
+     * [BACKFILL_WINDOW_CEILING] on it. The default is a private, never-recorded window, so
+     * tests and call sites that don't wire it keep the backfill's unconditional pace.
+     */
+    private val historyWindow: HistoryRequestWindow = HistoryRequestWindow(),
 ) : FeedSource {
 
     /**
@@ -1001,6 +1009,16 @@ class PostsRepository(
      * messages per channel. Total runtime ~[BACKFILL_TOP_K] ×
      * [BACKFILL_THROTTLE_MS] ≈ 6 s of background work plus the calls themselves.
      *
+     * **Shared window.** The call count only keeps the backfill safe on its own; the
+     * server's window is shared with every user-driven history load that lands in the
+     * same 30 s (each channel open alone can be up to
+     * [CHANNEL_HISTORY_FETCH_ATTEMPTS] pages). Before each call the loop therefore waits
+     * on [historyWindow] (every networked `GetChatHistory` the app sent, recorded in
+     * [TdClient.send]) until fewer than [BACKFILL_WINDOW_CEILING] are in it. With an
+     * otherwise quiet account the backfill's own 20 calls never reach the ceiling, so
+     * its pace is unchanged; it yields only to user-driven calls that already fill the
+     * window. User-driven calls never wait on it.
+     *
      * **Circuit-break on FLOOD_WAIT.** If a single call returns 420/429, stop
      * the loop and DO NOT mark the flag done. Reason: the account-global
      * `awaitFloodGate` will already pause every subsequent `td.send` for the
@@ -1082,6 +1100,9 @@ class PostsRepository(
         // one-shot flag — it accomplished nothing and the next Ready edge retries.
         var anyFetched = false
         for (chat in topK) {
+            // Outside runCatching: a cancellation must propagate, and the wait itself
+            // cannot fail otherwise.
+            historyWindow.awaitBelow(BACKFILL_WINDOW_CEILING)
             val res = runCatching {
                 td.send(
                     TdApi.GetChatHistory(
@@ -3160,6 +3181,18 @@ private data class AlbumRepairRequest(val chatId: Long, val anchorId: Long, val 
 const val BACKFILL_TOP_K = 20
 const val BACKFILL_POSTS_PER_CHAT = 10
 const val BACKFILL_THROTTLE_MS = 300L
+
+/**
+ * Most networked `GetChatHistory` calls (all callers, [HistoryRequestWindow]) the account
+ * may have in the current window before [PostsRepository.runFirstSignInBackfill] sends its
+ * next one. The backfill alone ([BACKFILL_TOP_K] = 20 calls in ≈ 6 s) never reaches it, so
+ * it never waits on its own; it waits only when user-driven history calls (opening
+ * channels — up to [PostsRepository.CHANNEL_HISTORY_FETCH_ATTEMPTS] pages each — scrolling
+ * back, album repair) already fill the window, so the two together stay under Levin's 30.
+ * The 5 slots above it are headroom for user-driven calls that land between the check and
+ * the send, which never wait.
+ */
+const val BACKFILL_WINDOW_CEILING = 25
 
 /** Gap between the per-channel acks of [PostsRepository.markChannelsRead]. */
 private const val MARK_READ_SPACING_MS = 120L

@@ -5,6 +5,7 @@ import dev.lyo.hortay.data.ColdStartBackfillStore
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FakeStrings
 import dev.lyo.hortay.data.FakeTdSender
+import dev.lyo.hortay.data.HistoryRequestWindow
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelineSnapshotStore
@@ -112,6 +113,14 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
     /** Bound like in `AppGraph`, so `UpdateSupergroup` / `UpdateUser` reach it. */
     val registry: ChatRegistry = ChatRegistry(td).also { it.bind(scope) }
 
+    /**
+     * The repository's `GetChatHistory` window, on the test scheduler's virtual clock. Nothing
+     * records into it automatically ([FakeTdSender] is not [dev.lyo.hortay.data.TdClient]);
+     * tests pre-fill it with [HistoryRequestWindow.record] to simulate user-driven calls.
+     */
+    val historyWindow: HistoryRequestWindow =
+        HistoryRequestWindow(nowMs = { outerScope.testScheduler.currentTime })
+
     val repo: PostsRepository = PostsRepository(
         td = td,
         mapper = mapper,
@@ -123,6 +132,7 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         foreground = foregroundState,
         res = FakeStrings,
         coldStartBackfill = coldStartBackfill,
+        historyWindow = historyWindow,
     )
 
     fun runCurrent() {
