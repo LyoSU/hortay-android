@@ -1,4 +1,8 @@
-# Hortay
+<p align="center">
+  <img src=".github/readme/icon.png" alt="Іконка Hortay" width="96">
+</p>
+
+<h1 align="center">Hortay</h1>
 
 *Від "гортай", наказового способу дієслова "гортати".*
 
@@ -17,7 +21,11 @@ Android-застосунок для читання Telegram-каналів. Ус
 </p>
 
 <p align="center">
-  <img src="playstore/screens/photos/01-hero.jpg" alt="Стрічка Hortay" width="280">
+  <img src=".github/readme/uk-1.jpg" alt="Одна стрічка для всіх каналів" width="19%">
+  <img src=".github/readme/uk-2.jpg" alt="Повтори й серії постів згортаються" width="19%">
+  <img src=".github/readme/uk-3.jpg" alt="Гостьовий режим без акаунта" width="19%">
+  <img src=".github/readme/uk-4.jpg" alt="Коментарі з гілками відповідей" width="19%">
+  <img src=".github/readme/uk-5.jpg" alt="Канал можна сховати на якийсь час" width="19%">
 </p>
 
 ## Навіщо

@@ -1,4 +1,8 @@
-# Hortay
+<p align="center">
+  <img src=".github/readme/icon.png" alt="Hortay icon" width="96">
+</p>
+
+<h1 align="center">Hortay</h1>
 
 *Pronounced **hor-TYE** /ɦorˈtaj/. Ukrainian for "scroll!", the imperative of гортати (to leaf through).*
 
@@ -17,7 +21,11 @@ An Android app for reading Telegram channels. Every channel you follow lands in 
 </p>
 
 <p align="center">
-  <img src="playstore/screens/photos/01-hero.jpg" alt="Hortay feed" width="280">
+  <img src=".github/readme/en-1.jpg" alt="One feed for all channels" width="19%">
+  <img src=".github/readme/en-2.jpg" alt="Reposts and bursts of posts fold" width="19%">
+  <img src=".github/readme/en-3.jpg" alt="Guest mode without an account" width="19%">
+  <img src=".github/readme/en-4.jpg" alt="Comments with reply threads" width="19%">
+  <img src=".github/readme/en-5.jpg" alt="Hide a channel for a while" width="19%">
 </p>
 
 ## Why
