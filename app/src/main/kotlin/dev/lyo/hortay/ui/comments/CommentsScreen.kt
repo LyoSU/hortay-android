@@ -117,12 +117,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.lifecycle.repeatOnLifecycle
+import dev.lyo.hortay.data.CommentThreadSource
+import dev.lyo.hortay.data.OlderComments
 
 /**
  * Disabled-state copy + glyph used when the screen renders without a live thread
- * source — currently the guest-mode "comments unavailable, sign in to read"
- * surface, but any future "comments locked / channel migrated / etc." reason
- * can drop into the same shape. When non-null, the screen short-circuits
+ * source — any "comments locked / channel migrated / etc." reason. (Guest mode
+ * used to show a "sign in to read" hero here; it now reads comments through
+ * `guestThread`.) When non-null, the screen short-circuits
  * `repo.observeThread` and renders [CommentsEmptyState] directly under the
  * pinned anchor post; the rest of the shell (top bar, pinned PostCard) is
  * identical to the live-thread path so the user reads it as the same
@@ -150,8 +155,9 @@ data class CommentsDisabledOverride(
  * [repo] / [feedRepo] are nullable so the same screen renders in guest (web) mode where
  * there's no TDLib session and therefore no [CommentsRepository] / no
  * [PostsRepository.posts] flow to subscribe to. In that mode the caller passes a
- * [disabledOverride] and the screen renders the pinned anchor + a single empty-state
- * hero explaining the situation, reusing every visual primitive the live path uses.
+ * read-only `guestThread` ([CommentThreadSource]) and the same rows, rails, bubbles
+ * and reaction chips render from it; sending, reacting and voting stay with the caller's
+ * sign-in nudges.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -264,6 +270,16 @@ fun CommentsScreen(
     archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
     /** Companion to [archiveRepository]: renders archived media sharp in the revision sheet. */
     archiveMediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver? = null,
+    /**
+     * Read-only thread source used instead of [repo] — guest mode's public-widget thread
+     * ([dev.lyo.hortay.data.web.WebCommentsThread]). Wins over [repo] when both are given.
+     * With it the screen pages earlier comments in on demand, polls for new ones while
+     * resumed, and its failure states offer Open in Telegram and [onSignIn] instead of
+     * claiming the post has no comments.
+     */
+    guestThread: CommentThreadSource? = null,
+    /** "Sign in" on the guest failure states. Null hides the button. */
+    onSignIn: (() -> Unit)? = null,
 ) {
     // Live anchor: track the feed entry whose chat+id matches the post we were
     // opened with so reactions / view count / comment count stay fresh while the
@@ -328,17 +344,30 @@ fun CommentsScreen(
     // because the `when` arm below picks up the override directly. Keeps the
     // viewport-dwell ack effect dormant for the same reason (no thread to ack
     // against).
-    val threadDisabled = disabledOverride != null || repo == null
+    val threadDisabled = disabledOverride != null || (repo == null && guestThread == null)
     // Bumped by the LoadFailed retry button: re-keys the subscription so observeThread
     // hands back a fresh stream (the failed one evicted itself from the repo cache).
     var threadRetryNonce by remember { mutableIntStateOf(0) }
-    val threadFlow = remember(post.chatId, candidateIds, threadDisabled, repo, threadRetryNonce) {
-        if (threadDisabled || repo == null) {
-            kotlinx.coroutines.flow.flowOf(CommentsRepository.ThreadState.Loading)
-        } else {
-            repo.observeThread(post.chatId, candidateIds)
+    val threadFlow = remember(post.chatId, candidateIds, threadDisabled, repo, guestThread, threadRetryNonce) {
+        when {
+            threadDisabled -> kotlinx.coroutines.flow.flowOf(CommentsRepository.ThreadState.Loading)
+            guestThread != null -> guestThread.state
+            repo != null -> repo.observeThread(post.chatId, candidateIds)
+            else -> kotlinx.coroutines.flow.flowOf(CommentsRepository.ThreadState.Loading)
         }
     }
+    // Guest thread: first page on open, then the live poll only while the screen is RESUMED —
+    // repeatOnLifecycle cancels it in the background and restarts it on return.
+    val guestLifecycle = LocalLifecycleOwner.current.lifecycle
+    if (guestThread != null && disabledOverride == null) {
+        LaunchedEffect(guestThread) { guestThread.start() }
+        LaunchedEffect(guestThread, guestLifecycle) {
+            guestLifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { guestThread.keepLive() }
+        }
+    }
+    val guestOlder by remember(guestThread) {
+        guestThread?.older ?: kotlinx.coroutines.flow.MutableStateFlow(OlderComments.None)
+    }.collectAsStateWithLifecycle()
     // Comments deleted live while on screen dissolve (see [DissolveController]).
     val dissolve = rememberDissolveController(if (threadDisabled) null else repo?.liveDeletions)
     // key(threadRetryNonce): collectAsState keeps its last value across a flow swap, so a
@@ -614,7 +643,8 @@ fun CommentsScreen(
             // title — the "Допис" header visibly jumped as the count loaded. Once the thread is
             // Ready the live row count takes over (it's the authoritative figure); until then the
             // header sits at its final position with the cached count already shown.
-            val replyCount = (state as? CommentsRepository.ThreadState.Ready)?.rows?.size
+            val readyState = state as? CommentsRepository.ThreadState.Ready
+            val replyCount = readyState?.let { it.totalCount ?: it.rows.size }
                 ?: (post.commentCount ?: 0)
             val subtitleText = if (replyCount > 0) {
                 pluralStringResource(R.plurals.comments_count, replyCount, replyCount)
@@ -863,6 +893,15 @@ fun CommentsScreen(
                         )
                     }
                 } else {
+                    if (guestThread != null && guestOlder != OlderComments.None) {
+                        item(key = "older") {
+                            EarlierCommentsRow(
+                                state = guestOlder,
+                                autoLoad = commentsScrolled,
+                                onLoad = guestThread::loadOlder,
+                            )
+                        }
+                    }
                     itemsIndexed(items = s.rows, key = { _, row -> row.message.id }) { index, row ->
                         // [s.threadChatId] is the linked discussion supergroup — the
                         // chat reactions live in for every comment. Captured fresh
@@ -904,6 +943,17 @@ fun CommentsScreen(
                                 } else if (quotesAnchor(reply, anchor, s.threadChatId)) {
                                     QuoteHighlights.show(anchor.chatId, anchor.id, reply.excerpt)
                                     scope.launch { listState.animateScrollToItem(0) }
+                                } else if (guestThread != null) {
+                                    // A guest thread holds only part of the comments: fetch the
+                                    // window around the quoted one, then jump to it once listed.
+                                    scope.launch {
+                                        jumpToLoadedComment(
+                                            source = guestThread,
+                                            commentId = reply.replyToMessageId,
+                                            excerpt = reply.excerpt,
+                                            listState = listState,
+                                        )
+                                    }
                                 }
                                 // Otherwise the quoted comment isn't loaded (older page, deleted):
                                 // nothing on screen can match, so stay put rather than jumping
@@ -961,7 +1011,22 @@ fun CommentsScreen(
                         }
                     }
                 }
-                is CommentsRepository.ThreadState.Error -> if ((post.commentCount ?: 0) > 0) {
+                is CommentsRepository.ThreadState.Error -> if (guestThread != null) {
+                    // The public widget won't show this post's comments (no linked group,
+                    // or the discussion is closed to anonymous readers). Not "comments are
+                    // off": the reader may still find them in Telegram.
+                    item(key = "guest-unavailable") {
+                        CommentsEmptyState(
+                            symbol = "chat_bubble",
+                            title = stringResource(R.string.web_comments_unavailable_title),
+                            body = stringResource(R.string.web_comments_not_shown),
+                            actionLabel = stringResource(R.string.post_open_telegram),
+                            onAction = { pinnedPostInteractions.onOpenClick(anchor) },
+                            secondaryLabel = onSignIn?.let { stringResource(R.string.action_sign_in) },
+                            onSecondary = onSignIn,
+                        )
+                    }
+                } else if ((post.commentCount ?: 0) > 0) {
                     // The post itself reports comments, so "the author hasn't linked a
                     // discussion group" would be false — the thread lookup failed. Offer a
                     // retry that discards the cached negative answer.
@@ -987,13 +1052,32 @@ fun CommentsScreen(
                     }
                 }
                 CommentsRepository.ThreadState.LoadFailed -> item(key = "load-failed") {
-                    CommentsEmptyState(
-                        symbol = "cloud_off",
-                        title = stringResource(R.string.comments_load_failed_title),
-                        body = stringResource(R.string.comments_load_failed_body),
-                        actionLabel = stringResource(R.string.comments_retry),
-                        onAction = { threadRetryNonce++ },
-                    )
+                    if (guestThread != null) {
+                        // Network error, or the widget answered with markup we can't read:
+                        // retry, or read the thread where it certainly works.
+                        CommentsEmptyState(
+                            symbol = "cloud_off",
+                            title = stringResource(R.string.comments_load_failed_title),
+                            body = stringResource(R.string.web_comments_load_failed_body),
+                            actionLabel = stringResource(R.string.comments_retry),
+                            onAction = {
+                                guestThread.retry()
+                                threadRetryNonce++
+                            },
+                            secondaryLabel = stringResource(R.string.post_open_telegram),
+                            onSecondary = { pinnedPostInteractions.onOpenClick(anchor) },
+                            tertiaryLabel = onSignIn?.let { stringResource(R.string.action_sign_in) },
+                            onTertiary = onSignIn,
+                        )
+                    } else {
+                        CommentsEmptyState(
+                            symbol = "cloud_off",
+                            title = stringResource(R.string.comments_load_failed_title),
+                            body = stringResource(R.string.comments_load_failed_body),
+                            actionLabel = stringResource(R.string.comments_retry),
+                            onAction = { threadRetryNonce++ },
+                        )
+                    }
                 }
             }
         }
@@ -1065,6 +1149,11 @@ private fun CommentsEmptyState(
     body: String,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    /** Quieter follow-up actions under the main one (guest failure states). */
+    secondaryLabel: String? = null,
+    onSecondary: (() -> Unit)? = null,
+    tertiaryLabel: String? = null,
+    onTertiary: (() -> Unit)? = null,
 ) {
     val composeShape = HortayExpressive.EmptyStateMask.asComposeShape()
     Column(
@@ -1110,8 +1199,88 @@ private fun CommentsEmptyState(
                 Text(actionLabel)
             }
         }
+        val quiet = listOfNotNull(
+            secondaryLabel?.let { label -> onSecondary?.let { label to it } },
+            tertiaryLabel?.let { label -> onTertiary?.let { label to it } },
+        )
+        if (quiet.isNotEmpty()) {
+            Spacer(Modifier.height(HortaySpacing.sm))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(HortaySpacing.sm, Alignment.CenterHorizontally)) {
+                quiet.forEach { (label, onClick) ->
+                    TextButton(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(label, textAlign = TextAlign.Center)
+                    }
+                }
+            }
+        }
     }
 }
+
+/**
+ * Guest threads hold a window of the comments: this row, between the post and the oldest
+ * loaded comment, fetches the page before it.
+ *
+ * It loads on its own once per time it comes into view after the reader has scrolled
+ * ([autoLoad]) — not on the first frame of a fresh open, and not again while it simply
+ * stays on screen: the loaded page lands BELOW the row, so a row that re-fired on every
+ * page would walk a thousand-comment thread to its start while the reader sits still.
+ * After a failure it is a plain button — never an automatic retry loop.
+ */
+@Composable
+private fun EarlierCommentsRow(state: OlderComments, autoLoad: Boolean, onLoad: () -> Unit) {
+    val latestOnLoad by rememberUpdatedState(onLoad)
+    val latestState by rememberUpdatedState(state)
+    LaunchedEffect(autoLoad) {
+        if (autoLoad && latestState == OlderComments.Available) latestOnLoad()
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .padding(horizontal = HortaySpacing.lg, vertical = HortaySpacing.xs),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (state == OlderComments.Loading) {
+            LoadingIndicator(modifier = Modifier.size(32.dp).align(Alignment.Center))
+        } else {
+            TextButton(onClick = onLoad, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(
+                    text = stringResource(
+                        if (state == OlderComments.Failed) R.string.comments_earlier_failed else R.string.comments_show_earlier,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Loads the window around a quoted comment of a guest thread, waits until it is listed, and
+ * scrolls to it with the quoted words lit — the guest counterpart of the in-thread jump.
+ * Gives up quietly when the comment can't be fetched (deleted, network).
+ */
+private suspend fun jumpToLoadedComment(
+    source: CommentThreadSource,
+    commentId: Long,
+    excerpt: String,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+) {
+    if (!source.loadAround(commentId)) return
+    val ready = source.state.value as? CommentsRepository.ThreadState.Ready ?: return
+    val target = ready.rows.indexOfFirst { it.message.id == commentId }
+    if (target < 0) return
+    val quoted = ready.rows[target].message
+    // The list re-measures with the new rows on the next frame; rows are its tail.
+    val total = withTimeoutOrNull(QUOTE_JUMP_SETTLE_MS) {
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .first { it >= ready.rows.size }
+    } ?: return
+    QuoteHighlights.show(quoted.chatId, quoted.id, excerpt)
+    listState.animateScrollToItem((total - ready.rows.size + target).coerceAtLeast(0))
+}
+
+/** How long a quote jump waits for the freshly loaded rows to reach the list. */
+private const val QUOTE_JUMP_SETTLE_MS = 2_000L
 
 /**
  * E1/E2 — one comment row.
@@ -1239,6 +1408,7 @@ private fun CommentBubble(
             name = message.senderName,
             thumb = message.avatarThumb,
             fileId = message.avatarFileId,
+            remoteUrl = message.avatarUrl,
             size = avatarSize,
             textStyle = if (avatarSize >= TOP_AVATAR_DP.dp) {
                 MaterialTheme.typography.titleSmall

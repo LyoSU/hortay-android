@@ -71,7 +71,10 @@
     <string name="web_settings_clear_cache_confirm_body">Se eliminarán las publicaciones e imágenes en caché local. Las suscripciones y publicaciones guardadas se conservan. El contenido visible se recargará desde t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Limpiar</string>
     <string name="web_settings_clear_cache_cancel">Cancelar</string>
-    <string name="web_comments_unavailable">Los comentarios no están disponibles en modo invitado. Inicia sesión para leerlos</string>
+    <string name="web_comments_not_shown">Telegram no muestra los comentarios de esta publicación sin una cuenta. Abre la publicación en Telegram o inicia sesión para leerlos aquí</string>
+    <string name="web_comments_load_failed_body">No se pudieron obtener los comentarios de Telegram. Inténtalo de nuevo, abre la publicación en Telegram o inicia sesión</string>
+    <string name="comments_show_earlier">Mostrar comentarios anteriores</string>
+    <string name="comments_earlier_failed">No se pudieron cargar los comentarios anteriores. Toca para reintentar</string>
     <string name="web_comments_unavailable_title">Comentarios no disponibles</string>
     <string name="web_settings_privacy_title">Qué ve Telegram en este modo</string>
     <string name="web_settings_privacy_body">Tu IP y un User-Agent de navegador de escritorio. Sin cookies, sin cuenta, nada personal tuyo</string>

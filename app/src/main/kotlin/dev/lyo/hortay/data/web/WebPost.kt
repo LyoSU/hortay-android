@@ -24,7 +24,8 @@ import kotlinx.serialization.Serializable
  *   - Discussion-thread comment counts. The preview page never includes them; only
  *     the per-message embed widget (t.me/<u>/<id>?embed=1) does, and fetching that
  *     for every visible post defeats the scaling argument that conditional GET buys
- *     us. Comments stay TDLib-only.
+ *     us. The comments themselves are fetched per post, only when it is opened —
+ *     see [WebDiscussionClient].
  *   - Custom-emoji renderings inside reactions. Telegram only embeds the emoji-id
  *     in the static HTML and renders the glyph via JS at runtime — we expose the id
  *     so the UI can either display a generic chip or look it up via TDLib once the

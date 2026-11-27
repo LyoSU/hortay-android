@@ -73,7 +73,10 @@
     <string name="web_settings_clear_cache_confirm_body">Кешовані на пристрої пости й зображення буде видалено. Підписки та збережені пости залишаться. Вміст знову завантажиться з t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Очистити</string>
     <string name="web_settings_clear_cache_cancel">Скасувати</string>
-    <string name="web_comments_unavailable">Коментарі недоступні в гостьовому режимі. Увійди, щоб їх читати</string>
+    <string name="web_comments_not_shown">Telegram не показує коментарі до цього допису без акаунта. Відкрий допис у Telegram або увійди, щоб читати їх тут</string>
+    <string name="web_comments_load_failed_body">Не вдалося отримати коментарі з Telegram. Спробуй ще раз, відкрий допис у Telegram або увійди</string>
+    <string name="comments_show_earlier">Показати попередні коментарі</string>
+    <string name="comments_earlier_failed">Не вдалося завантажити попередні коментарі. Торкнись, щоб спробувати ще раз</string>
     <string name="web_comments_unavailable_title">Коментарі недоступні</string>
     <string name="web_settings_privacy_title">Що бачить Telegram у цьому режимі</string>
     <string name="web_settings_privacy_body">Твій IP і User-Agent настільного браузера. Без файлів cookie, акаунта чи персональних даних</string>

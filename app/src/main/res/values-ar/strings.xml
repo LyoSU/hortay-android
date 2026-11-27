@@ -75,7 +75,10 @@
     <string name="web_settings_clear_cache_confirm_body">ستُحذف منشورات القنوات والصور المخزنة محلياً. تبقى الاشتراكات والمنشورات المحفوظة. سيُعاد تحميل المحتوى من t.me</string>
     <string name="web_settings_clear_cache_confirm_action">مسح</string>
     <string name="web_settings_clear_cache_cancel">إلغاء</string>
-    <string name="web_comments_unavailable">التعليقات غير متاحة في وضع الضيف. سجّل الدخول لقراءتها</string>
+    <string name="web_comments_not_shown">لا يعرض تيليجرام تعليقات هذا المنشور بدون حساب. افتح المنشور في تيليجرام أو سجّل الدخول لقراءتها هنا</string>
+    <string name="web_comments_load_failed_body">تعذّر جلب التعليقات من تيليجرام. حاول مرة أخرى، أو افتح المنشور في تيليجرام، أو سجّل الدخول</string>
+    <string name="comments_show_earlier">عرض التعليقات السابقة</string>
+    <string name="comments_earlier_failed">تعذّر تحميل التعليقات السابقة. انقر للمحاولة مرة أخرى</string>
     <string name="web_comments_unavailable_title">التعليقات غير متاحة</string>
     <string name="web_settings_privacy_title">ما يراه Telegram في هذا الوضع</string>
     <string name="web_settings_privacy_body">عنوان IP الخاص بك وUser-Agent متصفح سطح المكتب. بدون ملفات تعريف ارتباط، ولا حساب، ولا بيانات شخصية</string>

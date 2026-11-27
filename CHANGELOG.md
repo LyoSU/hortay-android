@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- In guest mode you can read the comments under a post, with new ones arriving while the post is open.
 - After a week of regular use, the app asks once whether you want to rate it on Google Play.
 - Reading without an account now goes through your SOCKS5 or HTTP proxy, photos and videos included.
 - Posts you read in guest mode now count in the channels' view counters, as on the t.me website — Settings → Privacy can turn this off.

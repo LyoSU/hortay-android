@@ -401,7 +401,7 @@ class WebTelegramClient(
         // attributable in Telegram's edge logs (and to anyone else on-path).
         // We emit a plain Chrome-on-Linux UA, indistinguishable from a real
         // browser at the HTTP layer.
-        private const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
+        internal const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
         // Computed once at class-load — Locale changes are rare enough at runtime
@@ -411,7 +411,7 @@ class WebTelegramClient(
         // "<tag>,<tag>;q=0.9,en;q=0.8" — primary preference, then English fallback so
         // pages that don't have the user's locale degrade to readable English instead
         // of whatever Telegram's edge picks by IP.
-        private val ACCEPT_LANGUAGE: String = run {
+        internal val ACCEPT_LANGUAGE: String = run {
             val tag = Locale.getDefault().toLanguageTag()
             if (tag.equals("en", ignoreCase = true) || tag.startsWith("en-", ignoreCase = true)) {
                 "$tag,en;q=0.9"

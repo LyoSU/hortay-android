@@ -153,6 +153,75 @@ object WebPostAdapter {
     }
 
     /**
+     * A discussion-widget comment as the [TimelinePost] the comments screen renders, so a
+     * guest thread uses the same bubble, media, reactions and threading as a signed-in one.
+     *
+     * [threadChatId] stands in for the discussion group's chat id: comments, their reply
+     * targets and the screen's highlight / dissolve keys all agree on it, and it never
+     * reaches TDLib. [showReplyCard] is set for a reply whose parent isn't loaded: the
+     * thread can't indent it under its parent, so the quote card carries the context
+     * instead, and tapping it loads the comments around the parent. A reply to a loaded
+     * comment stays a plain reply, as in signed-in mode, where indentation conveys it.
+     */
+    internal fun commentToTimelinePost(
+        comment: WebComment,
+        threadChatId: Long,
+        showReplyCard: Boolean,
+        strings: StringResolver,
+    ): TimelinePost {
+        val publishedMs = parseIso(comment.publishedAt)
+        val content = buildContent(
+            htmlToFormatted(comment.textHtml),
+            comment.media,
+            comment.webPreview?.let { tdWebPreviewFrom(it) },
+            strings,
+        )
+        val replyTo = comment.replyToId
+        return TimelinePost(
+            id = comment.id,
+            chatId = threadChatId,
+            mediaAlbumId = 0L,
+            senderName = comment.authorName,
+            senderHandle = null,
+            avatarThumb = null,
+            avatarFileId = null,
+            avatarUrl = comment.avatarUrl,
+            content = content,
+            views = 0,
+            date = publishedMs,
+            editDate = if (comment.isEdited) publishedMs else 0L,
+            forwardOrigin = null,
+            authorSignature = null,
+            reply = replyTo?.let { id ->
+                ReplyPreview(
+                    authorName = comment.replyAuthor,
+                    excerpt = comment.replyExcerpt,
+                    isQuote = showReplyCard,
+                    replyToChatId = threadChatId,
+                    replyToMessageId = id,
+                    mediaThumb = comment.replyThumbUrl?.let { url ->
+                        TdMedia(
+                            fileId = null,
+                            width = REPLY_THUMB_PX,
+                            height = REPLY_THUMB_PX,
+                            minithumbBytes = null,
+                            remoteUrl = url,
+                        )
+                    },
+                    mediaKind = if (comment.replyThumbUrl != null) ReplyMediaKind.Photo else ReplyMediaKind.None,
+                )
+            },
+            reactions = Reactions(
+                totalCount = comment.reactions.sumOf { parseShortNumber(it.count) },
+                items = comment.reactions.map { it.toReactionItem() },
+            ),
+            commentCount = null,
+            albumMessageIds = emptyList(),
+            parentId = replyTo,
+        )
+    }
+
+    /**
      * Pick the right [PostContent] subtype for the parsed media set. Single-image
      * posts become [PostContent.Photo] (no — actually PhotoAlbum with one item, since
      * PostContent has no standalone Photo) — we always go through PhotoAlbum even for

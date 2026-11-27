@@ -213,16 +213,7 @@ object TmePageParser {
         // layouts. The earlier raw `.tgme_widget_message_text` fallback was
         // dropped — it would re-introduce the reply-text bug it was supposed to
         // fix, since reply blocks share that exact class.
-        val textHtml = (msg
-            .select(".tgme_widget_message_text:not(.js-message_reply_text)")
-            .filterNot { it.parents().any { p -> p.hasClass("tgme_widget_message_reply") } }
-            .firstOrNull { candidate ->
-                // Prefer the innermost: a candidate that itself has no nested
-                // `.tgme_widget_message_text` descendant.
-                candidate.selectFirst(".tgme_widget_message_text") == null
-            }
-            ?: msg.selectFirst(".tgme_widget_message_text:not(.js-message_reply_text)"))
-            ?.html().orEmpty()
+        val textHtml = messageTextHtml(msg)
 
         val media = parseMedia(msg)
         val webPreview = parseWebPreview(msg)
@@ -243,6 +234,22 @@ object TmePageParser {
             extras = parseExtras(msg),
         )
     }
+
+    /**
+     * Inner HTML of a message's own text — the innermost `.tgme_widget_message_text`
+     * outside any reply header (see the two markup quirks above). Shared with
+     * [WebDiscussionParser]: the discussion widget wraps comments in the same markup family.
+     */
+    internal fun messageTextHtml(msg: Element): String = (msg
+        .select(".tgme_widget_message_text:not(.js-message_reply_text)")
+        .filterNot { it.parents().any { p -> p.hasClass("tgme_widget_message_reply") } }
+        .firstOrNull { candidate ->
+            // Prefer the innermost: a candidate that itself has no nested
+            // `.tgme_widget_message_text` descendant.
+            candidate.selectFirst(".tgme_widget_message_text") == null
+        }
+        ?: msg.selectFirst(".tgme_widget_message_text:not(.js-message_reply_text)"))
+        ?.html().orEmpty()
 
     private fun parseExtras(msg: Element): WebPostExtras {
         // Footer: `<span class="tgme_widget_message_meta"><span class="…_from_author">
@@ -269,7 +276,7 @@ object TmePageParser {
         return WebPostExtras(authorSignature = signature, isEdited = edited, reply = reply)
     }
 
-    private fun parseMedia(msg: Element): List<WebMedia> {
+    internal fun parseMedia(msg: Element): List<WebMedia> {
         val out = mutableListOf<WebMedia>()
 
         // Photos and videos in ONE pass, in DOM order — an album can interleave them
@@ -410,7 +417,7 @@ object TmePageParser {
         )
     }
 
-    private fun parseWebPreview(msg: Element): WebPreview? {
+    internal fun parseWebPreview(msg: Element): WebPreview? {
         val preview = msg.selectFirst(".tgme_widget_message_link_preview") ?: return null
         // The wrapper itself is sometimes `<a>` (single link) and sometimes `<div>`
         // containing nested links. Try both shapes.
@@ -484,7 +491,7 @@ object TmePageParser {
      * The count is the trailing text node of the `<span>` in all three shapes — no
      * dedicated count element exists.
      */
-    private fun parseReactions(msg: Element): List<WebReaction> {
+    internal fun parseReactions(msg: Element): List<WebReaction> {
         val container = msg.selectFirst(".tgme_widget_message_reactions") ?: return emptyList()
         return container.select("span.tgme_reaction").map { span ->
             val isPaid = span.hasClass("tgme_reaction_paid")
@@ -516,7 +523,7 @@ object TmePageParser {
         }
     }
 
-    private fun extractCssBackgroundUrl(style: String): String? {
+    internal fun extractCssBackgroundUrl(style: String): String? {
         if (style.isBlank()) return null
         val match = BACKGROUND_URL_REGEX.find(style) ?: return null
         val raw = match.groupValues[1].takeIf { it.isNotBlank() } ?: return null
@@ -552,7 +559,7 @@ object TmePageParser {
     }
 
     /** `src` of an auto-loaded resource, or null when blank or not a plain https URL. */
-    private fun safeSrc(el: Element?, attr: String = "src"): String? =
+    internal fun safeSrc(el: Element?, attr: String = "src"): String? =
         el?.attr(attr)?.trim()?.ifEmpty { null }?.takeIf(::isSafeHttpsUrl)
 
     /**

@@ -73,7 +73,10 @@
     <string name="web_settings_clear_cache_confirm_body">Локально кешированные посты и изображения будут удалены. Подписки и сохранённые посты останутся. Контент снова загрузится с t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Очистить</string>
     <string name="web_settings_clear_cache_cancel">Отмена</string>
-    <string name="web_comments_unavailable">Комментарии недоступны в гостевом режиме. Войдите, чтобы читать их</string>
+    <string name="web_comments_not_shown">Telegram не показывает комментарии к этому посту без аккаунта. Откройте пост в Telegram или войдите, чтобы читать их здесь</string>
+    <string name="web_comments_load_failed_body">Не удалось получить комментарии из Telegram. Попробуйте ещё раз, откройте пост в Telegram или войдите</string>
+    <string name="comments_show_earlier">Показать предыдущие комментарии</string>
+    <string name="comments_earlier_failed">Не удалось загрузить предыдущие комментарии. Нажмите, чтобы попробовать ещё раз</string>
     <string name="web_comments_unavailable_title">Комментарии недоступны</string>
     <string name="web_settings_privacy_title">Что видит Telegram в этом режиме</string>
     <string name="web_settings_privacy_body">Ваш IP и User-Agent десктопного браузера. Без куки, аккаунта и личных данных</string>
