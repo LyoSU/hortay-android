@@ -553,12 +553,20 @@ class WebRepository(
      * the channel before; the next successful fetch replaces the placeholder.
      */
     suspend fun subscribe(username: String, placeholderTitle: String = username) =
-        withContext(ioDispatcher) {
-            db.transaction {
-                channelQueries.subscribeInsert(username, placeholderTitle)
+        subscribeAll(mapOf(username to placeholderTitle))
+
+    /**
+     * [subscribe] for many channels (username → placeholder title) in ONE transaction, so
+     * the channel-list import emits one table change instead of one per channel.
+     */
+    suspend fun subscribeAll(placeholderTitles: Map<String, String>) = withContext(ioDispatcher) {
+        db.transaction {
+            placeholderTitles.forEach { (username, title) ->
+                channelQueries.subscribeInsert(username, title)
                 channelQueries.subscribeUpdate(username)
             }
         }
+    }
 
     suspend fun unsubscribe(username: String) = withContext(ioDispatcher) {
         channelQueries.unsubscribe(username)

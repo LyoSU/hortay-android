@@ -2,15 +2,11 @@ package dev.lyo.hortay.data.web
 
 import android.util.Log
 import dev.lyo.hortay.data.AuthStage
-import dev.lyo.hortay.data.ChannelActionsRepository
-import dev.lyo.hortay.data.ChannelDirectory
-import dev.lyo.hortay.data.PublicChatLookup
+import dev.lyo.hortay.data.subscriptions.ThrottledChannelJoiner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,8 +50,7 @@ import kotlinx.coroutines.withContext
 class MigrationCoordinator(
     private val migrationStore: MigrationStore,
     private val subscriptions: SubscriptionsStore,
-    private val channels: ChannelDirectory,
-    private val channelActions: ChannelActionsRepository,
+    private val joiner: ThrottledChannelJoiner,
     private val authStage: StateFlow<AuthStage>,
     private val scope: CoroutineScope,
 ) {
@@ -116,9 +111,9 @@ class MigrationCoordinator(
     /**
      * User accepted a subset of channels for migration. We throttle the TDLib
      * calls to one chat per second (each chat = SearchPublicChat + JoinChat,
-     * effectively two RPCs) so a 30-channel migration spreads over half a
-     * minute rather than triggering a global FLOOD_WAIT in the first second
-     * post-login.
+     * effectively two RPCs; see [ThrottledChannelJoiner]) so a 30-channel
+     * migration spreads over half a minute rather than triggering a global
+     * FLOOD_WAIT in the first second post-login.
      *
      * Returns when all channels have been processed. The caller is expected to
      * keep the sheet visible during the run (showing [progress]) and dismiss
@@ -131,62 +126,37 @@ class MigrationCoordinator(
             return@withLock
         }
         _progress.value = Progress(total = usernames.size, processed = 0, lastUsername = null)
-        val migrated = mutableListOf<String>()
-        // Track failures separately. Successful joins go through `addMigrated` so
-        // they're never re-offered; a failure (FLOOD_WAIT, transient network,
-        // a SearchPublicChat that could not be answered — PublicChatLookup.Failed) is
-        // intentionally NOT recorded — markProposalShown() at the bottom would
-        // otherwise strand them forever, with no UI path to retry. By gating
-        // markProposalShown on "every requested handle resolved AND joined",
-        // a partial-failure run leaves the proposal pending; the next auth.Ready
-        // (foreground re-entry, sign out + sign in) re-evaluates and re-offers
-        // just the failed subset (alreadyMigrated filter excludes successes).
-        val anyFailure = java.util.concurrent.atomic.AtomicBoolean(false)
-        for ((i, username) in usernames.withIndex()) {
-            // Cooperative cancellation: confirm() runs inside `mutex.withLock`,
-            // and `dismiss()` takes the same lock. Without an explicit
-            // ensureActive between iterations, a long throttle delay or a stuck
-            // RPC could keep the user pinned to the sheet. Now a parent-scope
-            // cancel (sheet swipe-down, sign-out mid-run) bubbles through here
-            // without waiting for the remaining channels to drain — critical
-            // for the ~30 s worst-case (30 channels × THROTTLE_MS).
-            currentCoroutineContext().ensureActive()
-            val cleaned = username.removePrefix("@").trim().lowercase()
-            if (cleaned.isEmpty()) continue
-            _progress.value = Progress(total = usernames.size, processed = i, lastUsername = cleaned)
-            // lookupPublicChat, not resolvePublicChat: the latter swallows every
-            // exception into null, so an offline or flood-limited SearchPublicChat
-            // read as "no such channel" and markProposalShown() below hid the offer
-            // for good although nothing was joined.
-            when (val lookup = channels.lookupPublicChat(cleaned)) {
-                PublicChatLookup.NotFound -> {
-                    // TDLib says the handle is malformed or not taken (handle was
-                    // wrong, channel was deleted) — permanent, don't re-offer.
-                    Log.w(TAG, "migration: SearchPublicChat($cleaned) found no chat (skip, won't retry)")
-                }
-                PublicChatLookup.Failed -> {
-                    Log.w(TAG, "migration: SearchPublicChat($cleaned) failed transiently")
-                    anyFailure.set(true)
-                }
-                is PublicChatLookup.Found -> {
-                    // joinChat swallows (and surfaces) its own failure and reports it as
-                    // false — a failed join must not count as migrated, or the handle would
-                    // be dropped from the guest subscriptions below without a TDLib join.
-                    if (channelActions.joinChat(lookup.chatId)) {
-                        migrated += cleaned
-                        // Book-keep each success the moment it lands, not after the loop:
-                        // a run cancelled mid-way (sheet swipe-down, sign-out) used to drop
-                        // the whole `migrated` list — already-joined channels were re-offered
-                        // and stayed duplicated as guest-mode subscriptions.
-                        recordMigrated(cleaned)
-                    } else {
-                        Log.w(TAG, "migration: JoinChat($cleaned) failed")
-                        anyFailure.set(true)
-                    }
-                }
-            }
-            if (i < usernames.lastIndex) delay(THROTTLE_MS)
-        }
+        // Failures are tracked separately. Successful joins go through `addMigrated` so
+        // they're never re-offered; a failure (FLOOD_WAIT, transient network, a
+        // SearchPublicChat that could not be answered — PublicChatLookup.Failed) is
+        // intentionally NOT recorded — markProposalShown() at the bottom would otherwise
+        // strand them forever, with no UI path to retry. By gating markProposalShown on
+        // "every requested handle resolved AND joined", a partial-failure run leaves the
+        // proposal pending; the next auth.Ready (foreground re-entry, sign out + sign in)
+        // re-evaluates and re-offers just the failed subset (alreadyMigrated filter
+        // excludes successes). A handle TDLib says is not taken (NotFound) is permanent
+        // and not re-offered.
+        //
+        // The joiner checks cancellation between channels: confirm() runs inside
+        // `mutex.withLock`, and `dismiss()` takes the same lock, so a parent-scope cancel
+        // (sheet swipe-down, sign-out mid-run) must bubble through without waiting for the
+        // remaining channels to drain — critical for the ~30 s worst case (30 channels ×
+        // THROTTLE_MS). stopOnFloodWait = false: the migration rides out a FLOOD_WAIT on
+        // TdClient's gate and carries on, as it always has.
+        val result = joiner.joinAll(
+            usernames = usernames,
+            stopOnFloodWait = false,
+            onProgress = { processed, current ->
+                _progress.value = Progress(total = usernames.size, processed = processed, lastUsername = current)
+            },
+            // Book-keep each success the moment it lands, not after the loop: a run
+            // cancelled mid-way (sheet swipe-down, sign-out) used to drop the whole
+            // `migrated` list — already-joined channels were re-offered and stayed
+            // duplicated as guest-mode subscriptions.
+            onJoined = { recordMigrated(it) },
+        )
+        val migrated = result.joined
+        val anyFailure = result.failed.isNotEmpty()
         // Successful joins were already recorded per channel by [recordMigrated].
         //
         // No manual refresh after JoinChat: TDLib emits UpdateNewChat with
@@ -203,7 +173,7 @@ class MigrationCoordinator(
         // succeeded (in `migrated`) or was conclusively a no-op
         // (PublicChatLookup.NotFound — wrong handle / deleted channel). Any transient failure leaves
         // the proposal pending so the user gets another bite at the apple.
-        if (!anyFailure.get()) {
+        if (!anyFailure) {
             migrationStore.markProposalShown()
         } else {
             Log.i(TAG, "migration: ${migrated.size}/${usernames.size} succeeded, retryable failures left — proposal stays pending")
@@ -277,11 +247,6 @@ class MigrationCoordinator(
 
     private companion object {
         const val TAG = "MigrationCoordinator"
-        // 1 chat / sec — two TDLib RPCs each (SearchPublicChat + JoinChat).
-        // TDLib's per-method gate tolerates ~30 SearchPublicChat per minute on
-        // Telegram's side; staying at 60/min for the slower-throttled JoinChat
-        // is safer.
-        const val THROTTLE_MS = 1_000L
         const val POST_COMPLETE_HOLD_MS = 1_500L
     }
 }

@@ -53,6 +53,8 @@ import dev.lyo.hortay.data.DataStoreTimelineSnapshotStore
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.data.subscriptions.SubscriptionTransfer
+import dev.lyo.hortay.data.subscriptions.ThrottledChannelJoiner
 import dev.lyo.hortay.data.web.GuestModeStore
 import dev.lyo.hortay.data.web.MigrationCoordinator
 import dev.lyo.hortay.data.web.MigrationStore
@@ -790,6 +792,16 @@ class AppGraph(context: Context) {
     val migrationStore: MigrationStore = MigrationStore(context)
 
     /**
+     * The one throttled SearchPublicChat + JoinChat loop (1 channel/s), shared by the
+     * guest → account migration and the channel-list import. See [ThrottledChannelJoiner].
+     */
+    private val channelJoiner: ThrottledChannelJoiner = ThrottledChannelJoiner(
+        channels = channelDirectory,
+        channelActions = channelActions,
+        floodWaitUntilMs = tdClient.floodWaitUntilMs,
+    )
+
+    /**
      * Drives the post-sign-in migration proposal. Listens for [authStage] →
      * Ready transitions; when one fires AND the proposal hasn't been shown
      * AND the guest-subscription set is non-empty, exposes a non-null
@@ -800,11 +812,27 @@ class AppGraph(context: Context) {
     val migrationCoordinator: MigrationCoordinator = MigrationCoordinator(
         migrationStore = migrationStore,
         subscriptions = webSubscriptions,
-        channels = channelDirectory,
-        channelActions = channelActions,
+        joiner = channelJoiner,
         authStage = tdClient.authStage,
         scope = appScope,
     ).also { it.bind() }
+
+    /**
+     * Channel-list import / export for both modes plus the share-to-Hortay target. The
+     * signed-in import joins through [channelJoiner] in [session]'s scope; the logout hook
+     * closes its sheet so account A's run can't linger over account B.
+     */
+    val subscriptionTransfer: SubscriptionTransfer = SubscriptionTransfer(
+        webSubscriptions = webSubscriptions,
+        webFeed = webFeedSource,
+        posts = postsRepository,
+        channels = channelDirectory,
+        joiner = channelJoiner,
+        accountScope = { session.scope },
+        appScope = appScope,
+        userMessages = userMessages,
+        res = res,
+    ).also { transfer -> session.onEnd("subscriptionTransfer") { transfer.clear() } }
 
     // ---- CSAE-compliance: child safety reporting --------------------------------
 

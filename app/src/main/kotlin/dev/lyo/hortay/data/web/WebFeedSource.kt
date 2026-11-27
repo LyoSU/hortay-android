@@ -1035,6 +1035,37 @@ class WebFeedSource(
         }.invokeOnCompletion { trackFirstFetch(-1) }
     }
 
+    /**
+     * Bulk subscribe for the channel-list import. Persists the whole list the way
+     * [subscribeAndRefresh] persists one channel — channel table first (rows show up at
+     * once), [lastKnownSubscriptionsSet] pre-updated, then ONE DataStore edit — and then
+     * runs ONE forced sweep instead of a [fetchOne] per channel: the sweep's
+     * [fetchSemaphore] bounds the HTTP fan-out, where N detached fetches would each queue
+     * on it with their own Loading row and job.
+     *
+     * The sweep waits for an in-flight one (`withLock`, not [doRefresh]'s `tryLock`):
+     * a sweep that began before the import read its targets before the new rows existed,
+     * so skipping would leave the imported channels empty until the next scheduler tick.
+     */
+    suspend fun subscribeAll(usernames: Collection<String>) {
+        val normalized = usernames.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
+        if (normalized.isEmpty()) return
+        // NonCancellable for the same reason as [subscribeAndRefresh]: the table and the
+        // DataStore set must not be split by a cancelled caller.
+        withContext(NonCancellable) {
+            repository.subscribeAll(normalized.associateWith { it })
+            subscriptionsMutex.withLock {
+                val previous = lastKnownSubscriptionsSet
+                if (previous != null) lastKnownSubscriptionsSet = previous + normalized
+            }
+            subscriptions.addAll(normalized)
+        }
+        trackFirstFetch(+1)
+        scope.launch {
+            refreshMutex.withLock { refreshLocked(force = true) }
+        }.invokeOnCompletion { trackFirstFetch(-1) }
+    }
+
     /** The persistent half of [subscribeAndRefresh]: channel table + DataStore. */
     private suspend fun persistSubscription(normalized: String, placeholderTitle: String) {
         repository.subscribe(normalized, placeholderTitle)

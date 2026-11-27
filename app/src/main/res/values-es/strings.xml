@@ -1039,4 +1039,64 @@
     <string name="poll_option_wrong">Respuesta incorrecta</string>
     <string name="content_unsupported_message">Hortay aún no admite este mensaje</string>
     <string name="media_desc_live_photo">Foto en vivo</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">Importar y exportar</string>
+    <string name="channel_import_action">Importar canales</string>
+    <string name="channel_export_share">Compartir lista de canales</string>
+    <string name="channel_export_save">Guardar lista en un archivo</string>
+    <string name="channel_export_empty">No hay canales públicos para exportar</string>
+    <string name="channel_export_failed">No se pudo guardar la lista. Inténtalo de nuevo</string>
+    <string name="channel_import_title">Importar canales</string>
+    <string name="channel_import_hint">Pega enlaces como t.me/name o @name, o abre una lista guardada.</string>
+    <string name="channel_import_field_label">Enlaces de canales</string>
+    <string name="channel_import_find">Buscar canales</string>
+    <string name="channel_import_open_file">Abrir archivo</string>
+    <string name="channel_import_nothing_found">No se encontraron enlaces de canales</string>
+    <string name="channel_import_nothing_shared">El texto compartido no tiene enlaces de canales</string>
+    <string name="channel_import_read_failed">No se pudo leer el archivo</string>
+    <string name="channel_import_account_note">Te unes a un canal por segundo, así que una lista larga tarda un rato. Los administradores de los canales te verán como un nuevo suscriptor.</string>
+    <string name="channel_import_nothing_new">Ya sigues todos estos canales</string>
+    <string name="channel_import_already_following">Ya lo sigues</string>
+    <string name="channel_import_progress">%1$d de %2$d</string>
+    <string name="channel_import_stop">Detener</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">Se encontró %d canal</item>
+        <item quantity="other">Se encontraron %d canales</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">Se encontró %1$d canal; nuevos: %2$d</item>
+        <item quantity="other">Se encontraron %1$d canales; nuevos: %2$d</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">Solo se toma %d canal</item>
+        <item quantity="other">Solo se toman los primeros %d canales</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">Seguir %d canal</item>
+        <item quantity="other">Seguir %d canales</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">Se añadió %d canal nuevo</item>
+        <item quantity="other">Se añadieron %d canales nuevos</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">Te uniste a %d canal</item>
+        <item quantity="other">Te uniste a %d canales</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">Te uniste a %1$d de %2$d canal</item>
+        <item quantity="other">Te uniste a %1$d de %2$d canales</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">Telegram pausó las suscripciones: %1$d de %2$d canal. Importa el resto más tarde</item>
+        <item quantity="other">Telegram pausó las suscripciones: %1$d de %2$d canales. Importa el resto más tarde</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">Se guardó una lista de %d canal</item>
+        <item quantity="other">Se guardó una lista de %d canales</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">Se omitió %d canal privado: no tiene enlace público</item>
+        <item quantity="other">Se omitieron %d canales privados: no tienen enlace público</item>
+    </plurals>
 </resources>

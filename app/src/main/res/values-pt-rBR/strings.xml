@@ -1050,4 +1050,74 @@
     <string name="poll_option_wrong">Resposta errada</string>
     <string name="content_unsupported_message">Esta mensagem ainda não é compatível com o Hortay</string>
     <string name="media_desc_live_photo">Foto ao vivo</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">Importar e exportar</string>
+    <string name="channel_import_action">Importar canais</string>
+    <string name="channel_export_share">Compartilhar lista de canais</string>
+    <string name="channel_export_save">Salvar lista em um arquivo</string>
+    <string name="channel_export_empty">Nenhum canal público para exportar</string>
+    <string name="channel_export_failed">Não foi possível salvar a lista. Tente novamente</string>
+    <string name="channel_import_title">Importar canais</string>
+    <string name="channel_import_hint">Cole links como t.me/name ou @name, ou abra uma lista salva.</string>
+    <string name="channel_import_field_label">Links dos canais</string>
+    <string name="channel_import_find">Encontrar canais</string>
+    <string name="channel_import_open_file">Abrir arquivo</string>
+    <string name="channel_import_nothing_found">Nenhum link de canal encontrado</string>
+    <string name="channel_import_nothing_shared">O texto compartilhado não tem links de canais</string>
+    <string name="channel_import_read_failed">Não foi possível ler o arquivo</string>
+    <string name="channel_import_account_note">Os canais são adicionados um por segundo, então uma lista longa leva um tempo. Os administradores dos canais verão você como novo inscrito.</string>
+    <string name="channel_import_nothing_new">Você já segue todos estes canais</string>
+    <string name="channel_import_already_following">Já segue</string>
+    <string name="channel_import_progress">%1$d de %2$d</string>
+    <string name="channel_import_stop">Parar</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">%d canal encontrado</item>
+        <item quantity="many">%d de canais encontrados</item>
+        <item quantity="other">%d canais encontrados</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">%1$d canal encontrado, novos: %2$d</item>
+        <item quantity="many">%1$d de canais encontrados, novos: %2$d</item>
+        <item quantity="other">%1$d canais encontrados, novos: %2$d</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">Só %d canal é usado</item>
+        <item quantity="many">Só os primeiros %d de canais são usados</item>
+        <item quantity="other">Só os primeiros %d canais são usados</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">Seguir %d canal</item>
+        <item quantity="many">Seguir %d de canais</item>
+        <item quantity="other">Seguir %d canais</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">%d canal novo adicionado</item>
+        <item quantity="many">%d de canais novos adicionados</item>
+        <item quantity="other">%d canais novos adicionados</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">Inscrição feita em %d canal</item>
+        <item quantity="many">Inscrição feita em %d de canais</item>
+        <item quantity="other">Inscrição feita em %d canais</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">Canais seguidos: %1$d de %2$d</item>
+        <item quantity="many">Canais seguidos: %1$d de %2$d</item>
+        <item quantity="other">Canais seguidos: %1$d de %2$d</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">O Telegram pausou as inscrições: %1$d de %2$d. Importe o restante mais tarde</item>
+        <item quantity="many">O Telegram pausou as inscrições: %1$d de %2$d. Importe o restante mais tarde</item>
+        <item quantity="other">O Telegram pausou as inscrições: %1$d de %2$d. Importe o restante mais tarde</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">Lista de %d canal salva</item>
+        <item quantity="many">Lista de %d de canais salva</item>
+        <item quantity="other">Lista de %d canais salva</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">%d canal privado ficou de fora: não tem link público</item>
+        <item quantity="many">%d de canais privados ficaram de fora: não têm link público</item>
+        <item quantity="other">%d canais privados ficaram de fora: não têm link público</item>
+    </plurals>
 </resources>

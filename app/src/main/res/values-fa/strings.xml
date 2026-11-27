@@ -1013,4 +1013,64 @@
     <string name="poll_option_wrong">پاسخ نادرست</string>
     <string name="content_unsupported_message">این پیام هنوز در Hortay پشتیبانی نمی‌شود</string>
     <string name="media_desc_live_photo">عکس زنده</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">ورود و خروج فهرست</string>
+    <string name="channel_import_action">وارد کردن کانال‌ها</string>
+    <string name="channel_export_share">اشتراک‌گذاری فهرست کانال‌ها</string>
+    <string name="channel_export_save">ذخیرهٔ فهرست در فایل</string>
+    <string name="channel_export_empty">کانال عمومی‌ای برای خروجی گرفتن وجود ندارد</string>
+    <string name="channel_export_failed">ذخیرهٔ فهرست انجام نشد. دوباره امتحان کنید</string>
+    <string name="channel_import_title">وارد کردن کانال‌ها</string>
+    <string name="channel_import_hint">پیوندهایی مثل t.me/name یا @name را جای‌گذاری کنید یا یک فهرست ذخیره‌شده را باز کنید.</string>
+    <string name="channel_import_field_label">پیوند کانال‌ها</string>
+    <string name="channel_import_find">یافتن کانال‌ها</string>
+    <string name="channel_import_open_file">باز کردن فایل</string>
+    <string name="channel_import_nothing_found">هیچ پیوند کانالی پیدا نشد</string>
+    <string name="channel_import_nothing_shared">متن هم‌رسانی‌شده پیوند کانالی ندارد</string>
+    <string name="channel_import_read_failed">خواندن فایل انجام نشد</string>
+    <string name="channel_import_account_note">در هر ثانیه به یک کانال پیوسته می‌شود، پس فهرست طولانی کمی زمان می‌برد. مدیران کانال‌ها شما را عضو جدید می‌بینند.</string>
+    <string name="channel_import_nothing_new">شما همهٔ این کانال‌ها را دنبال می‌کنید</string>
+    <string name="channel_import_already_following">دنبال‌شده</string>
+    <string name="channel_import_progress">%1$d از %2$d</string>
+    <string name="channel_import_stop">توقف</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">%d کانال پیدا شد</item>
+        <item quantity="other">%d کانال پیدا شد</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">%1$d کانال پیدا شد، %2$d مورد جدید</item>
+        <item quantity="other">%1$d کانال پیدا شد، %2$d مورد جدید</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">فقط %d کانال اول برداشته می‌شود</item>
+        <item quantity="other">فقط %d کانال اول برداشته می‌شود</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">دنبال کردن %d کانال</item>
+        <item quantity="other">دنبال کردن %d کانال</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">%d کانال جدید اضافه شد</item>
+        <item quantity="other">%d کانال جدید اضافه شد</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">عضویت در %d کانال انجام شد</item>
+        <item quantity="other">عضویت در %d کانال انجام شد</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">عضویت در %1$d از %2$d کانال انجام شد</item>
+        <item quantity="other">عضویت در %1$d از %2$d کانال انجام شد</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">تلگرام عضویت را موقتاً متوقف کرد: %1$d از %2$d کانال. بقیه را بعداً وارد کنید</item>
+        <item quantity="other">تلگرام عضویت را موقتاً متوقف کرد: %1$d از %2$d کانال. بقیه را بعداً وارد کنید</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">فهرست %d کانال ذخیره شد</item>
+        <item quantity="other">فهرست %d کانال ذخیره شد</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">%d کانال خصوصی کنار گذاشته شد: پیوند عمومی ندارند</item>
+        <item quantity="other">%d کانال خصوصی کنار گذاشته شد: پیوند عمومی ندارند</item>
+    </plurals>
 </resources>

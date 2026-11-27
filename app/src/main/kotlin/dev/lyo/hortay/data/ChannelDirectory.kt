@@ -91,6 +91,19 @@ class ChannelDirectory(
     }
 
     /**
+     * The channel's first active public username (no `@`), or null for a private channel,
+     * a non-supergroup chat, or a chat TDLib has not seen. Offline: registry first, then
+     * TDLib's local `GetChat` / `GetSupergroup`. Feeds the channel-list export, where a
+     * private channel has no stable link and is skipped.
+     */
+    suspend fun publicUsername(chatId: Long): String? {
+        val chat = registry.chat(chatId) ?: return null
+        val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
+        return registry.supergroup(supergroupId)?.usernames?.activeUsernames
+            ?.firstOrNull { it.isNotBlank() }
+    }
+
+    /**
      * Resolve a Telegram public `@handle` (without the leading `@`) to a TDLib chat id.
      * Used by the deep-link dispatcher (`tg://resolve` / `https://t.me/<handle>`) so a
      * tap on a shared link inside Hortay routes the user to the channel filter — no

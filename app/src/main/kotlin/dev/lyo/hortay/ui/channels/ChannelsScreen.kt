@@ -89,6 +89,7 @@ import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.ui.main.openTelegramApp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.subscriptions.TransferMode
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.icons.Symbol
@@ -279,6 +280,12 @@ fun ChannelsScreen(
                             }
                         }
                     }
+                    ChannelListTransferMenu(
+                        transfer = graph.subscriptionTransfer,
+                        mode = TransferMode.Account,
+                        hasChannels = channels.isNotEmpty(),
+                        userMessages = graph.userMessages,
+                    )
                 },
             )
         },

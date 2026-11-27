@@ -40,6 +40,8 @@ import dev.lyo.hortay.ui.media.WebmAnimationClock
 import dev.lyo.hortay.ui.theme.HortayTheme
 import dev.lyo.hortay.ui.theme.LocalProfileAccent
 import dev.lyo.hortay.ui.web.MigrationProposalSheet
+import dev.lyo.hortay.ui.channels.ChannelImportSheetHost
+import dev.lyo.hortay.data.subscriptions.TransferMode
 import dev.lyo.hortay.ui.web.WebModeScaffold
 import kotlinx.coroutines.launch
 
@@ -77,6 +79,7 @@ class MainActivity : ComponentActivity() {
                     graph.linkResolver.resolve(uri)?.let { graph.deepLinkRouter.submit(it) }
                 }
             }
+            intent?.let { offerSharedText(graph, it) }
         }
 
         setContent {
@@ -173,6 +176,15 @@ class MainActivity : ComponentActivity() {
                             else -> AuthScreen(graph = graph, stage = auth)
                         }
 
+                        // Channel-list import sheet, opened from the Channels tab menu or by
+                        // text shared to Hortay. Mounted for whichever mode is on screen; on
+                        // the auth screen a shared list waits until the user picks a mode.
+                        when {
+                            auth == AuthStage.Ready ->
+                                ChannelImportSheetHost(graph.subscriptionTransfer, TransferMode.Account)
+                            isGuest -> ChannelImportSheetHost(graph.subscriptionTransfer, TransferMode.Guest)
+                        }
+
                         // One-time post-sign-in migration proposal. Renders ON TOP of the
                         // authenticated UI when [MigrationCoordinator] surfaces a pending
                         // candidate list. Self-dismisses when the user confirms / skips —
@@ -223,5 +235,19 @@ class MainActivity : ComponentActivity() {
                 graph.linkResolver.resolve(uri)?.let { graph.deepLinkRouter.submit(it) }
             }
         }
+        offerSharedText(graph, intent)
+    }
+
+    /**
+     * ACTION_SEND text/plain from another app: channel links in it open the import preview
+     * ([dev.lyo.hortay.data.subscriptions.SubscriptionTransfer.offerSharedText]). Same
+     * fresh-launch-only guard as the VIEW deep link above, so recreation or a relaunch
+     * from Recents never replays a share.
+     */
+    private fun offerSharedText(graph: AppGraph, intent: Intent) {
+        if (intent.action != Intent.ACTION_SEND) return
+        val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+            ?.take(dev.lyo.hortay.data.subscriptions.SubscriptionListFormat.MAX_IMPORT_CHARS) ?: return
+        graph.subscriptionTransfer.offerSharedText(text)
     }
 }

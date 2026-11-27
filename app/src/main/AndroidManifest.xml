@@ -91,6 +91,14 @@
                 <data android:scheme="http" />
                 <data android:host="t.me" />
             </intent-filter>
+
+            <!-- Text shared from another app (a list of t.me links, a forwarded message with
+                 @mentions): opens the channel-import preview. See MainActivity.offerSharedText. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- FileProvider for "Copy" / future "Share" actions in the fullscreen media viewer.

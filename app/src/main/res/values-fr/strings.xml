@@ -1046,4 +1046,74 @@
     <string name="poll_option_wrong">Mauvaise réponse</string>
     <string name="content_unsupported_message">Ce message n\'est pas encore pris en charge dans Hortay</string>
     <string name="media_desc_live_photo">Photo Live</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">Importer et exporter</string>
+    <string name="channel_import_action">Importer des chaînes</string>
+    <string name="channel_export_share">Partager la liste des chaînes</string>
+    <string name="channel_export_save">Enregistrer la liste dans un fichier</string>
+    <string name="channel_export_empty">Aucune chaîne publique à exporter</string>
+    <string name="channel_export_failed">Impossible d\'enregistrer la liste. Réessaie</string>
+    <string name="channel_import_title">Importer des chaînes</string>
+    <string name="channel_import_hint">Colle des liens comme t.me/name ou @name, ou ouvre une liste enregistrée.</string>
+    <string name="channel_import_field_label">Liens des chaînes</string>
+    <string name="channel_import_find">Trouver les chaînes</string>
+    <string name="channel_import_open_file">Ouvrir un fichier</string>
+    <string name="channel_import_nothing_found">Aucun lien de chaîne trouvé</string>
+    <string name="channel_import_nothing_shared">Le texte partagé ne contient aucun lien de chaîne</string>
+    <string name="channel_import_read_failed">Impossible de lire le fichier</string>
+    <string name="channel_import_account_note">Les chaînes sont rejointes une par seconde, une longue liste prend donc un moment. Les admins des chaînes te verront comme un nouvel abonné.</string>
+    <string name="channel_import_nothing_new">Tu suis déjà toutes ces chaînes</string>
+    <string name="channel_import_already_following">Déjà suivie</string>
+    <string name="channel_import_progress">%1$d sur %2$d</string>
+    <string name="channel_import_stop">Arrêter</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">%d chaîne trouvée</item>
+        <item quantity="many">%d de chaînes trouvées</item>
+        <item quantity="other">%d chaînes trouvées</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">%1$d chaîne trouvée, nouvelles : %2$d</item>
+        <item quantity="many">%1$d de chaînes trouvées, nouvelles : %2$d</item>
+        <item quantity="other">%1$d chaînes trouvées, nouvelles : %2$d</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">Seule %d chaîne est retenue</item>
+        <item quantity="many">Seules les %d premières chaînes sont retenues</item>
+        <item quantity="other">Seules les %d premières chaînes sont retenues</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">Suivre %d chaîne</item>
+        <item quantity="many">Suivre %d de chaînes</item>
+        <item quantity="other">Suivre %d chaînes</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">%d nouvelle chaîne ajoutée</item>
+        <item quantity="many">%d de nouvelles chaînes ajoutées</item>
+        <item quantity="other">%d nouvelles chaînes ajoutées</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">%d chaîne rejointe</item>
+        <item quantity="many">%d de chaînes rejointes</item>
+        <item quantity="other">%d chaînes rejointes</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">Chaînes rejointes : %1$d sur %2$d</item>
+        <item quantity="many">Chaînes rejointes : %1$d sur %2$d</item>
+        <item quantity="other">Chaînes rejointes : %1$d sur %2$d</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">Telegram a mis les abonnements en pause : %1$d sur %2$d. Importe le reste plus tard</item>
+        <item quantity="many">Telegram a mis les abonnements en pause : %1$d sur %2$d. Importe le reste plus tard</item>
+        <item quantity="other">Telegram a mis les abonnements en pause : %1$d sur %2$d. Importe le reste plus tard</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">Liste de %d chaîne enregistrée</item>
+        <item quantity="many">Liste de %d de chaînes enregistrée</item>
+        <item quantity="other">Liste de %d chaînes enregistrée</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">%d chaîne privée ignorée : elle n\'a pas de lien public</item>
+        <item quantity="many">%d de chaînes privées ignorées : elles n\'ont pas de lien public</item>
+        <item quantity="other">%d chaînes privées ignorées : elles n\'ont pas de lien public</item>
+    </plurals>
 </resources>

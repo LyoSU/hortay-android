@@ -1019,4 +1019,64 @@
     <string name="poll_option_wrong">Falsche Antwort</string>
     <string name="content_unsupported_message">Diese Nachricht wird in Hortay noch nicht unterstützt</string>
     <string name="media_desc_live_photo">Live-Foto</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">Importieren und exportieren</string>
+    <string name="channel_import_action">Kanäle importieren</string>
+    <string name="channel_export_share">Kanalliste teilen</string>
+    <string name="channel_export_save">Liste als Datei speichern</string>
+    <string name="channel_export_empty">Keine öffentlichen Kanäle zum Exportieren</string>
+    <string name="channel_export_failed">Liste konnte nicht gespeichert werden. Versuche es erneut</string>
+    <string name="channel_import_title">Kanäle importieren</string>
+    <string name="channel_import_hint">Füge Links wie t.me/name oder @name ein oder öffne eine gespeicherte Liste.</string>
+    <string name="channel_import_field_label">Kanal-Links</string>
+    <string name="channel_import_find">Kanäle finden</string>
+    <string name="channel_import_open_file">Datei öffnen</string>
+    <string name="channel_import_nothing_found">Keine Kanal-Links gefunden</string>
+    <string name="channel_import_nothing_shared">Der geteilte Text enthält keine Kanal-Links</string>
+    <string name="channel_import_read_failed">Datei konnte nicht gelesen werden</string>
+    <string name="channel_import_account_note">Pro Sekunde wird ein Kanal abonniert, eine lange Liste dauert also etwas. Die Admins der Kanäle sehen dich als neuen Abonnenten.</string>
+    <string name="channel_import_nothing_new">Du folgst bereits allen diesen Kanälen</string>
+    <string name="channel_import_already_following">Abonniert</string>
+    <string name="channel_import_progress">%1$d von %2$d</string>
+    <string name="channel_import_stop">Stoppen</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">%d Kanal gefunden</item>
+        <item quantity="other">%d Kanäle gefunden</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">%1$d Kanal gefunden, davon neu: %2$d</item>
+        <item quantity="other">%1$d Kanäle gefunden, davon neu: %2$d</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">Nur %d Kanal wird übernommen</item>
+        <item quantity="other">Nur die ersten %d Kanäle werden übernommen</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">%d Kanal abonnieren</item>
+        <item quantity="other">%d Kanäle abonnieren</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">%d neuer Kanal hinzugefügt</item>
+        <item quantity="other">%d neue Kanäle hinzugefügt</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">%d Kanal abonniert</item>
+        <item quantity="other">%d Kanäle abonniert</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">%1$d von %2$d Kanal abonniert</item>
+        <item quantity="other">%1$d von %2$d Kanälen abonniert</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">Telegram hat das Abonnieren pausiert: %1$d von %2$d Kanal abonniert. Importiere den Rest später</item>
+        <item quantity="other">Telegram hat das Abonnieren pausiert: %1$d von %2$d Kanälen abonniert. Importiere den Rest später</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">Liste mit %d Kanal gespeichert</item>
+        <item quantity="other">Liste mit %d Kanälen gespeichert</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">%d privater Kanal ausgelassen: Er hat keinen öffentlichen Link</item>
+        <item quantity="other">%d private Kanäle ausgelassen: Sie haben keinen öffentlichen Link</item>
+    </plurals>
 </resources>

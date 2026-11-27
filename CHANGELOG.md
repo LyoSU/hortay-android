@@ -6,6 +6,7 @@
 
 ### Added
 - After a week of regular use, the app asks once whether you want to rate it on Google Play.
+- The Channels tab can export your channel list as text or a file and import one back, and sharing channel links to Hortay offers to follow them.
 
 ## [0.13.0] — 2026-11-26
 

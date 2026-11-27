@@ -1059,4 +1059,64 @@
     <string name="content_unsupported_message">This message isn\'t supported in Hortay yet</string>
     <string name="media_desc_live_photo">Live photo</string>
     <string name="live_photo_badge" translatable="false">LIVE</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">Import and export</string>
+    <string name="channel_import_action">Import channels</string>
+    <string name="channel_export_share">Share channel list</string>
+    <string name="channel_export_save">Save list to a file</string>
+    <string name="channel_export_empty">No public channels to export</string>
+    <string name="channel_export_failed">Couldn\'t save the list. Try again</string>
+    <string name="channel_import_title">Import channels</string>
+    <string name="channel_import_hint">Paste links such as t.me/name or @name, or open a saved list.</string>
+    <string name="channel_import_field_label">Channel links</string>
+    <string name="channel_import_find">Find channels</string>
+    <string name="channel_import_open_file">Open file</string>
+    <string name="channel_import_nothing_found">No channel links found</string>
+    <string name="channel_import_nothing_shared">The shared text has no channel links</string>
+    <string name="channel_import_read_failed">Couldn\'t read the file</string>
+    <string name="channel_import_account_note">Channels are joined one per second, so a long list takes a while. Channel admins will see you as a new subscriber.</string>
+    <string name="channel_import_nothing_new">You already follow all of them</string>
+    <string name="channel_import_already_following">Following</string>
+    <string name="channel_import_progress">%1$d of %2$d</string>
+    <string name="channel_import_stop">Stop</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">Found %d channel</item>
+        <item quantity="other">Found %d channels</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">Found %1$d channel, %2$d new</item>
+        <item quantity="other">Found %1$d channels, %2$d new</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">Only the first %d channel is taken</item>
+        <item quantity="other">Only the first %d channels are taken</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">Follow %d channel</item>
+        <item quantity="other">Follow %d channels</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">Following %d new channel</item>
+        <item quantity="other">Following %d new channels</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">Joined %d channel</item>
+        <item quantity="other">Joined %d channels</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">Joined %1$d of %2$d channel</item>
+        <item quantity="other">Joined %1$d of %2$d channels</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">Telegram paused joining: %1$d of %2$d channel joined. Import the rest later</item>
+        <item quantity="other">Telegram paused joining: %1$d of %2$d channels joined. Import the rest later</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">Saved a list of %d channel</item>
+        <item quantity="other">Saved a list of %d channels</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">%d private channel left out: it has no public link</item>
+        <item quantity="other">%d private channels left out: they have no public link</item>
+    </plurals>
 </resources>

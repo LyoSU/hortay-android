@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.subscriptions.TransferMode
+import dev.lyo.hortay.ui.channels.ChannelListTransferMenu
 import dev.lyo.hortay.data.web.ChannelEntry
 import dev.lyo.hortay.data.web.ChannelFetchStatus
 import dev.lyo.hortay.data.web.WebPostAdapter
@@ -104,6 +106,14 @@ fun WebChannelsScreen(
             HortayTopBar(
                 title = stringResource(R.string.web_channels_title),
                 size = HortayTopBarSize.Large,
+                actions = {
+                    ChannelListTransferMenu(
+                        transfer = graph.subscriptionTransfer,
+                        mode = TransferMode.Guest,
+                        hasChannels = subscribed.isNotEmpty(),
+                        userMessages = graph.userMessages,
+                    )
+                },
                 scrollBehavior = scrollBehavior,
             )
         },

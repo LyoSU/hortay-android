@@ -1014,4 +1014,64 @@
     <string name="poll_option_wrong">Yanlış cevap</string>
     <string name="content_unsupported_message">Bu mesaj Hortay\'da henüz desteklenmiyor</string>
     <string name="media_desc_live_photo">Canlı fotoğraf</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">İçe ve dışa aktar</string>
+    <string name="channel_import_action">Kanalları içe aktar</string>
+    <string name="channel_export_share">Kanal listesini paylaş</string>
+    <string name="channel_export_save">Listeyi dosyaya kaydet</string>
+    <string name="channel_export_empty">Dışa aktarılacak herkese açık kanal yok</string>
+    <string name="channel_export_failed">Liste kaydedilemedi. Tekrar dene</string>
+    <string name="channel_import_title">Kanalları içe aktar</string>
+    <string name="channel_import_hint">t.me/name veya @name gibi bağlantıları yapıştır ya da kayıtlı bir liste aç.</string>
+    <string name="channel_import_field_label">Kanal bağlantıları</string>
+    <string name="channel_import_find">Kanalları bul</string>
+    <string name="channel_import_open_file">Dosya aç</string>
+    <string name="channel_import_nothing_found">Kanal bağlantısı bulunamadı</string>
+    <string name="channel_import_nothing_shared">Paylaşılan metinde kanal bağlantısı yok</string>
+    <string name="channel_import_read_failed">Dosya okunamadı</string>
+    <string name="channel_import_account_note">Kanallara saniyede bir katılınır, bu yüzden uzun bir liste biraz sürer. Kanal yöneticileri seni yeni abone olarak görür.</string>
+    <string name="channel_import_nothing_new">Bu kanalların hepsini zaten takip ediyorsun</string>
+    <string name="channel_import_already_following">Takip ediliyor</string>
+    <string name="channel_import_progress">%1$d / %2$d</string>
+    <string name="channel_import_stop">Durdur</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">%d kanal bulundu</item>
+        <item quantity="other">%d kanal bulundu</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">%1$d kanal bulundu, yeni: %2$d</item>
+        <item quantity="other">%1$d kanal bulundu, yeni: %2$d</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">Yalnızca ilk %d kanal alınır</item>
+        <item quantity="other">Yalnızca ilk %d kanal alınır</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">%d kanalı takip et</item>
+        <item quantity="other">%d kanalı takip et</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">%d yeni kanal eklendi</item>
+        <item quantity="other">%d yeni kanal eklendi</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">%d kanala katılındı</item>
+        <item quantity="other">%d kanala katılındı</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">%2$d kanalın %1$d tanesine katılındı</item>
+        <item quantity="other">%2$d kanalın %1$d tanesine katılındı</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">Telegram katılmayı duraklattı: %2$d kanalın %1$d tanesine katılındı. Kalanını sonra içe aktar</item>
+        <item quantity="other">Telegram katılmayı duraklattı: %2$d kanalın %1$d tanesine katılındı. Kalanını sonra içe aktar</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">%d kanallık liste kaydedildi</item>
+        <item quantity="other">%d kanallık liste kaydedildi</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">%d özel kanal atlandı: herkese açık bağlantıları yok</item>
+        <item quantity="other">%d özel kanal atlandı: herkese açık bağlantıları yok</item>
+    </plurals>
 </resources>

@@ -1077,4 +1077,84 @@
     <string name="poll_option_wrong">Неправильна відповідь</string>
     <string name="content_unsupported_message">Hortay поки не вміє показувати таке повідомлення</string>
     <string name="media_desc_live_photo">Живе фото</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">Імпорт і експорт</string>
+    <string name="channel_import_action">Імпортувати канали</string>
+    <string name="channel_export_share">Поділитися списком каналів</string>
+    <string name="channel_export_save">Зберегти список у файл</string>
+    <string name="channel_export_empty">Немає публічних каналів для експорту</string>
+    <string name="channel_export_failed">Не вдалося зберегти список. Спробуй ще раз</string>
+    <string name="channel_import_title">Імпорт каналів</string>
+    <string name="channel_import_hint">Встав посилання на кшталт t.me/name чи @name або відкрий збережений список.</string>
+    <string name="channel_import_field_label">Посилання на канали</string>
+    <string name="channel_import_find">Знайти канали</string>
+    <string name="channel_import_open_file">Відкрити файл</string>
+    <string name="channel_import_nothing_found">Посилань на канали не знайдено</string>
+    <string name="channel_import_nothing_shared">У надісланому тексті немає посилань на канали</string>
+    <string name="channel_import_read_failed">Не вдалося прочитати файл</string>
+    <string name="channel_import_account_note">Канали додаються по одному на секунду, тож довгий список забере трохи часу. Адміни каналів побачать тебе як нового підписника.</string>
+    <string name="channel_import_nothing_new">Усі ці канали вже є в підписках</string>
+    <string name="channel_import_already_following">Уже в підписках</string>
+    <string name="channel_import_progress">%1$d з %2$d</string>
+    <string name="channel_import_stop">Зупинити</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="one">Знайдено %d канал</item>
+        <item quantity="few">Знайдено %d канали</item>
+        <item quantity="many">Знайдено %d каналів</item>
+        <item quantity="other">Знайдено %d каналу</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="one">Знайдено %1$d канал, нових: %2$d</item>
+        <item quantity="few">Знайдено %1$d канали, нових: %2$d</item>
+        <item quantity="many">Знайдено %1$d каналів, нових: %2$d</item>
+        <item quantity="other">Знайдено %1$d каналу, нових: %2$d</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="one">Береться лише перший %d канал</item>
+        <item quantity="few">Беруться лише перші %d канали</item>
+        <item quantity="many">Беруться лише перші %d каналів</item>
+        <item quantity="other">Беруться лише перші %d каналу</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="one">Підписатися на %d канал</item>
+        <item quantity="few">Підписатися на %d канали</item>
+        <item quantity="many">Підписатися на %d каналів</item>
+        <item quantity="other">Підписатися на %d каналу</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="one">Додано %d канал</item>
+        <item quantity="few">Додано %d канали</item>
+        <item quantity="many">Додано %d каналів</item>
+        <item quantity="other">Додано %d каналу</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="one">Підписку оформлено на %d канал</item>
+        <item quantity="few">Підписки оформлено на %d канали</item>
+        <item quantity="many">Підписки оформлено на %d каналів</item>
+        <item quantity="other">Підписки оформлено на %d каналу</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="one">Підписки оформлено: %1$d з %2$d каналу</item>
+        <item quantity="few">Підписки оформлено: %1$d з %2$d каналів</item>
+        <item quantity="many">Підписки оформлено: %1$d з %2$d каналів</item>
+        <item quantity="other">Підписки оформлено: %1$d з %2$d каналу</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="one">Telegram тимчасово обмежив підписки: оформлено %1$d з %2$d каналу. Решту імпортуй пізніше</item>
+        <item quantity="few">Telegram тимчасово обмежив підписки: оформлено %1$d з %2$d каналів. Решту імпортуй пізніше</item>
+        <item quantity="many">Telegram тимчасово обмежив підписки: оформлено %1$d з %2$d каналів. Решту імпортуй пізніше</item>
+        <item quantity="other">Telegram тимчасово обмежив підписки: оформлено %1$d з %2$d каналу. Решту імпортуй пізніше</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="one">Збережено список із %d каналу</item>
+        <item quantity="few">Збережено список із %d каналів</item>
+        <item quantity="many">Збережено список із %d каналів</item>
+        <item quantity="other">Збережено список із %d каналу</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="one">%d приватний канал пропущено: у нього немає публічного посилання</item>
+        <item quantity="few">%d приватні канали пропущено: у них немає публічних посилань</item>
+        <item quantity="many">%d приватних каналів пропущено: у них немає публічних посилань</item>
+        <item quantity="other">%d приватного каналу пропущено: у них немає публічних посилань</item>
+    </plurals>
 </resources>

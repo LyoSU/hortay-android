@@ -1127,4 +1127,104 @@
     <string name="poll_option_wrong">إجابة خاطئة</string>
     <string name="content_unsupported_message">هذه الرسالة غير مدعومة في Hortay بعد</string>
     <string name="media_desc_live_photo">صورة حية</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">الاستيراد والتصدير</string>
+    <string name="channel_import_action">استيراد القنوات</string>
+    <string name="channel_export_share">مشاركة قائمة القنوات</string>
+    <string name="channel_export_save">حفظ القائمة في ملف</string>
+    <string name="channel_export_empty">لا توجد قنوات عامة للتصدير</string>
+    <string name="channel_export_failed">تعذّر حفظ القائمة. حاول مرة أخرى</string>
+    <string name="channel_import_title">استيراد القنوات</string>
+    <string name="channel_import_hint">الصق روابط مثل t.me/name أو @name، أو افتح قائمة محفوظة.</string>
+    <string name="channel_import_field_label">روابط القنوات</string>
+    <string name="channel_import_find">البحث عن القنوات</string>
+    <string name="channel_import_open_file">فتح ملف</string>
+    <string name="channel_import_nothing_found">لم يُعثر على روابط قنوات</string>
+    <string name="channel_import_nothing_shared">لا يحتوي النص المُشارَك على روابط قنوات</string>
+    <string name="channel_import_read_failed">تعذّرت قراءة الملف</string>
+    <string name="channel_import_account_note">يتم الانضمام إلى قناة واحدة كل ثانية، لذا تستغرق القائمة الطويلة بعض الوقت. سيراك مشرفو القنوات كمشترك جديد.</string>
+    <string name="channel_import_nothing_new">أنت تتابع كل هذه القنوات بالفعل</string>
+    <string name="channel_import_already_following">تتابعها</string>
+    <string name="channel_import_progress">%1$d من %2$d</string>
+    <string name="channel_import_stop">إيقاف</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="zero">تم العثور على %d قناة</item>
+        <item quantity="one">تم العثور على %d قناة</item>
+        <item quantity="two">تم العثور على %d قناتين</item>
+        <item quantity="few">تم العثور على %d قنوات</item>
+        <item quantity="many">تم العثور على %d قناة</item>
+        <item quantity="other">تم العثور على %d قناة</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="zero">تم العثور على %1$d قناة، الجديدة منها: %2$d</item>
+        <item quantity="one">تم العثور على %1$d قناة، الجديدة منها: %2$d</item>
+        <item quantity="two">تم العثور على %1$d قناتين، الجديدة منها: %2$d</item>
+        <item quantity="few">تم العثور على %1$d قنوات، الجديدة منها: %2$d</item>
+        <item quantity="many">تم العثور على %1$d قناة، الجديدة منها: %2$d</item>
+        <item quantity="other">تم العثور على %1$d قناة، الجديدة منها: %2$d</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="zero">تُؤخذ أول %d قناة فقط</item>
+        <item quantity="one">تُؤخذ أول %d قناة فقط</item>
+        <item quantity="two">تُؤخذ أول %d قناتين فقط</item>
+        <item quantity="few">تُؤخذ أول %d قنوات فقط</item>
+        <item quantity="many">تُؤخذ أول %d قناة فقط</item>
+        <item quantity="other">تُؤخذ أول %d قناة فقط</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="zero">متابعة %d قناة</item>
+        <item quantity="one">متابعة %d قناة</item>
+        <item quantity="two">متابعة %d قناتين</item>
+        <item quantity="few">متابعة %d قنوات</item>
+        <item quantity="many">متابعة %d قناة</item>
+        <item quantity="other">متابعة %d قناة</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="zero">تمت إضافة %d قناة</item>
+        <item quantity="one">تمت إضافة %d قناة</item>
+        <item quantity="two">تمت إضافة %d قناتين</item>
+        <item quantity="few">تمت إضافة %d قنوات</item>
+        <item quantity="many">تمت إضافة %d قناة</item>
+        <item quantity="other">تمت إضافة %d قناة</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="zero">تم الانضمام إلى %d قناة</item>
+        <item quantity="one">تم الانضمام إلى %d قناة</item>
+        <item quantity="two">تم الانضمام إلى %d قناتين</item>
+        <item quantity="few">تم الانضمام إلى %d قنوات</item>
+        <item quantity="many">تم الانضمام إلى %d قناة</item>
+        <item quantity="other">تم الانضمام إلى %d قناة</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="zero">تم الانضمام إلى %1$d من %2$d قناة</item>
+        <item quantity="one">تم الانضمام إلى %1$d من %2$d قناة</item>
+        <item quantity="two">تم الانضمام إلى %1$d من %2$d قناتين</item>
+        <item quantity="few">تم الانضمام إلى %1$d من %2$d قنوات</item>
+        <item quantity="many">تم الانضمام إلى %1$d من %2$d قناة</item>
+        <item quantity="other">تم الانضمام إلى %1$d من %2$d قناة</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="zero">أوقف تيليجرام الانضمام مؤقتًا: %1$d من %2$d قناة. استورد الباقي لاحقًا</item>
+        <item quantity="one">أوقف تيليجرام الانضمام مؤقتًا: %1$d من %2$d قناة. استورد الباقي لاحقًا</item>
+        <item quantity="two">أوقف تيليجرام الانضمام مؤقتًا: %1$d من %2$d قناتين. استورد الباقي لاحقًا</item>
+        <item quantity="few">أوقف تيليجرام الانضمام مؤقتًا: %1$d من %2$d قنوات. استورد الباقي لاحقًا</item>
+        <item quantity="many">أوقف تيليجرام الانضمام مؤقتًا: %1$d من %2$d قناة. استورد الباقي لاحقًا</item>
+        <item quantity="other">أوقف تيليجرام الانضمام مؤقتًا: %1$d من %2$d قناة. استورد الباقي لاحقًا</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="zero">تم حفظ قائمة من %d قناة</item>
+        <item quantity="one">تم حفظ قائمة من %d قناة</item>
+        <item quantity="two">تم حفظ قائمة من %d قناتين</item>
+        <item quantity="few">تم حفظ قائمة من %d قنوات</item>
+        <item quantity="many">تم حفظ قائمة من %d قناة</item>
+        <item quantity="other">تم حفظ قائمة من %d قناة</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="zero">تم استبعاد %d قناة خاصة: ليس لها رابط عام</item>
+        <item quantity="one">تم استبعاد %d قناة خاصة: ليس لها رابط عام</item>
+        <item quantity="two">تم استبعاد %d قناتين خاصتين: ليس لهما رابط عام</item>
+        <item quantity="few">تم استبعاد %d قنوات خاصة: ليس لها رابط عام</item>
+        <item quantity="many">تم استبعاد %d قناة خاصة: ليس لها رابط عام</item>
+        <item quantity="other">تم استبعاد %d قناة خاصة: ليس لها رابط عام</item>
+    </plurals>
 </resources>

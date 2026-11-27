@@ -97,6 +97,16 @@ class SubscriptionsStore(context: Context) {
         }
     }
 
+    /** Bulk [add] in ONE DataStore edit, so an import emits one change, not one per channel. */
+    suspend fun addAll(usernames: Collection<String>) {
+        val normalized = usernames.mapNotNull { normalize(it) }
+        if (normalized.isEmpty()) return
+        dataStore.edit { prefs ->
+            val current = prefs[KEY_SUBSCRIPTIONS] ?: emptySet()
+            prefs[KEY_SUBSCRIPTIONS] = current + normalized
+        }
+    }
+
     suspend fun remove(username: String) {
         val normalized = normalize(username) ?: return
         dataStore.edit { prefs ->

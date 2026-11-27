@@ -988,4 +988,54 @@
     <string name="poll_option_wrong">Jawaban salah</string>
     <string name="content_unsupported_message">Pesan ini belum didukung di Hortay</string>
     <string name="media_desc_live_photo">Foto Live</string>
+    <!-- Channel list import / export -->
+    <string name="channel_transfer_menu">Impor dan ekspor</string>
+    <string name="channel_import_action">Impor saluran</string>
+    <string name="channel_export_share">Bagikan daftar saluran</string>
+    <string name="channel_export_save">Simpan daftar ke file</string>
+    <string name="channel_export_empty">Tidak ada saluran publik untuk diekspor</string>
+    <string name="channel_export_failed">Gagal menyimpan daftar. Coba lagi</string>
+    <string name="channel_import_title">Impor saluran</string>
+    <string name="channel_import_hint">Tempel tautan seperti t.me/name atau @name, atau buka daftar yang tersimpan.</string>
+    <string name="channel_import_field_label">Tautan saluran</string>
+    <string name="channel_import_find">Cari saluran</string>
+    <string name="channel_import_open_file">Buka file</string>
+    <string name="channel_import_nothing_found">Tidak ada tautan saluran yang ditemukan</string>
+    <string name="channel_import_nothing_shared">Teks yang dibagikan tidak berisi tautan saluran</string>
+    <string name="channel_import_read_failed">Gagal membaca file</string>
+    <string name="channel_import_account_note">Saluran diikuti satu per detik, jadi daftar yang panjang butuh waktu. Admin saluran akan melihat Anda sebagai pelanggan baru.</string>
+    <string name="channel_import_nothing_new">Anda sudah mengikuti semua saluran ini</string>
+    <string name="channel_import_already_following">Sudah diikuti</string>
+    <string name="channel_import_progress">%1$d dari %2$d</string>
+    <string name="channel_import_stop">Hentikan</string>
+    <plurals name="channel_import_found_only">
+        <item quantity="other">%d saluran ditemukan</item>
+    </plurals>
+    <plurals name="channel_import_found">
+        <item quantity="other">%1$d saluran ditemukan, %2$d baru</item>
+    </plurals>
+    <plurals name="channel_import_truncated">
+        <item quantity="other">Hanya %d saluran pertama yang diambil</item>
+    </plurals>
+    <plurals name="channel_import_confirm">
+        <item quantity="other">Ikuti %d saluran</item>
+    </plurals>
+    <plurals name="channel_import_followed_guest">
+        <item quantity="other">%d saluran baru ditambahkan</item>
+    </plurals>
+    <plurals name="channel_import_joined">
+        <item quantity="other">Bergabung ke %d saluran</item>
+    </plurals>
+    <plurals name="channel_import_joined_partial">
+        <item quantity="other">Bergabung ke %1$d dari %2$d saluran</item>
+    </plurals>
+    <plurals name="channel_import_flood_limited">
+        <item quantity="other">Telegram menjeda proses bergabung: %1$d dari %2$d saluran. Impor sisanya nanti</item>
+    </plurals>
+    <plurals name="channel_export_saved">
+        <item quantity="other">Daftar %d saluran disimpan</item>
+    </plurals>
+    <plurals name="channel_export_skipped_private">
+        <item quantity="other">%d saluran privat dilewati: tidak punya tautan publik</item>
+    </plurals>
 </resources>
