@@ -805,6 +805,7 @@
     <string name="settings_archive_title">Beitragsarchiv</string>
     <string name="settings_logout_dialog_text_archive">Dein lokales Archiv bearbeiteter und gelöschter Beiträge wird endgültig gelöscht. Du musst Nummer und Bestätigungscode erneut eingeben</string>
     <string name="post_unread_state">Ungelesen</string>
+    <string name="post_thread_continues">Setzt den Thread oben fort</string>
     <string name="discover_add_channel">Kanäle finden</string>
     <string name="discover_search_hint">Kanäle suchen</string>
     <string name="discover_no_results">Keine Kanäle gefunden</string>

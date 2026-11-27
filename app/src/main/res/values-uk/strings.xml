@@ -849,6 +849,7 @@
     <!-- Archive: settings sections -->
     <string name="settings_logout_dialog_text_archive">Локальний архів редагувань і видалень буде стерто назавжди. Потрібно буде знову ввести номер і код підтвердження</string>
     <string name="post_unread_state">Непрочитано</string>
+    <string name="post_thread_continues">Продовжує гілку вище</string>
     <string name="discover_add_channel">Знайти канали</string>
     <string name="discover_search_hint">Пошук каналів</string>
     <string name="discover_no_results">Каналів не знайдено</string>

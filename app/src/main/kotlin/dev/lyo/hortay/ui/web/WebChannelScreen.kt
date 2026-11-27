@@ -72,6 +72,8 @@ import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.FeedItem
 import dev.lyo.hortay.ui.timeline.openForwardSource
 import dev.lyo.hortay.ui.timeline.rememberReadAckDwell
+import dev.lyo.hortay.ui.timeline.PostChain
+import dev.lyo.hortay.ui.timeline.withPostChains
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.data.isUnplayableVideo
 
@@ -232,7 +234,11 @@ fun WebChannelScreen(
     // LazyColumn keys against them — the LazyColumn below keys on [FeedItem.key] too.
     // Guest posts never carry a media-album id ([WebPostAdapter] sets 0), so the key
     // is the per-post `post_<chatId>_<id>` form and stays unique.
-    val feedItems = remember(orderedPosts) { orderedPosts.map { FeedItem.Post(it) } }
+    // Reply chains ([withPostChains]) as in the signed-in channel screen.
+    val feedItems = remember(orderedPosts, feedOrder) {
+        withPostChains(orderedPosts.map { FeedItem.Post(it) }, feedOrder.reverseLayout)
+            .filterIsInstance<FeedItem.Post>()
+    }
 
     // Read-ack dwell, shared with the guest feed and the TDLib channel screen: same
     // visibility gates (60 % on screen, list idle, lifecycle RESUMED) and dwell. A
@@ -387,7 +393,12 @@ fun WebChannelScreen(
         ) {
             // Keyed on [FeedItem.key] so the read-ack dwell above can match visible rows.
             items(items = feedItems, key = { it.key }) { item ->
-                WebChannelPostItem(post = item.post, itemKey = item.key, interactions = interactions)
+                WebChannelPostItem(
+                    post = item.post,
+                    itemKey = item.key,
+                    chain = item.chain,
+                    interactions = interactions,
+                )
             }
             // Data is newest-first, so the last item is the older edge in both feed orders
             // (reverseLayout draws it at the top). Older pages land above this row's index,
@@ -411,6 +422,7 @@ fun WebChannelScreen(
 private fun WebChannelPostItem(
     post: dev.lyo.hortay.data.TimelinePost,
     itemKey: String,
+    chain: PostChain,
     interactions: PostInteractions,
 ) {
     // FloatArray, not State: per-frame position writes must not recompose the card.
@@ -424,7 +436,7 @@ private fun WebChannelPostItem(
     }
     CompositionLocalProvider(LocalShowFullPost provides showFull) {
         Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
-            PostCard(post = post, interactions = itemInteractions)
+            PostCard(post = post, interactions = itemInteractions, chain = chain)
         }
     }
 }

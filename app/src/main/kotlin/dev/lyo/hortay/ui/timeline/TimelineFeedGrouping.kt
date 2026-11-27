@@ -121,7 +121,9 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
  * One slot in a Compose `LazyColumn` of posts (feed, channel, or search results). A feed
  * item is a 1:1 wrapper around a [TimelinePost] — there is intentionally NO Single/Thread
  * sealed split. Reply continuity is conveyed by the inline reply-quote block (`ReplyBlock`)
- * on the reply's card, NOT by collapsing parent + reply into a stacked Thread row.
+ * on the reply's card, NOT by collapsing parent + reply into a stacked Thread row. A run of
+ * same-channel replies drawn next to each other is linked by a per-row display flag
+ * ([FeedItem.Post.chain], see [withPostChains]) — still one row per post, same keys.
  *
  * Why "one post = one row" is load-bearing for scroll stability:
  *
@@ -191,8 +193,13 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
 sealed interface FeedItem {
     val key: String
 
+    /**
+     * @property chain how this row joins the reply thread of its visual neighbours, set by
+     *   [withPostChains]. Display only: it is not part of [key], so a row keeps its
+     *   identity (and the scroll anchor) when a neighbour arrives or leaves.
+     */
     @Immutable
-    data class Post(val post: TimelinePost) : FeedItem {
+    data class Post(val post: TimelinePost, val chain: PostChain = PostChain.None) : FeedItem {
         override val key: String get() = feedItemKey(post)
     }
 

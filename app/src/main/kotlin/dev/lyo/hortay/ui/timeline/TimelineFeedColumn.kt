@@ -235,6 +235,7 @@ internal fun TimelineFeedColumn(
                                     annotation = annotations?.byKey?.get(itemKey),
                                     onExpandSeries = onExpandSeries,
                                     onOpenCoverage = onOpenCoverage,
+                                    chain = item.chain,
                                 )
                             }
                         }

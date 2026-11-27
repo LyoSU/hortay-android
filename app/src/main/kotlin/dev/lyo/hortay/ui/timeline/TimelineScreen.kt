@@ -690,11 +690,14 @@ fun TimelineScreen(
     // preservation carries the user's anchor through any reorder. The previous
     // `groupReplies` reshape that promoted Single → Thread on the fly was deleted —
     // see [FeedItem] for the full rationale.
+    //
+    // Reply chains ([withPostChains]) run last, over the rows as drawn: the divider breaks a
+    // chain, and rows [clusterFeed] made neighbours by hiding posts between them don't link.
     val feedItems: List<FeedItem> = remember(
-        visiblePosts, clustered.annotations, boundaryCursors, feedOrder, cursorEpoch, recencyCutoffMs,
+        visiblePosts, filteredPosts, clustered.annotations, boundaryCursors, feedOrder, cursorEpoch, recencyCutoffMs,
     ) {
-        val postItems = visiblePosts.map(FeedItem::Post)
-        if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
+        val postItems = visiblePosts.map { FeedItem.Post(it) }
+        val rows = if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
             withBoundary(
                 items = postItems,
                 cursors = boundaryCursors,
@@ -705,6 +708,11 @@ fun TimelineScreen(
         } else {
             postItems
         }
+        withPostChains(
+            items = rows,
+            reverseLayout = feedOrder.reverseLayout,
+            source = filteredPosts.takeIf { it !== visiblePosts },
+        )
     }
     // Keep the forward-declared holder current so the home-tap LaunchedEffect
     // can read the latest list without capturing a stale reference. Wrapped

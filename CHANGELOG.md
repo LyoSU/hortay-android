@@ -19,6 +19,9 @@
 - Guest-mode channels load older posts as you scroll back, instead of ending at the last few posts the app had fetched.
 - In guest mode, Settings no longer says you need to sign in to see comments, and the Privacy row no longer mentions invisible reading.
 
+### Changed
+- A run of a channel's posts replying to the same post now reads as one thread joined by a thin line, instead of every post repeating the same reply quote.
+
 ## [0.13.0] — 2026-11-26
 
 ### Added

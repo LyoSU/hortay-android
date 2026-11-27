@@ -64,6 +64,8 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
@@ -149,6 +151,33 @@ private val AVATAR_GAP = HortaySpacing.md
 // width, a little more air above and below each post keeps the stack from reading as a table.
 private val CARD_V_PADDING = HortaySpacing.lg
 
+// Reply-thread connector ([PostChain]): a thin quiet stroke that lives only in the vertical
+// padding of the two cards it links, so it never crosses content, stopping short of the
+// lower card's header by [CONNECTOR_INSET].
+private val CONNECTOR_WIDTH = 2.dp
+private val CONNECTOR_INSET = HortaySpacing.xs
+
+/**
+ * Draws the [PostChain] connector of one card: up from its top edge when it [joinsAbove]
+ * the row above, down to its bottom edge when the row below joins it. The two halves meet
+ * across the boundary between the cards. [x] is measured from the start edge (RTL-aware).
+ */
+private fun DrawScope.drawThreadConnector(
+    chain: PostChain,
+    x: Dp,
+    color: Color,
+) {
+    val stroke = CONNECTOR_WIDTH.toPx()
+    val reach = (CARD_V_PADDING - CONNECTOR_INSET).toPx()
+    val xPx = if (layoutDirection == LayoutDirection.Rtl) size.width - x.toPx() else x.toPx()
+    if (chain.joinsAbove) {
+        drawLine(color, Offset(xPx, 0f), Offset(xPx, reach), strokeWidth = stroke, cap = StrokeCap.Round)
+    }
+    if (chain.joinsBelow) {
+        drawLine(color, Offset(xPx, size.height - reach), Offset(xPx, size.height), strokeWidth = stroke, cap = StrokeCap.Round)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PostCard(
@@ -180,6 +209,12 @@ fun PostCard(
      * repeating the channel's avatar and name on every card — see [isQuietChannelHeader].
      */
     showHostChannel: Boolean = true,
+    /**
+     * How this row joins the reply thread of the rows drawn above and below it ([PostChain],
+     * set by [withPostChains]): a row that joins the one above drops its reply quote, and a
+     * thin connector links the two cards across the gap between them.
+     */
+    chain: PostChain = PostChain.None,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
     val hostChannel = post.channelContext.takeIf { showHostChannel }
@@ -270,6 +305,13 @@ fun PostCard(
     // it into the accessibility tree as a state description so screen-reader users
     // get the same "this post is new" signal sighted users read from the strip.
     val unreadStateDescription = stringResource(R.string.post_unread_state)
+    // The quote a chained row drops told a screen reader what the post answers; say instead
+    // that it continues the post read just before it.
+    val threadStateDescription = stringResource(R.string.post_thread_continues)
+    val connectorColor = MaterialTheme.colorScheme.outlineVariant
+    // The connector hangs under the avatar where the header has one; the channel screen's
+    // quiet header has none, so there it runs along the content edge.
+    val connectorX = if (showHostChannel) CARD_H_PADDING + AVATAR_SIZE / 2 else CARD_H_PADDING + CONNECTOR_WIDTH / 2
 
     // C3 — card press scale. Riding ONE shared interactionSource: the inner Row's
     // combinedClickable feeds it, [collectIsPressedAsState] reads it, and the Column
@@ -290,7 +332,13 @@ fun PostCard(
         modifier = Modifier
             .fillMaxWidth()
             .contextMenuAnchor(menuAnchor)
-            .semantics { if (isUnread) stateDescription = unreadStateDescription }
+            .semantics {
+                val states = listOfNotNull(
+                    unreadStateDescription.takeIf { isUnread },
+                    threadStateDescription.takeIf { chain.joinsAbove },
+                )
+                if (states.isNotEmpty()) stateDescription = states.joinToString(", ")
+            }
             // Only deleted posts dim. `.then(...)` instead of `.alpha(if … 1f)` so a live
             // post never installs an offscreen compositing layer it doesn't need — the
             // common case stays layer-free.
@@ -325,7 +373,12 @@ fun PostCard(
                     cornerRadius = CornerRadius(cornerRadius, cornerRadius),
                     alpha = unreadAlpha,
                 )
-            },
+            }
+            .then(
+                if (chain != PostChain.None) {
+                    Modifier.drawBehind { drawThreadConnector(chain, connectorX, connectorColor) }
+                } else Modifier,
+            ),
     ) {
         // Double tap = the reader's quick reaction (Settings → Feed; null = off or guest).
         // It only ever ADDS the reaction: a second double tap on an already-reacted post
@@ -551,7 +604,9 @@ fun PostCard(
                     ForwardChip(origin = origin, onClick = onSourceClick)
                 }
 
-                post.reply?.let {
+                // A row continuing the thread above drops the quote: the post it answers (or a
+                // sibling answering the same post, which shows the quote) is right above.
+                post.reply?.takeIf { !chain.joinsAbove }?.let {
                     Spacer(Modifier.height(HortaySpacing.sm))
                     ReplyBlock(
                         it,
@@ -690,8 +745,10 @@ fun PostCard(
         // margins so it read as a quiet break rather than a table grid; with the full-width
         // body the inset line looked like a stray underline of the action row instead, and
         // the extra vertical padding ([CARD_V_PADDING]) now does the "not a grid" work.
+        // Between two cards of one thread the connector, not the hairline, separates them.
+        // Transparent rather than dropped, so linking two rows never changes a row's height.
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+            color = if (chain.joinsBelow) Color.Transparent else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
         )
     }
 

@@ -854,8 +854,8 @@ data class ReplyPreview(
     val isQuote: Boolean,
     /**
      * Chat id of the message being replied to. When equal to the host post's chatId, the
-     * reply is a "self-reply" inside the same channel — TimelineScreen merges those into a
-     * threaded pair so the parent appears stacked above the reply with a connector line.
+     * reply is a "self-reply" inside the same channel — such replies drawn next to their
+     * parent or a sibling chain into one thread (see `withPostChains` in ui/timeline).
      */
     val replyToChatId: Long,
     /** Message id of the message being replied to. Companion to [replyToChatId]. */
