@@ -68,6 +68,9 @@ class WebRepository(
     /** Reads and the start-of-history mark of the user-driven older-page walk. */
     val olderWalk = WebOlderWalkStore(db, ioDispatcher)
 
+    /** Per-channel new-post notification state (bell + baseline). */
+    val notify = WebNotifyStore(db, ioDispatcher)
+
     // ---- Reads (Flow) -------------------------------------------------------
 
     /**
@@ -106,6 +109,19 @@ class WebRepository(
             .map { it.toPersistentList() }
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
+
+    /**
+     * [username]'s posts above [afterSeq], newest first, mapped like the feed — the
+     * candidates of a new-post notification ([WebNotifyCheck]). One snapshot, not a Flow.
+     */
+    suspend fun channelPostsAfter(
+        username: String,
+        afterSeq: Long,
+        limit: Long = NOTIFY_CANDIDATE_LIMIT,
+    ): List<TimelinePost> = withContext(ioDispatcher) {
+        postQueries.selectChannelPostsAfter(username, afterSeq, limit, mapper = ::rowToTimelinePost)
+            .executeAsList()
+    }
 
     /**
      * Cross-channel substring search over post plain-text. Uses LIKE on the
@@ -981,6 +997,7 @@ class WebRepository(
         status = ChannelFetchStatus.fromDb(row.fetch_status),
         error = row.fetch_error,
         retryAfterMs = row.fetch_retry_after_ms,
+        notify = row.notify,
     )
 
     private fun decodeMedia(jsonStr: String): PersistentList<WebMedia> = runCatching {
@@ -1029,6 +1046,9 @@ class WebRepository(
         private const val POST_MEMO_SIZE = 2048
 
         const val DEFAULT_SEARCH_LIMIT = 200L
+
+        /** More than a t.me/s/ page (~20 posts): a background check never ingests more than one. */
+        const val NOTIFY_CANDIDATE_LIMIT = 50L
 
         // Coalesce burst writes during sweep (markFetchStatus → ingestPage → final
         // status, ×concurrency=6) into a single feed re-read. 50 ms is the same
@@ -1085,6 +1105,8 @@ data class ChannelEntry(
     val status: ChannelFetchStatus,
     val error: String?,
     val retryAfterMs: Long?,
+    /** The reader turned this channel's new-post notifications on (see [WebNotifyStore]). */
+    val notify: Boolean = false,
 )
 
 /**

@@ -1,0 +1,17 @@
+-- Schema migration: version 7 → 8.
+--
+-- Per-channel new-post notifications for guest mode (WebNotifyCheck, run by the
+-- tier-3 background worker). Opt-in per channel:
+--   • notify — the reader turned the channel's bell on. Unsubscribing clears it;
+--     "Clear cache" (resetCachedPayload) leaves it alone, it is user intent.
+--   • notified_seq — the newest seq already accounted for: notified, or seen in the
+--     foreground, or the newest stored post when the bell was turned on (so no
+--     backlog is notified). NULL = no baseline yet; the next check only sets one.
+--
+-- Additive only, plain ALTER TABLE ADD COLUMN (Android 8 SQLite 3.18).
+
+ALTER TABLE channel ADD COLUMN notify INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE channel ADD COLUMN notified_seq INTEGER;
+
+PRAGMA user_version = 8;

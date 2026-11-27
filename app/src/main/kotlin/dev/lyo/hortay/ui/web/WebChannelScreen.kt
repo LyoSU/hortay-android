@@ -92,9 +92,9 @@ import dev.lyo.hortay.data.isUnplayableVideo
  *     already serves that role and works equally well over a single-channel
  *     subset (the user types the channel's distinctive vocabulary anyway). It
  *     reads the same `post` table, so paged-in older history is searchable too.
- *   - No info sheet for v1 — guest mode has no join/mute/notifications
- *     affordances that would populate it; the unsubscribe action lives on
- *     [WebChannelsScreen]. Title-tap opens the public t.me page so the
+ *   - No info sheet for v1 — the one per-channel setting, new-post
+ *     notifications, is the bell in the header ([WebChannelNotifyButton]); the
+ *     unsubscribe action lives on [WebChannelsScreen]. Title-tap opens the public t.me page so the
  *     channel handle reads as a regular external link, mirroring every
  *     other channel-handle target across the app.
  *
@@ -162,9 +162,13 @@ fun WebChannelScreen(
     val scope = rememberCoroutineScope()
 
     val chatId = remember(username) { WebPostAdapter.stableChatId(username) }
-    val channelInfo = remember(channels, username) {
-        channels.firstOrNull { it.info.username.equals(username, ignoreCase = true) }?.info
+    val channelEntry = remember(channels, username) {
+        channels.firstOrNull { it.info.username.equals(username, ignoreCase = true) }
     }
+    val channelInfo = channelEntry?.info
+    // The reader has this channel's posts in front of them: its new-post notification goes,
+    // and what is stored counts as notified.
+    LaunchedEffect(username) { graph.webNotifyCoordinator.onChannelOpened(username) }
     // Already filtered at the SQL layer to channel_username = :username and sorted
     // newest-first; FeedOrder only flips `reverseLayout`.
     val orderedPosts = perChannelPosts
@@ -376,6 +380,16 @@ fun WebChannelScreen(
                     onBack = onBack,
                     onTitleTap = { uriHandler.openUri("https://t.me/$username") },
                     scrollBehavior = scrollBehavior,
+                    actions = {
+                        // Only for a followed channel: unsubscribing clears the bell.
+                        if (channelEntry?.isSubscribed == true) {
+                            WebChannelNotifyButton(
+                                username = username,
+                                notifyOn = channelEntry.notify,
+                                graph = graph,
+                            )
+                        }
+                    },
                 )
             }
         },

@@ -1050,4 +1050,22 @@
     <plurals name="channel_export_skipped_private">
         <item quantity="other">%d saluran privat dilewati: tidak punya tautan publik</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Kiriman baru</string>
+    <string name="web_notify_channel_description">Kiriman baru dari kanal yang loncengnya kamu aktifkan</string>
+    <string name="web_notify_new_post">Kiriman baru</string>
+    <string name="web_notify_turn_on">Beri tahu kiriman baru</string>
+    <string name="web_notify_turn_off">Berhenti memberi tahu kiriman baru</string>
+    <string name="web_notify_enabled">Kiriman baru dari kanal ini akan muncul di notifikasi</string>
+    <string name="web_notify_permission_denied">Notifikasi untuk Hortay dimatikan</string>
+    <string name="web_notify_open_settings">Pengaturan</string>
+    <string name="settings_section_notifications">Notifikasi</string>
+    <string name="settings_web_notify_title">Kiriman baru</string>
+    <string name="settings_web_notify_subtitle_empty">Ketuk lonceng di kanal untuk mendapat notifikasi kiriman barunya</string>
+    <string name="settings_web_notify_wifi_title">Periksa hanya lewat Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">Cari kiriman baru di latar belakang hanya lewat Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="other">Aktif untuk %d kanal</item>
+    </plurals>
 </resources>

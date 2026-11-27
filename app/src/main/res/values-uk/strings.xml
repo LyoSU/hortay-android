@@ -1172,4 +1172,25 @@
         <item quantity="many">%d приватних каналів пропущено: у них немає публічних посилань</item>
         <item quantity="other">%d приватного каналу пропущено: у них немає публічних посилань</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Нові пости</string>
+    <string name="web_notify_channel_description">Нові пости з каналів з увімкненим дзвіночком</string>
+    <string name="web_notify_new_post">Новий пост</string>
+    <string name="web_notify_turn_on">Сповіщати про нові пости</string>
+    <string name="web_notify_turn_off">Не сповіщати про нові пости</string>
+    <string name="web_notify_enabled">Нові пости цього каналу з\'являтимуться в сповіщеннях</string>
+    <string name="web_notify_permission_denied">Сповіщення для Hortay вимкнені</string>
+    <string name="web_notify_open_settings">Налаштування</string>
+    <string name="settings_section_notifications">Сповіщення</string>
+    <string name="settings_web_notify_title">Нові пости</string>
+    <string name="settings_web_notify_subtitle_empty">Торкнись дзвіночка в каналі, щоб отримувати сповіщення про його нові пости</string>
+    <string name="settings_web_notify_wifi_title">Перевіряти лише через Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">Шукати нові пости у фоні лише через Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">Увімкнено для %d каналу</item>
+        <item quantity="few">Увімкнено для %d каналів</item>
+        <item quantity="many">Увімкнено для %d каналів</item>
+        <item quantity="other">Увімкнено для %d каналу</item>
+    </plurals>
 </resources>

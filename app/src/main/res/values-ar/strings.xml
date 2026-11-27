@@ -1244,4 +1244,27 @@
         <item quantity="many">تم استبعاد %d قناة خاصة: ليس لها رابط عام</item>
         <item quantity="other">تم استبعاد %d قناة خاصة: ليس لها رابط عام</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">منشورات جديدة</string>
+    <string name="web_notify_channel_description">المنشورات الجديدة من القنوات التي فعّلت جرسها</string>
+    <string name="web_notify_new_post">منشور جديد</string>
+    <string name="web_notify_turn_on">الإشعار بالمنشورات الجديدة</string>
+    <string name="web_notify_turn_off">إيقاف الإشعار بالمنشورات الجديدة</string>
+    <string name="web_notify_enabled">ستظهر المنشورات الجديدة لهذه القناة في الإشعارات</string>
+    <string name="web_notify_permission_denied">الإشعارات معطّلة لـ Hortay</string>
+    <string name="web_notify_open_settings">الإعدادات</string>
+    <string name="settings_section_notifications">الإشعارات</string>
+    <string name="settings_web_notify_title">منشورات جديدة</string>
+    <string name="settings_web_notify_subtitle_empty">انقر على الجرس في قناة لتصلك إشعارات بمنشوراتها الجديدة</string>
+    <string name="settings_web_notify_wifi_title">التحقق عبر Wi-Fi فقط</string>
+    <string name="settings_web_notify_wifi_subtitle">البحث عن منشورات جديدة في الخلفية عبر Wi-Fi فقط</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="zero">مفعّل لـ %d قناة</item>
+        <item quantity="one">مفعّل لـ %d قناة</item>
+        <item quantity="two">مفعّل لـ %d قناتين</item>
+        <item quantity="few">مفعّل لـ %d قنوات</item>
+        <item quantity="many">مفعّل لـ %d قناة</item>
+        <item quantity="other">مفعّل لـ %d قناة</item>
+    </plurals>
 </resources>

@@ -163,6 +163,11 @@ fun SettingsScreen(
     archiveInAllFeedState: StateFlow<Boolean>? = null,
     /** Pre-warmed [SettingsStore.groupFeed]; null hides the row (guest mode). */
     groupFeedState: StateFlow<Boolean>? = null,
+    /**
+     * Guest mode only: how many channels have new-post notifications on. Non-null shows the
+     * Notifications section ([WebNotifySection]).
+     */
+    webNotifyChannelCount: kotlinx.coroutines.flow.Flow<Int>? = null,
 ) {
     // Settings sub-screens run on a NESTED Navigation 3 NavDisplay over a LOCAL back stack (not
     // the app-wide [dev.lyo.hortay.AppGraph.backStack]): the Settings master/detail is
@@ -220,6 +225,7 @@ fun SettingsScreen(
                     archiveInAllFeedState = archiveInAllFeedState.takeIf { channelActions != null },
                     groupFeedState = groupFeedState.takeIf { channelActions != null },
                     emojiStyleAvailable = stats != null,
+                    webNotifyChannelCount = webNotifyChannelCount,
                 )
             }
             entry<SettingsNavKey.AutoDownload> {
@@ -325,6 +331,8 @@ private fun SettingsMain(
     groupFeedState: StateFlow<Boolean>? = null,
     /** TDLib mode only — shows the reaction emoji style choice. */
     emojiStyleAvailable: Boolean = false,
+    /** Guest mode only; see [SettingsScreen]. */
+    webNotifyChannelCount: kotlinx.coroutines.flow.Flow<Int>? = null,
 ) {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -514,6 +522,11 @@ private fun SettingsMain(
                             onClick = onOpenMutedWords,
                         )
                     }
+                }
+
+                // ---- Notifications (guest mode) ----------------------------------------
+                if (webNotifyChannelCount != null) {
+                    WebNotifySection(settings = settings, notifyChannelCount = webNotifyChannelCount)
                 }
 
                 // ---- Categories (drill into sub-screens) ------------------------------

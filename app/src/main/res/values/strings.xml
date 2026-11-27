@@ -1132,4 +1132,23 @@
         <item quantity="one">%d private channel left out: it has no public link</item>
         <item quantity="other">%d private channels left out: they have no public link</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">New posts</string>
+    <string name="web_notify_channel_description">New posts from the channels whose bell you turned on</string>
+    <string name="web_notify_new_post">New post</string>
+    <string name="web_notify_turn_on">Notify about new posts</string>
+    <string name="web_notify_turn_off">Stop notifying about new posts</string>
+    <string name="web_notify_enabled">New posts from this channel will show up in notifications</string>
+    <string name="web_notify_permission_denied">Notifications are turned off for Hortay</string>
+    <string name="web_notify_open_settings">Settings</string>
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_web_notify_title">New posts</string>
+    <string name="settings_web_notify_subtitle_empty">Tap the bell in a channel to get notified about its new posts</string>
+    <string name="settings_web_notify_wifi_title">Check over Wi-Fi only</string>
+    <string name="settings_web_notify_wifi_subtitle">Look for new posts in the background only on Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">On for %d channel</item>
+        <item quantity="other">On for %d channels</item>
+    </plurals>
 </resources>

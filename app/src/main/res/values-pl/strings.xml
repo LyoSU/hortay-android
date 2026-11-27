@@ -1165,4 +1165,25 @@
         <item quantity="many">Pominięto %d prywatnych kanałów: nie mają publicznych linków</item>
         <item quantity="other">Pominięto %d prywatnego kanału: nie mają publicznych linków</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Nowe wpisy</string>
+    <string name="web_notify_channel_description">Nowe wpisy z kanałów z włączonym dzwonkiem</string>
+    <string name="web_notify_new_post">Nowy wpis</string>
+    <string name="web_notify_turn_on">Powiadamiaj o nowych wpisach</string>
+    <string name="web_notify_turn_off">Nie powiadamiaj o nowych wpisach</string>
+    <string name="web_notify_enabled">Nowe wpisy z tego kanału będą pojawiać się w powiadomieniach</string>
+    <string name="web_notify_permission_denied">Powiadomienia Hortay są wyłączone</string>
+    <string name="web_notify_open_settings">Ustawienia</string>
+    <string name="settings_section_notifications">Powiadomienia</string>
+    <string name="settings_web_notify_title">Nowe wpisy</string>
+    <string name="settings_web_notify_subtitle_empty">Stuknij dzwonek w kanale, aby dostawać powiadomienia o jego nowych wpisach</string>
+    <string name="settings_web_notify_wifi_title">Sprawdzaj tylko przez Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">Szukaj nowych wpisów w tle tylko przez Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">Włączone dla %d kanału</item>
+        <item quantity="few">Włączone dla %d kanałów</item>
+        <item quantity="many">Włączone dla %d kanałów</item>
+        <item quantity="other">Włączone dla %d kanału</item>
+    </plurals>
 </resources>

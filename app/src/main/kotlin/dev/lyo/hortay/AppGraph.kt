@@ -68,6 +68,10 @@ import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebReadAck
 import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.data.web.WebViewReporter
+import dev.lyo.hortay.data.web.WebNotifyCheck
+import dev.lyo.hortay.data.web.WebNotifyCoordinator
+import dev.lyo.hortay.data.web.WebNotifyWork
+import dev.lyo.hortay.data.web.WebPostNotifier
 import dev.lyo.hortay.data.archive.ArchiveRepository
 import dev.lyo.hortay.data.archive.ArchiveSettings
 import dev.lyo.hortay.data.archive.ArchiveSettingsStore
@@ -798,8 +802,52 @@ class AppGraph(context: Context) {
         viewReporter = webViewReporter,
     )
 
+    /**
+     * Guest mode without a signed-in account — the gate of everything guest-only that runs
+     * on its own (tier-2 polling, view reports, new-post notifications).
+     */
+    private val guestActive = combine(guestMode.isGuest, tdClient.authStage) { guest, auth ->
+        guest && auth != AuthStage.Ready
+    }
+
+    /** WorkManager schedule of the tier-3 new-post check. See [WebNotifyWork]. */
+    val webNotifyWork: WebNotifyWork = WebNotifyWork(context)
+
+    /** System notifications for guest new posts. See [WebPostNotifier]. */
+    val webPostNotifier: WebPostNotifier = WebPostNotifier(context)
+
+    /**
+     * Guest new-post notifications: the schedule, the bells, and clearing what was read.
+     * Not account state (guest mode has none), so no [session] hook — it observes the
+     * guest gate itself and drops the schedule and every notification when guest mode ends.
+     * See [WebNotifyCoordinator].
+     */
+    val webNotifyCoordinator: WebNotifyCoordinator = WebNotifyCoordinator(
+        store = webRepository.notify,
+        notifications = webPostNotifier,
+        scheduling = webNotifyWork,
+        guestActive = guestActive,
+        wifiOnly = settingsStore.webNotifyWifiOnly,
+        scope = appScope,
+    ).also { it.bind() }
+
+    /** One run of the tier-3 background check, for [dev.lyo.hortay.data.web.WebNotifyWorker]. */
+    val webNotifyCheck: WebNotifyCheck = WebNotifyCheck(
+        store = webRepository.notify,
+        isGuestActive = { guestActive.first() },
+        isForeground = { lifecycleBridge.foreground.value },
+        isGated = { webClient.isGateActive },
+        fetchNewest = webFeedSource::fetchNewestInBackground,
+        postsAfter = { username, afterSeq -> webRepository.channelPostsAfter(username, afterSeq) },
+        isHidden = { username ->
+            dev.lyo.hortay.data.web.WebPostAdapter.stableChatId(username) in ignoredChannels.ignored.first()
+        },
+        mutedWords = { mutedWords.words.first() },
+        notifications = webPostNotifier,
+    )
+
     /** The guest read-ack: local read cursor + view report. See [WebReadAck]. */
-    val webReadAck: WebReadAck = WebReadAck(webRepository, webViewReporter)
+    val webReadAck: WebReadAck = WebReadAck(webRepository, webViewReporter, webNotifyCoordinator::onChannelRead)
 
     /**
      * Tier-2 foreground polling for the web pipeline. Bound here so the
@@ -823,6 +871,7 @@ class AppGraph(context: Context) {
         authStage = tdClient.authStage,
         isGuest = guestMode.isGuest,
         scope = appScope,
+        onForegroundSettled = webNotifyCoordinator::onForegroundSettled,
     ).also { it.bind() }
 
     /**

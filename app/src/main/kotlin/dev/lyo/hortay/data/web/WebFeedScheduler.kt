@@ -24,9 +24,14 @@ import kotlinx.coroutines.launch
  *     foreground, kick a non-forced refresh every [tier2IntervalMs]. The
  *     non-forced flag lets [WebFeedSource]'s 30 s staleness window absorb any
  *     overlap with user-initiated pulls so we don't double-sweep.
- *   - Tier 3 (background WorkManager, 30 min) — not yet implemented. Will use
- *     androidx.work for unmetered + battery-not-low constraints, and a
- *     `Wi-Fi only` user toggle. Adding it doesn't change this class.
+ *   - Tier 3 (background WorkManager, 30 min) — new-post notifications only,
+ *     owned by [WebNotifyCoordinator] / [WebNotifyCheck] / [WebNotifyWork]. Opt-in per
+ *     channel (the bell): scheduled only in guest mode with at least one bell on,
+ *     connected + battery-not-low (unmetered with the "Wi-Fi only" setting), newest page
+ *     of the bell-on channels only, skipped while this tier runs. The one hook here is
+ *     [onForegroundSettled]: after every tier-2 sweep and when tier 2 stops, what is
+ *     stored counts as seen, so tier 3 never notifies a post the reader could already
+ *     see in the app.
  *   - Tier 4 (manual pull / Add-channel) — handled directly by callers via
  *     [WebFeedSource.refresh] / [WebFeedSource.subscribeAndRefresh].
  *
@@ -50,6 +55,8 @@ class WebFeedScheduler(
     private val isGuest: Flow<Boolean>,
     private val scope: CoroutineScope,
     private val tier2IntervalMs: Long = DEFAULT_TIER2_INTERVAL_MS,
+    /** Tier-3 bookkeeping; see the class KDoc. Never throws (the callee logs). */
+    private val onForegroundSettled: suspend () -> Unit = {},
 ) {
 
     private var tier2Job: Job? = null
@@ -142,11 +149,16 @@ class WebFeedScheduler(
                 if (err is kotlinx.coroutines.CancellationException) throw err
                 Log.w(TAG, "tier-2 sweep failed; backing off then retrying", err)
             }
+        onForegroundSettled()
     }
 
     private fun stopTier2() {
+        val wasRunning = tier2Job != null
         tier2Job?.cancel()
         tier2Job = null
+        // Leaving the foreground (or guest mode): pull-to-refresh, an opened channel or a
+        // retry may have stored posts since the last sweep — the reader had them on screen.
+        if (wasRunning) scope.launch { onForegroundSettled() }
     }
 
     companion object {

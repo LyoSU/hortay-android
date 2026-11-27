@@ -781,6 +781,59 @@ class WebFeedSource(
      */
     suspend fun loadOlder(username: String): OlderPageResult = olderHistory.loadOlder(username)
 
+    /**
+     * Tier-3 background check of one channel for new-post notifications ([WebNotifyCheck]).
+     * Deliberately narrower than a sweep's [fetchOne]:
+     *  - the newest page only, revalidated through the HTTP cache (a quiet channel costs a
+     *    304) — no `?after=` walk and no gap back-fill. A hole it opens is recorded
+     *    ([WebRepository.saveGap]) for the next foreground sweep to close;
+     *  - never waits on the rate-limit gate: with it up, the caller ends the run and tries
+     *    again next period;
+     *  - no view report — views count posts the reader saw, and nobody saw these.
+     * Same [channelLock] and [fetchSemaphore] as every other fetch of the channel.
+     */
+    suspend fun fetchNewestInBackground(username: String): BackgroundFetch = channelLock(username).withLock {
+        if (client.isGateActive) return@withLock BackgroundFetch.Gated
+        val fetchedAtMs = System.currentTimeMillis()
+        val result = fetchSemaphore.withPermit { client.fetchChannelPage(username, useCache = true) }
+        when (result) {
+            is FetchResult.Page -> {
+                val posts = result.page.posts
+                // Same degraded-parse guard as the sweep; leave the status to the sweep.
+                if (posts.isEmpty()) return@withLock BackgroundFetch.Failed
+                val storedMaxSeq = repository.maxSeq(username)
+                captureArchiveDiff(username, posts, fetchedAtMs)
+                repository.ingestPage(
+                    page = result.page,
+                    etag = result.etag,
+                    lastModified = result.lastModified,
+                    fetchedAtMs = fetchedAtMs,
+                )
+                val pageFloor = posts.minOf { it.seq }
+                if (storedMaxSeq != null && pageFloor > storedMaxSeq + 1) {
+                    repository.saveGap(username, WebRepository.PendingGap(pageFloor, storedMaxSeq))
+                }
+                lastFullFetchMs[username] = fetchedAtMs
+                BackgroundFetch.Fresh
+            }
+            FetchResult.NotModified -> {
+                repository.markNotModified(username, fetchedAtMs)
+                BackgroundFetch.NoChange
+            }
+            is FetchResult.RateLimited -> {
+                recordFailure(username, result)
+                BackgroundFetch.Gated
+            }
+            else -> {
+                recordFailure(username, result)
+                BackgroundFetch.Failed
+            }
+        }
+    }
+
+    /** Outcome of [fetchNewestInBackground]. */
+    enum class BackgroundFetch { Fresh, NoChange, Failed, Gated }
+
     private suspend fun fetchOne(
         username: String,
         forceNetwork: Boolean,

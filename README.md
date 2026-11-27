@@ -66,7 +66,7 @@ No account needed, public channels only. The app reads the `t.me/s/<channel>` pr
 No analytics, no crash reporting, no ads, no third-party push. The app makes network requests to three places:
 
 - Telegram, through TDLib, when you are signed in.
-- `t.me` in guest mode, anonymously: the `t.me/s/` channel previews, and a post's comments through Telegram's public comments widget when you open the post. Like the t.me web page itself, guest mode also tells Telegram which posts you read, so they count in the channels' view counters; Settings → Privacy turns this off.
+- `t.me` in guest mode, anonymously: the `t.me/s/` channel previews, and a post's comments through Telegram's public comments widget when you open the post. Like the t.me web page itself, guest mode also tells Telegram which posts you read, so they count in the channels' view counters; Settings → Privacy turns this off. With notifications turned on for some channels, the app also checks those channels' previews in the background about every 30 minutes.
 - `cdn.jsdelivr.net`, to fetch the public [list of suggested channels](suggestions.json) from this repository. No user data is sent, though the CDN sees the request's IP address.
 
 The post archive, bookmarks and settings never leave the device.

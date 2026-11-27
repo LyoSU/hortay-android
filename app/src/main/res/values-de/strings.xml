@@ -1092,4 +1092,23 @@
         <item quantity="one">%d privater Kanal ausgelassen: Er hat keinen öffentlichen Link</item>
         <item quantity="other">%d private Kanäle ausgelassen: Sie haben keinen öffentlichen Link</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Neue Beiträge</string>
+    <string name="web_notify_channel_description">Neue Beiträge aus Kanälen, bei denen du die Glocke eingeschaltet hast</string>
+    <string name="web_notify_new_post">Neuer Beitrag</string>
+    <string name="web_notify_turn_on">Über neue Beiträge benachrichtigen</string>
+    <string name="web_notify_turn_off">Nicht mehr über neue Beiträge benachrichtigen</string>
+    <string name="web_notify_enabled">Neue Beiträge dieses Kanals erscheinen als Benachrichtigung</string>
+    <string name="web_notify_permission_denied">Benachrichtigungen für Hortay sind ausgeschaltet</string>
+    <string name="web_notify_open_settings">Einstellungen</string>
+    <string name="settings_section_notifications">Benachrichtigungen</string>
+    <string name="settings_web_notify_title">Neue Beiträge</string>
+    <string name="settings_web_notify_subtitle_empty">Tippe in einem Kanal auf die Glocke, um über seine neuen Beiträge benachrichtigt zu werden</string>
+    <string name="settings_web_notify_wifi_title">Nur im WLAN prüfen</string>
+    <string name="settings_web_notify_wifi_subtitle">Im Hintergrund nur im WLAN nach neuen Beiträgen suchen</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">Für %d Kanal aktiv</item>
+        <item quantity="other">Für %d Kanäle aktiv</item>
+    </plurals>
 </resources>

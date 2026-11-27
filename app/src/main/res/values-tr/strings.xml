@@ -1087,4 +1087,23 @@
         <item quantity="one">%d özel kanal atlandı: herkese açık bağlantıları yok</item>
         <item quantity="other">%d özel kanal atlandı: herkese açık bağlantıları yok</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Yeni gönderiler</string>
+    <string name="web_notify_channel_description">Zilini açtığın kanalların yeni gönderileri</string>
+    <string name="web_notify_new_post">Yeni gönderi</string>
+    <string name="web_notify_turn_on">Yeni gönderileri bildir</string>
+    <string name="web_notify_turn_off">Yeni gönderileri bildirmeyi durdur</string>
+    <string name="web_notify_enabled">Bu kanalın yeni gönderileri bildirim olarak gelecek</string>
+    <string name="web_notify_permission_denied">Hortay için bildirimler kapalı</string>
+    <string name="web_notify_open_settings">Ayarlar</string>
+    <string name="settings_section_notifications">Bildirimler</string>
+    <string name="settings_web_notify_title">Yeni gönderiler</string>
+    <string name="settings_web_notify_subtitle_empty">Yeni gönderilerinden haberdar olmak için kanaldaki zile dokun</string>
+    <string name="settings_web_notify_wifi_title">Yalnızca Wi-Fi ile denetle</string>
+    <string name="settings_web_notify_wifi_subtitle">Yeni gönderileri arka planda yalnızca Wi-Fi ile ara</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">%d kanal için açık</item>
+        <item quantity="other">%d kanal için açık</item>
+    </plurals>
 </resources>

@@ -10,6 +10,8 @@ import dev.lyo.hortay.data.TimelinePost
  *  1. Advance each channel's local read cursor to the highest seq in the batch
  *     ([WebRepository.markChannelRead], MAX-clamped) — the unread strip.
  *  2. Hand the read posts to [WebViewReporter], which counts them as channel views.
+ *  3. Tell [onChannelRead] (the new-post notifications, [WebNotifyCoordinator.onChannelRead])
+ *     how far the channel was read, so a notification about posts already read goes away.
  *
  * Deliberately NOT [WebRepository.markRead]: that flips `post.is_read`, and SQLDelight's
  * table-level invalidation would re-run the whole feed query on every scroll pause.
@@ -17,6 +19,7 @@ import dev.lyo.hortay.data.TimelinePost
 class WebReadAck(
     private val repository: WebRepository,
     private val views: WebViewReporter,
+    private val onChannelRead: suspend (username: String, seq: Long) -> Unit = { _, _ -> },
 ) {
     /**
      * @param channel the channel every post belongs to (a channel screen), or null to
@@ -33,7 +36,9 @@ class WebReadAck(
         for ((username, group) in byChannel) {
             if (username.isEmpty()) continue
             views.onPostsRead(group.map { "$username/${it.id}" })
-            repository.markChannelRead(username, group.maxOf { it.id })
+            val seq = group.maxOf { it.id }
+            repository.markChannelRead(username, seq)
+            onChannelRead(username, seq)
         }
     }
 }

@@ -1113,4 +1113,23 @@
         <item quantity="one">Se omitió %d canal privado: no tiene enlace público</item>
         <item quantity="other">Se omitieron %d canales privados: no tienen enlace público</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Publicaciones nuevas</string>
+    <string name="web_notify_channel_description">Publicaciones nuevas de los canales en los que activaste la campana</string>
+    <string name="web_notify_new_post">Publicación nueva</string>
+    <string name="web_notify_turn_on">Avisar de publicaciones nuevas</string>
+    <string name="web_notify_turn_off">Dejar de avisar de publicaciones nuevas</string>
+    <string name="web_notify_enabled">Las publicaciones nuevas de este canal aparecerán en las notificaciones</string>
+    <string name="web_notify_permission_denied">Las notificaciones de Hortay están desactivadas</string>
+    <string name="web_notify_open_settings">Ajustes</string>
+    <string name="settings_section_notifications">Notificaciones</string>
+    <string name="settings_web_notify_title">Publicaciones nuevas</string>
+    <string name="settings_web_notify_subtitle_empty">Toca la campana de un canal para recibir avisos de sus publicaciones nuevas</string>
+    <string name="settings_web_notify_wifi_title">Comprobar solo con Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">Buscar publicaciones nuevas en segundo plano solo con Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">Activado en %d canal</item>
+        <item quantity="other">Activado en %d canales</item>
+    </plurals>
 </resources>

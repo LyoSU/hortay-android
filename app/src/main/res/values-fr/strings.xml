@@ -1130,4 +1130,24 @@
         <item quantity="many">%d de chaînes privées ignorées : elles n\'ont pas de lien public</item>
         <item quantity="other">%d chaînes privées ignorées : elles n\'ont pas de lien public</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Nouvelles publications</string>
+    <string name="web_notify_channel_description">Nouvelles publications des chaînes dont tu as activé la cloche</string>
+    <string name="web_notify_new_post">Nouvelle publication</string>
+    <string name="web_notify_turn_on">Me prévenir des nouvelles publications</string>
+    <string name="web_notify_turn_off">Ne plus me prévenir des nouvelles publications</string>
+    <string name="web_notify_enabled">Les nouvelles publications de cette chaîne apparaîtront dans les notifications</string>
+    <string name="web_notify_permission_denied">Les notifications de Hortay sont désactivées</string>
+    <string name="web_notify_open_settings">Paramètres</string>
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_web_notify_title">Nouvelles publications</string>
+    <string name="settings_web_notify_subtitle_empty">Touche la cloche d\'une chaîne pour recevoir ses nouvelles publications en notification</string>
+    <string name="settings_web_notify_wifi_title">Vérifier uniquement en Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">Chercher les nouvelles publications en arrière-plan uniquement en Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">Activé pour %d chaîne</item>
+        <item quantity="many">Activé pour %d de chaînes</item>
+        <item quantity="other">Activé pour %d chaînes</item>
+    </plurals>
 </resources>

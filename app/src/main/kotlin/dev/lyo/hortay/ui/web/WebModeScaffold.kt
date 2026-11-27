@@ -87,6 +87,8 @@ import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.timeline.TimelineScreen
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.lyo.hortay.data.TimelinePost
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -170,6 +172,10 @@ fun WebModeScaffold(graph: AppGraph) {
     }
 
     val scope = rememberCoroutineScope()
+    // Settings → Notifications: channels with their bell on.
+    val webNotifyChannelCount = remember(graph) {
+        graph.webRepository.notify.observeNotifyUsernames().map { it.size }
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
     val haptics = LocalHapticFeedback.current
     val locale = remember { Locale.getDefault().language.lowercase() }
@@ -201,8 +207,18 @@ fun WebModeScaffold(graph: AppGraph) {
             try {
                 when (link) {
                     is DeepLink.PublicChannel -> {
-                        deepLinkPrefill = link.handle
-                        addSheetOpen = true
+                        // A channel the reader already follows opens right away (this is
+                        // also where a new-post notification's tap lands); any other one
+                        // goes through Add channel, so nothing is followed unasked.
+                        val followed = graph.webRepository.observeAllChannels().first()
+                            .any { it.isSubscribed && it.info.username.equals(link.handle, ignoreCase = true) }
+                        if (followed) {
+                            val key = WebChannelKey(username = link.handle.lowercase())
+                            if (backStack.lastOrNull() != key) pushWebChannel(link.handle)
+                        } else {
+                            deepLinkPrefill = link.handle
+                            addSheetOpen = true
+                        }
                     }
                     is DeepLink.PrivateChannel,
                     is DeepLink.Message,
@@ -686,6 +702,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                         }
                                                 },
                                                 userMessages = graph.userMessages,
+                                                webNotifyChannelCount = webNotifyChannelCount,
                                             )
                                         }
                                     }

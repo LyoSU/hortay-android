@@ -32,7 +32,12 @@ CREATE TABLE channel (
     channel_id INTEGER,
     -- The channel has no post below this seq: a `?before=` page for it came back with
     -- nothing older. NULL until the reader pages back to the start. Added by 6.sqm.
-    history_start_seq INTEGER
+    history_start_seq INTEGER,
+    -- Guest new-post notifications (7.sqm): the bell is on, and the newest seq already
+    -- accounted for (notified, seen in the foreground, or the newest stored post when the
+    -- bell was turned on). NULL notified_seq = no baseline yet. See WebNotifyStore.
+    notify INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    notified_seq INTEGER
 );
 
 CREATE INDEX channel_subscribed_idx ON channel(is_subscribed);
@@ -156,8 +161,10 @@ VALUES (:username, :placeholderTitle, 1);
 subscribeUpdate:
 UPDATE channel SET is_subscribed = 1 WHERE username = :username;
 
+-- Unsubscribing also turns the channel's notifications off: a bell must not outlive
+-- the subscription it belongs to.
 unsubscribe:
-UPDATE channel SET is_subscribed = 0 WHERE username = :username;
+UPDATE channel SET is_subscribed = 0, notify = 0 WHERE username = :username;
 
 -- Hard delete used by "clear cache". Cascades to posts via FK ON DELETE CASCADE.
 deleteChannel:
@@ -206,3 +213,50 @@ SELECT * FROM channel WHERE username = :username;
 insertNormalized:
 INSERT OR IGNORE INTO channel(username, title, description, avatar_url, subscribers, is_verified, is_subscribed, channel_id)
 VALUES (:username, :title, :description, :avatarUrl, :subscribers, :isVerified, :isSubscribed, :channelId);
+
+-- ---- Guest new-post notifications (WebNotifyStore) ---------------------------
+-- notify / notified_seq are user intent and notification bookkeeping: ingest,
+-- markFetchStatus and resetCachedPayload ("Clear cache") never touch them.
+
+-- Subscribed channels with the bell on, for the background check and the
+-- scheduler (which only needs to know whether the list is empty).
+selectNotifyChannels:
+SELECT username, title, avatar_url, notified_seq FROM channel
+WHERE notify = 1 AND is_subscribed = 1
+ORDER BY title COLLATE NOCASE;
+
+selectNotifiedSeq:
+SELECT notify, notified_seq FROM channel WHERE username = :username;
+
+-- Bell on: the baseline is the newest post already stored, so turning it on never
+-- notifies the backlog. NULL when nothing is stored yet; the next check sets it.
+setNotifyOn:
+UPDATE channel SET
+    notify = 1,
+    notified_seq = (SELECT MAX(post.seq) FROM post WHERE post.channel_username = channel.username)
+WHERE username = :username;
+
+setNotifyOff:
+UPDATE channel SET notify = 0 WHERE username = :username;
+
+-- Monotonic: a late, smaller seq never rewinds the baseline.
+advanceNotified:
+UPDATE channel SET notified_seq = :seq
+WHERE username = :username AND (notified_seq IS NULL OR notified_seq < :seq);
+
+-- How many bell-on channels hold posts newer than their baseline. Lets the foreground
+-- skip the UPDATE below (and the feed re-query a channel write triggers) when nothing
+-- is behind.
+countNotifyBehind:
+SELECT COUNT(*) FROM channel
+WHERE notify = 1
+  AND (SELECT MAX(post.seq) FROM post WHERE post.channel_username = channel.username)
+      > COALESCE(notified_seq, -1);
+
+-- Everything stored while the reader had the app open counts as seen.
+advanceNotifiedToLatest:
+UPDATE channel SET
+    notified_seq = (SELECT MAX(post.seq) FROM post WHERE post.channel_username = channel.username)
+WHERE notify = 1
+  AND (SELECT MAX(post.seq) FROM post WHERE post.channel_username = channel.username)
+      > COALESCE(notified_seq, -1);

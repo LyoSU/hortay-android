@@ -1168,4 +1168,25 @@
         <item quantity="many">%d приватных каналов пропущено: у них нет публичных ссылок</item>
         <item quantity="other">%d приватного канала пропущено: у них нет публичных ссылок</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Новые посты</string>
+    <string name="web_notify_channel_description">Новые посты из каналов с включённым колокольчиком</string>
+    <string name="web_notify_new_post">Новый пост</string>
+    <string name="web_notify_turn_on">Уведомлять о новых постах</string>
+    <string name="web_notify_turn_off">Не уведомлять о новых постах</string>
+    <string name="web_notify_enabled">Новые посты этого канала будут приходить в уведомлениях</string>
+    <string name="web_notify_permission_denied">Уведомления для Hortay отключены</string>
+    <string name="web_notify_open_settings">Настройки</string>
+    <string name="settings_section_notifications">Уведомления</string>
+    <string name="settings_web_notify_title">Новые посты</string>
+    <string name="settings_web_notify_subtitle_empty">Нажмите на колокольчик в канале, чтобы получать уведомления о его новых постах</string>
+    <string name="settings_web_notify_wifi_title">Проверять только по Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">Искать новые посты в фоне только по Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">Включено для %d канала</item>
+        <item quantity="few">Включено для %d каналов</item>
+        <item quantity="many">Включено для %d каналов</item>
+        <item quantity="other">Включено для %d канала</item>
+    </plurals>
 </resources>

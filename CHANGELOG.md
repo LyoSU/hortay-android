@@ -10,9 +10,11 @@
 - Reading without an account now goes through your SOCKS5 or HTTP proxy, photos and videos included.
 - Posts you read in guest mode now count in the channels' view counters, as on the t.me website — Settings → Privacy can turn this off.
 - The Channels tab can export your channel list as text or a file and import one back, and sharing channel links to Hortay offers to follow them.
+- In guest mode the bell in a channel's header turns on notifications about its new posts, checked in the background about every 30 minutes — Settings → Notifications can limit the checks to Wi-Fi.
 - Long reply branches in comments fold after the first two replies under a “Show N more replies” row that opens them in place, and jumping to a quoted reply opens its branch.
 
 ### Changed
+- In guest mode, a t.me link to a channel you already follow opens the channel instead of the Add channel sheet.
 - In guest mode, long quotes collapse to a few lines as they do when signed in, and “Show more” opens the post with its comments.
 
 ### Fixed

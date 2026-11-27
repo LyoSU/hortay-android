@@ -1086,4 +1086,23 @@
         <item quantity="one">%d کانال خصوصی کنار گذاشته شد: پیوند عمومی ندارند</item>
         <item quantity="other">%d کانال خصوصی کنار گذاشته شد: پیوند عمومی ندارند</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">پست‌های جدید</string>
+    <string name="web_notify_channel_description">پست‌های جدید کانال‌هایی که زنگوله‌شان را روشن کرده‌اید</string>
+    <string name="web_notify_new_post">پست جدید</string>
+    <string name="web_notify_turn_on">اعلان پست‌های جدید</string>
+    <string name="web_notify_turn_off">توقف اعلان پست‌های جدید</string>
+    <string name="web_notify_enabled">پست‌های جدید این کانال در اعلان‌ها نشان داده می‌شوند</string>
+    <string name="web_notify_permission_denied">اعلان‌های Hortay خاموش است</string>
+    <string name="web_notify_open_settings">تنظیمات</string>
+    <string name="settings_section_notifications">اعلان‌ها</string>
+    <string name="settings_web_notify_title">پست‌های جدید</string>
+    <string name="settings_web_notify_subtitle_empty">برای دریافت اعلان پست‌های جدید یک کانال، روی زنگوله‌ی آن بزنید</string>
+    <string name="settings_web_notify_wifi_title">بررسی فقط با Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">جست‌وجوی پست‌های جدید در پس‌زمینه فقط با Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">روشن برای %d کانال</item>
+        <item quantity="other">روشن برای %d کانال</item>
+    </plurals>
 </resources>

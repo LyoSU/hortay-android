@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Guest mode: new-post notifications for the channels whose bell the reader turned
+         on (WebNotifyCoordinator). Asked for only when the first bell goes on. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- "Save to gallery" on API 26-28 writes into the public Pictures/Movies directory,
          which needs this runtime grant. API 29+ saves through MediaStore without it. -->
     <uses-permission

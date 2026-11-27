@@ -112,6 +112,17 @@ WHERE post.channel_username = :username
 ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
 
+-- A channel's posts newer than :afterSeq, newest first — what the guest new-post
+-- notification check (WebNotifyCheck) considers. Same projection as selectFeed so the
+-- shared row mapper applies; served by the (channel_username, seq) primary key.
+selectChannelPostsAfter:
+SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
+FROM post
+JOIN channel ON channel.username = post.channel_username
+WHERE post.channel_username = :username AND post.seq > :afterSeq
+ORDER BY post.seq DESC
+LIMIT :limit;
+
 -- LIKE-based fallback while FTS5 is unavailable (see header). The :pattern
 -- parameter expects a glob-style pattern with leading/trailing %; caller
 -- assembles it (escape any user-supplied %  / _ as needed). Sort by recency

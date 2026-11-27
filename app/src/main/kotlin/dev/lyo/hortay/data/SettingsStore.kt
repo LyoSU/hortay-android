@@ -380,6 +380,18 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * Guest mode: the background check for new posts (the channels with their bell on) runs
+     * only on an unmetered network. Default off — any connected network.
+     */
+    val webNotifyWifiOnly: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_WEB_NOTIFY_WIFI_ONLY] ?: false
+    }
+
+    suspend fun setWebNotifyWifiOnly(enabled: Boolean) {
+        dataStore.edit { it[KEY_WEB_NOTIFY_WIFI_ONLY] = enabled }
+    }
+
+    /**
      * Epoch-ms of the last successful TDLib [TdApi.OptimizeStorage] sweep. Read by
      * [TdClient] to throttle the cleanup to once per [STORAGE_OPTIMIZE_INTERVAL_MS] —
      * scanning a multi-GB tdlib-files directory on every cold start used to add real
@@ -403,6 +415,7 @@ class SettingsStore(context: Context) {
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
         val KEY_COUNT_WEB_VIEWS = booleanPreferencesKey("count_web_views")
+        val KEY_WEB_NOTIFY_WIFI_ONLY = booleanPreferencesKey("web_notify_wifi_only")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_PURE_BLACK = booleanPreferencesKey("pure_black")
         val KEY_TEXT_SCALE = stringPreferencesKey("text_scale")

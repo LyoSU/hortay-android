@@ -1134,4 +1134,24 @@
         <item quantity="many">%d de canais privados ficaram de fora: não têm link público</item>
         <item quantity="other">%d canais privados ficaram de fora: não têm link público</item>
     </plurals>
+
+    <!-- Guest new-post notifications (the bell in a guest channel's header) -->
+    <string name="web_notify_channel_name">Novas publicações</string>
+    <string name="web_notify_channel_description">Novas publicações dos canais em que você ativou o sino</string>
+    <string name="web_notify_new_post">Nova publicação</string>
+    <string name="web_notify_turn_on">Avisar sobre novas publicações</string>
+    <string name="web_notify_turn_off">Parar de avisar sobre novas publicações</string>
+    <string name="web_notify_enabled">As novas publicações deste canal vão aparecer nas notificações</string>
+    <string name="web_notify_permission_denied">As notificações do Hortay estão desativadas</string>
+    <string name="web_notify_open_settings">Configurações</string>
+    <string name="settings_section_notifications">Notificações</string>
+    <string name="settings_web_notify_title">Novas publicações</string>
+    <string name="settings_web_notify_subtitle_empty">Toque no sino de um canal para ser avisado das novas publicações dele</string>
+    <string name="settings_web_notify_wifi_title">Verificar só no Wi-Fi</string>
+    <string name="settings_web_notify_wifi_subtitle">Procurar novas publicações em segundo plano só no Wi-Fi</string>
+    <plurals name="settings_web_notify_count">
+        <item quantity="one">Ativado em %d canal</item>
+        <item quantity="many">Ativado em %d de canais</item>
+        <item quantity="other">Ativado em %d canais</item>
+    </plurals>
 </resources>
