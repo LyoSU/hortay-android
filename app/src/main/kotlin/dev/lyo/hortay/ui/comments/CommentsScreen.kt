@@ -786,15 +786,6 @@ fun CommentsScreen(
         // (bar = `background`, nothing under it) the fade is fully transparent.
         val topInsetPx = with(density) { padding.calculateTopPadding().toPx() }
         val fadePx = with(density) { TOP_FADE_DP.dp.toPx() }
-        // The guest "earlier comments" row auto-loads once the READER has scrolled. A hero
-        // open scrolls the list itself (within the post, to [heroTarget]); that offset is the
-        // starting point, not a scroll by the reader.
-        val readerScrolledPastHero by remember(listState, heroTarget) {
-            derivedStateOf {
-                listState.firstVisibleItemIndex > 0 ||
-                    listState.firstVisibleItemScrollOffset > heroTarget
-            }
-        }
         val commentsScrolled by remember(listState) {
             derivedStateOf {
                 listState.firstVisibleItemIndex > 0 ||
@@ -954,7 +945,6 @@ fun CommentsScreen(
                         item(key = "older") {
                             EarlierCommentsRow(
                                 state = guestOlder,
-                                autoLoad = readerScrolledPastHero,
                                 onLoad = guestThread::loadOlder,
                             )
                         }
@@ -1290,18 +1280,28 @@ private fun CommentsEmptyState(
  * Guest threads hold a window of the comments: this row, between the post and the oldest
  * loaded comment, fetches the page before it.
  *
- * It loads on its own once per time it comes into view after the reader has scrolled
- * ([autoLoad]) — not on the first frame of a fresh open, and not again while it simply
- * stays on screen: the loaded page lands BELOW the row, so a row that re-fired on every
- * page would walk a thousand-comment thread to its start while the reader sits still.
- * After a failure it is a plain button — never an automatic retry loop.
+ * It loads on its own each time it comes into view (enters composition) — including a
+ * fresh open — and shows only a loading indicator meanwhile, so it never asks for a tap
+ * it doesn't need. It does not fire again while it simply stays on screen: the loaded page
+ * lands BELOW the row, so a row that re-fired on every page would walk a thousand-comment
+ * thread to its start while the reader sits still. In that case (more pages, row still in
+ * view) and after a failure it is a plain button — never an automatic retry loop.
  */
 @Composable
-private fun EarlierCommentsRow(state: OlderComments, autoLoad: Boolean, onLoad: () -> Unit) {
+private fun EarlierCommentsRow(state: OlderComments, onLoad: () -> Unit) {
     val latestOnLoad by rememberUpdatedState(onLoad)
     val latestState by rememberUpdatedState(state)
-    LaunchedEffect(autoLoad) {
-        if (autoLoad && latestState == OlderComments.Available) latestOnLoad()
+    // Spinner from the first frame until the fired load moves the state on, so the button
+    // text never flashes before the automatic load starts.
+    var awaitingAutoLoad by remember { mutableStateOf(state == OlderComments.Available) }
+    LaunchedEffect(Unit) {
+        if (latestState == OlderComments.Available) {
+            latestOnLoad()
+            withTimeoutOrNull(AUTO_LOAD_SETTLE_MS) {
+                snapshotFlow { latestState }.first { it != OlderComments.Available }
+            }
+        }
+        awaitingAutoLoad = false
     }
     Box(
         modifier = Modifier
@@ -1310,7 +1310,7 @@ private fun EarlierCommentsRow(state: OlderComments, autoLoad: Boolean, onLoad: 
             .padding(horizontal = HortaySpacing.lg, vertical = HortaySpacing.xs),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (state == OlderComments.Loading) {
+        if (state == OlderComments.Loading || awaitingAutoLoad) {
             LoadingIndicator(modifier = Modifier.size(32.dp).align(Alignment.Center))
         } else {
             TextButton(onClick = onLoad, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -1323,6 +1323,9 @@ private fun EarlierCommentsRow(state: OlderComments, autoLoad: Boolean, onLoad: 
         }
     }
 }
+
+/** How long the earlier-comments row shows its spinner waiting for a fired load to start. */
+private const val AUTO_LOAD_SETTLE_MS = 3_000L
 
 /** How long a quote jump waits for loaded or opened rows to reach the list. */
 private const val QUOTE_JUMP_SETTLE_MS = 2_000L
