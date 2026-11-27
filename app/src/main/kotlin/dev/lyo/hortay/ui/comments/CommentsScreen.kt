@@ -1281,10 +1281,11 @@ private fun CommentsEmptyState(
  * loaded comment, fetches the page before it.
  *
  * It loads on its own each time it comes into view (enters composition) — including a
- * fresh open — and shows only a loading indicator meanwhile, so it never asks for a tap
- * it doesn't need. It does not fire again while it simply stays on screen: the loaded page
- * lands BELOW the row, so a row that re-fired on every page would walk a thousand-comment
- * thread to its start while the reader sits still. In that case (more pages, row still in
+ * fresh open — and keeps loading page after page while it stays in view, showing only a
+ * loading indicator, so an ordinary thread fills in completely and the row never asks for
+ * a tap it doesn't need. The chain stops after [AUTO_LOAD_PAGES] pages per visit: the
+ * loaded page lands BELOW the row, so an unbounded chain would walk a thousand-comment
+ * thread to its start while the reader sits still. Past that cap (more pages, row still in
  * view) and after a failure it is a plain button — never an automatic retry loop.
  */
 @Composable
@@ -1293,15 +1294,21 @@ private fun EarlierCommentsRow(state: OlderComments, onLoad: () -> Unit) {
     val latestState by rememberUpdatedState(state)
     // Spinner from the first frame until the fired load moves the state on, so the button
     // text never flashes before the automatic load starts.
-    var awaitingAutoLoad by remember { mutableStateOf(state == OlderComments.Available) }
+    // Spinner from the first frame until the automatic chain ends, so the button text never
+    // flashes between two chained pages.
+    var autoLoading by remember { mutableStateOf(state == OlderComments.Available) }
     LaunchedEffect(Unit) {
-        if (latestState == OlderComments.Available) {
+        var fired = 0
+        while (fired < AUTO_LOAD_PAGES && latestState == OlderComments.Available) {
             latestOnLoad()
-            withTimeoutOrNull(AUTO_LOAD_SETTLE_MS) {
+            fired++
+            val settled = withTimeoutOrNull(AUTO_LOAD_SETTLE_MS) {
                 snapshotFlow { latestState }.first { it != OlderComments.Available }
+                snapshotFlow { latestState }.first { it != OlderComments.Loading }
             }
+            if (settled == null) break
         }
-        awaitingAutoLoad = false
+        autoLoading = false
     }
     Box(
         modifier = Modifier
@@ -1310,7 +1317,7 @@ private fun EarlierCommentsRow(state: OlderComments, onLoad: () -> Unit) {
             .padding(horizontal = HortaySpacing.lg, vertical = HortaySpacing.xs),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (state == OlderComments.Loading || awaitingAutoLoad) {
+        if (state == OlderComments.Loading || autoLoading) {
             LoadingIndicator(modifier = Modifier.size(32.dp).align(Alignment.Center))
         } else {
             TextButton(onClick = onLoad, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -1324,8 +1331,11 @@ private fun EarlierCommentsRow(state: OlderComments, onLoad: () -> Unit) {
     }
 }
 
-/** How long the earlier-comments row shows its spinner waiting for a fired load to start. */
-private const val AUTO_LOAD_SETTLE_MS = 3_000L
+/** How long the earlier-comments row waits for one automatically fired page to land. */
+private const val AUTO_LOAD_SETTLE_MS = 10_000L
+
+/** Pages the earlier-comments row loads on its own per visit before it turns into a button. */
+private const val AUTO_LOAD_PAGES = 3
 
 /** How long a quote jump waits for loaded or opened rows to reach the list. */
 private const val QUOTE_JUMP_SETTLE_MS = 2_000L
