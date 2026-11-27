@@ -1347,18 +1347,36 @@ class PostsRepository(
         // (CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) sees the first page without waiting
         // for the whole walk. On-demand single-channel open: one chat at a time,
         // so these networked fetches stay within the FLOOD_WAIT budget.
+        //
+        // A follow-up page with nothing new (empty, or only the inclusive boundary
+        // message) is the same cold-cache under-return [loadOlder] retries via
+        // OLDER_ANCHOR_ONLY_FETCH_ATTEMPTS: TDLib serves the locally-known anchor and
+        // fetches the server slice for the repeat. Ending the walk on it left a channel
+        // the account isn't a member of (whose local history is just `lastMessage`)
+        // with ONE post behind the deep-load cooldown. So when the walk holds only that
+        // anchor, the first nothing-new page is re-asked once after a short delay; a walk
+        // that already landed more posts ends as before, so a burst of user-driven loads
+        // never spends the extra call (the shared 30-per-30 s GetChatHistory budget).
+        // Still capped by CHANNEL_HISTORY_FETCH_ATTEMPTS calls in total.
         val seenIds = HashSet<Long>()
         var fromMessageId = 0L
         var landed = false
         var pages = 0
         var keepWalking = true
+        var retriedNothingNew = false
         while (keepWalking && pages++ < CHANNEL_HISTORY_FETCH_ATTEMPTS) {
             val page = td.send(TdApi.GetChatHistory(chatId, fromMessageId, 0, limit, false))
                 .messages.orEmpty()
                 .filter { seenIds.add(it.id) }
             if (page.isEmpty()) {
-                keepWalking = false
+                if (retriedNothingNew || seenIds.size > 1 || pages >= CHANNEL_HISTORY_FETCH_ATTEMPTS) {
+                    keepWalking = false
+                } else {
+                    retriedNothingNew = true
+                    delay(OLDER_ANCHOR_ONLY_RETRY_DELAY_MS)
+                }
             } else {
+                retriedNothingNew = false
                 val raw = albums.coalesce(chatId, page, onlyLocal = false)
                 val mappedPage = raw.map { mapper.toChannelPost(it, chat) }
                 // Session-epoch guard (see [ingest]): a logout that wiped the feed while

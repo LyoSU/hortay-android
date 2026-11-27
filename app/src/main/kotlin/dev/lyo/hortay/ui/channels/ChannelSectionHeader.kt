@@ -55,24 +55,29 @@ fun ChannelSectionHeader(
                 },
             )
             .semantics(mergeDescendants = true) { heading() }
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            // End padding lines the chevron up with the rows' trailing content.
+            .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.titleSmall.tabularFigures(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // Title and count take the free width as one unit, so the chevron sits at the end
+        // instead of splitting the row's spare space with a second weighted child.
+        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.titleSmall.tabularFigures(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (onToggle != null) {
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
             val turn by animateFloatAsState(
                 targetValue = if (expanded) 180f else 0f,
                 animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),

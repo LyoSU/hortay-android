@@ -383,8 +383,11 @@ fun ChannelsScreen(
                     top = padding.calculateTopPadding() + 4.dp,
                     // Clear the floating nav bar AND the "Find channels" FAB stacked above
                     // it, so the last rows can scroll fully into view instead of sitting
-                    // under the button.
-                    bottom = contentPadding.calculateBottomPadding() + FAB_CLEARANCE,
+                    // under the button. The Scaffold places the FAB above its own bottom
+                    // inset (`padding`, the system navigation bar when not consumed) on top
+                    // of the modifier lift, so the list clears the same sum.
+                    bottom = contentPadding.calculateBottomPadding() +
+                        padding.calculateBottomPadding() + FAB_CLEARANCE,
                 ),
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                 modifier = Modifier
@@ -778,6 +781,7 @@ private fun UnreadBadge(count: Int, muted: Boolean) {
 }
 
 private const val MAX_BADGE = 999
+/** FAB height (56) + the Scaffold's FAB spacing (16) + a 16 dp gap above it. */
 private val FAB_CLEARANCE = 88.dp
 private val SHORT_WINDOW_HEIGHT = 480.dp
 private const val LARGE_FONT_SCALE = 1.3f

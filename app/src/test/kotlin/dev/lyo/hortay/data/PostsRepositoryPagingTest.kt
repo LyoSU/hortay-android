@@ -60,6 +60,50 @@ class PostsRepositoryPagingTest {
     }
 
     @Test
+    fun `loadChannelHistory re-asks a nothing-new follow-up page instead of settling on one post`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chat = harness.fakeChannel(id = -9120L)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        // Non-member channel, cold cache: the head page is the locally-known last message,
+        // the first walk-back serves only that boundary message again, and the repeat
+        // carries the server slice.
+        val walkBacks = java.util.concurrent.atomic.AtomicInteger(0)
+        harness.td.onAny("GetChatHistory") { req ->
+            val q = req as TdApi.GetChatHistory
+            val ids = when {
+                q.fromMessageId == 0L -> listOf(100L)
+                walkBacks.getAndIncrement() == 0 -> listOf(100L)
+                else -> listOf(100L, 99L, 98L)
+            }
+            TdApi.Messages(ids.size, ids.map { harness.fakeChannelMessage(chat.id, it) }.toTypedArray())
+        }
+
+        val result = harness.repo.loadChannelHistory(chat.id, limit = 80)
+        harness.advanceUntilIdle()
+
+        assertTrue(result.isSuccess)
+        assertEquals(setOf(100L, 99L, 98L), harness.idsOf(chat.id))
+    }
+
+    @Test
+    fun `loadChannelHistory of a one-post channel stops after one nothing-new retry`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chat = harness.fakeChannel(id = -9130L)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+        harness.historyPages(chat.id, mapOf(0L to listOf(100L), 100L to listOf(100L)))
+
+        harness.repo.loadChannelHistory(chat.id, limit = 80)
+        harness.advanceUntilIdle()
+
+        assertEquals(setOf(100L), harness.idsOf(chat.id))
+        assertEquals(3, harness.td.rpcCount("GetChatHistory"),
+            "head page, the boundary-only page, and its single retry")
+    }
+
+    @Test
     fun `forced loadChannelHistory bypasses the deep-load cooldown`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chat = harness.fakeChannel(id = -9150L)

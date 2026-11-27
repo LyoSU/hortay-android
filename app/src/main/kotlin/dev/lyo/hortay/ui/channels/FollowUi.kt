@@ -127,7 +127,7 @@ class FollowController internal constructor(
         ui.sessionScope().launch(Dispatchers.Main.immediate) {
             try {
                 val result = ui.followed.follow(chatId)
-                announce(followNotice(result, ui.store.ids.value.size))
+                announce(followNotice(result, ui.store.ids.value.size), undoChatId = chatId)
                 if (result == FollowResult.Followed && !ui.onboarding.followDelayTipSeen.first()) tipVisible = true
                 onDone(result)
             } finally {
@@ -161,7 +161,11 @@ class FollowController internal constructor(
         ui.sessionScope().launch { ui.onboarding.setFollowDelayTipSeen() }
     }
 
-    private fun announce(notice: FollowNotice) {
+    /**
+     * Posts [notice]. With [undoChatId] a successful follow carries Undo, the mirror of the
+     * stop-reading snackbar: it unfollows that chat again, in the session scope.
+     */
+    private fun announce(notice: FollowNotice, undoChatId: Long? = null) {
         val text = when (notice) {
             FollowNotice.Added -> res.getString(R.string.follow_added)
             is FollowNotice.AddedNearLimit ->
@@ -175,7 +179,18 @@ class FollowController internal constructor(
             FollowNotice.LimitReached, FollowNotice.Failed -> UserMessageBus.Severity.Error
             else -> UserMessageBus.Severity.Info
         }
-        ui.userMessages.post(text, severity)
+        val added = notice is FollowNotice.Added ||
+            notice is FollowNotice.AddedNearLimit ||
+            notice is FollowNotice.AddedAtLimit
+        val undo = if (added && undoChatId != null) {
+            val scope = ui.sessionScope()
+            UserMessageBus.Action.Run(res.getString(R.string.action_undo)) {
+                scope.launch(Dispatchers.Main.immediate) { ui.followed.unfollow(undoChatId) }
+            }
+        } else {
+            null
+        }
+        ui.userMessages.post(text = text, severity = severity, action = undo)
     }
 }
 

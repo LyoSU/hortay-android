@@ -7,8 +7,11 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -36,7 +39,8 @@ import dev.lyo.hortay.R
  * The bar draws behind the navigation-bar inset ([bottomInset]) so the feed doesn't show
  * through a strip under it. Each button takes half the width and wraps to two lines
  * instead of clipping, which keeps both labels whole at font scale 2.0 and in the longest
- * locales. [busy] disables both while a follow is in flight.
+ * locales; the row's intrinsic height gives both the taller one's height. [busy] disables
+ * both while a follow is in flight.
  */
 @Composable
 internal fun ChannelJoinBar(
@@ -61,6 +65,8 @@ internal fun ChannelJoinBar(
                     modifier = Modifier
                         .widthIn(max = READING_WIDTH_CAP)
                         .fillMaxWidth()
+                        // Both buttons take the taller one's height when one label wraps.
+                        .height(IntrinsicSize.Min)
                         .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = bottomInset + 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -68,14 +74,14 @@ internal fun ChannelJoinBar(
                     OutlinedButton(
                         onClick = onReadWithoutJoining,
                         enabled = !busy,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp),
                     ) {
                         BarLabel(stringResource(R.string.follow_read_without_joining))
                     }
                     Button(
                         onClick = onJoin,
                         enabled = !busy,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp),
                     ) {
                         BarLabel(stringResource(R.string.channels_join))
                     }
