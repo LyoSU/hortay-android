@@ -356,13 +356,14 @@ private fun tokenTier(e: GuestChannelIndex.Entry, token: String): GuestMatchTier
     return null
 }
 
-private fun hasWordPrefix(text: String, token: String): Boolean {
-    if (text.startsWith(token)) return true
+private fun hasWordPrefix(text: String, token: String): Boolean = wordStartIndex(text, token) >= 0
+
+/** Index of the first occurrence of [needle] in [text] that starts a word, or -1. */
+private fun wordStartIndex(text: String, needle: String): Int {
     var from = 0
     while (true) {
-        val i = text.indexOf(token, from)
-        if (i < 0) return false
-        if (i == 0 || text[i - 1] == ' ') return true
+        val i = text.indexOf(needle, from)
+        if (i <= 0 || text[i - 1] == ' ') return i
         from = i + 1
     }
 }
@@ -373,18 +374,8 @@ private fun rangesOf(field: FoldedText, q: PreparedQuery): ImmutableList<IntRang
     val found = ArrayList<IntRange>()
     fun locate(needle: String, allowInfix: Boolean): Boolean {
         if (needle.isEmpty()) return false
-        var at = -1
-        var from = 0
-        while (true) {
-            val i = folded.indexOf(needle, from)
-            if (i < 0) break
-            if (i == 0 || folded[i - 1] == ' ') {
-                at = i
-                break
-            }
-            if (at < 0 && allowInfix) at = i
-            from = i + 1
-        }
+        var at = wordStartIndex(folded, needle)
+        if (at < 0 && allowInfix) at = folded.indexOf(needle)
         if (at < 0) return false
         found += field.originalRange(at, at + needle.length)
         return true
