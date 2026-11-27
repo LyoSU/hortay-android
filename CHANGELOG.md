@@ -11,6 +11,9 @@
 - Posts you read in guest mode now count in the channels' view counters, as on the t.me website — Settings → Privacy can turn this off.
 - The Channels tab can export your channel list as text or a file and import one back, and sharing channel links to Hortay offers to follow them.
 
+### Changed
+- A run of a channel's posts replying to the same post now reads as one thread joined by a thin line, instead of every post repeating the same reply quote.
+
 ## [0.13.0] — 2026-11-26
 
 ### Added

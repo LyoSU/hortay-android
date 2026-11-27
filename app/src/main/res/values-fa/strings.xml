@@ -793,6 +793,7 @@
     <string name="settings_archive_title">آرشیو پست</string>
     <string name="settings_logout_dialog_text_archive">بایگانی محلی پست‌های ویرایش‌شده و حذف‌شده برای همیشه پاک می‌شود. باید دوباره شماره و کد تأیید را وارد کنید</string>
     <string name="post_unread_state">خوانده‌نشده</string>
+    <string name="post_thread_continues">ادامهٔ رشتهٔ بالا</string>
     <string name="discover_add_channel">یافتن کانال‌ها</string>
     <string name="discover_search_hint">جستجوی کانال‌ها</string>
     <string name="discover_no_results">کانالی یافت نشد</string>

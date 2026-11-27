@@ -818,6 +818,7 @@
     <string name="settings_archive_title">Archive des publications</string>
     <string name="settings_logout_dialog_text_archive">Ton archive locale des publications modifiées et supprimées sera effacée définitivement. Tu devras entrer à nouveau ton numéro et ton code de confirmation</string>
     <string name="post_unread_state">Non lu</string>
+    <string name="post_thread_continues">Suite du fil ci-dessus</string>
     <string name="discover_add_channel">Trouver des chaînes</string>
     <string name="discover_search_hint">Rechercher des chaînes</string>
     <string name="discover_no_results">Aucune chaîne trouvée</string>

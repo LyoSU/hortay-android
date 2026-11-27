@@ -794,6 +794,7 @@
     <string name="settings_archive_title">Gönderi arşivi</string>
     <string name="settings_logout_dialog_text_archive">Düzenlenen ve silinen gönderilerin yerel arşivi kalıcı olarak silinecek. Numaran ve doğrulama kodunu yeniden girmek gerekecek</string>
     <string name="post_unread_state">Okunmadı</string>
+    <string name="post_thread_continues">Yukarıdaki dizinin devamı</string>
     <string name="discover_add_channel">Kanal bul</string>
     <string name="discover_search_hint">Kanal ara</string>
     <string name="discover_no_results">Kanal bulunamadı</string>

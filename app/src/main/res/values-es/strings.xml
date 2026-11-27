@@ -818,6 +818,7 @@
     <string name="settings_archive_title">Archivo de publicaciones</string>
     <string name="settings_logout_dialog_text_archive">Tu archivo local de publicaciones editadas y eliminadas se borrará para siempre. Tendrás que ingresar tu número y código de confirmación de nuevo</string>
     <string name="post_unread_state">No leído</string>
+    <string name="post_thread_continues">Continúa el hilo de arriba</string>
     <string name="discover_add_channel">Buscar canales</string>
     <string name="discover_search_hint">Buscar canales</string>
     <string name="discover_no_results">No se encontraron canales</string>

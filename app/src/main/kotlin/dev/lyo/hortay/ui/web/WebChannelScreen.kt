@@ -50,6 +50,7 @@ import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.FeedItem
 import dev.lyo.hortay.ui.timeline.openForwardSource
 import dev.lyo.hortay.ui.timeline.rememberReadAckDwell
+import dev.lyo.hortay.ui.timeline.withPostChains
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.data.isUnplayableVideo
 
@@ -199,7 +200,11 @@ fun WebChannelScreen(
     // LazyColumn keys against them — the LazyColumn below keys on [FeedItem.key] too.
     // Guest posts never carry a media-album id ([WebPostAdapter] sets 0), so the key
     // is the per-post `post_<chatId>_<id>` form and stays unique.
-    val feedItems = remember(orderedPosts) { orderedPosts.map { FeedItem.Post(it) } }
+    // Reply chains ([withPostChains]) as in the signed-in channel screen.
+    val feedItems = remember(orderedPosts, feedOrder) {
+        withPostChains(orderedPosts.map { FeedItem.Post(it) }, feedOrder.reverseLayout)
+            .filterIsInstance<FeedItem.Post>()
+    }
 
     // Read-ack dwell, shared with the guest feed and the TDLib channel screen: same
     // visibility gates (60 % on screen, list idle, lifecycle RESUMED) and dwell. A
@@ -346,7 +351,7 @@ fun WebChannelScreen(
         ) {
             // Keyed on [FeedItem.key] so the read-ack dwell above can match visible rows.
             items(items = feedItems, key = { it.key }) { item ->
-                PostCard(post = item.post, interactions = interactions)
+                PostCard(post = item.post, interactions = interactions, chain = item.chain)
             }
         }
     }

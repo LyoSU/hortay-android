@@ -328,7 +328,7 @@ fun ChannelScreen(
         boundaryCursors, cursorEpoch, recencyCutoffMs,
     ) {
         val source = if (searchActive) searchResults else posts
-        val postItems = source.map(FeedItem::Post)
+        val postItems = source.map { FeedItem.Post(it) }
         val withDivider = if (!searchActive && feedOrder == FeedOrder.OldestUnreadFirst) {
             withBoundary(
                 items = postItems,
@@ -339,7 +339,10 @@ fun ChannelScreen(
         } else {
             postItems
         }
-        withDivider.toPersistentList()
+        // Search results are matches, not a run of the channel's history: neighbours there
+        // are not consecutive posts, so they never chain.
+        val rows = if (searchActive) withDivider else withPostChains(withDivider, feedOrder.reverseLayout)
+        rows.toPersistentList()
     }
 
     // [ChannelUiState] is the single source of truth for what gets mounted on
@@ -1029,6 +1032,7 @@ fun ChannelScreen(
                                                         interactions = itemInteractions,
                                                         onTapRevisions = onTapRevisions,
                                                         showHostChannel = false,
+                                                        chain = item.chain,
                                                     )
                                                 }
                                             }
