@@ -349,6 +349,14 @@
         <item quantity="many">%d تعليقاً</item>
         <item quantity="other">%d تعليق</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="zero">عرض %d رد آخر</item>
+        <item quantity="one">عرض %d رد آخر</item>
+        <item quantity="two">عرض %d ردّين آخرين</item>
+        <item quantity="few">عرض %d ردود أخرى</item>
+        <item quantity="many">عرض %d ردًا آخر</item>
+        <item quantity="other">عرض %d رد آخر</item>
+    </plurals>
     <string name="comments_empty_title">لا تعليقات بعد</string>
     <string name="comments_open_original">المنشور الأصلي في %1$s</string>
     <string name="comments_empty_body">ستظهر التعليقات الجديدة هنا فور وصولها</string>

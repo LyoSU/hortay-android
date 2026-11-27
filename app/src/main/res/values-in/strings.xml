@@ -304,6 +304,9 @@
     <plurals name="comments_count">
         <item quantity="other">%d komentar</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="other">Tampilkan %d balasan lagi</item>
+    </plurals>
     <string name="comments_empty_title">Belum ada komentar</string>
     <string name="comments_open_original">Postingan asli di %1$s</string>
     <string name="comments_empty_body">Komentar baru akan muncul di sini saat tiba</string>

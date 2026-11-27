@@ -328,6 +328,12 @@
         <item quantity="many">%d коментарів</item>
         <item quantity="other">%d коментаря</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="one">Показати ще %d відповідь</item>
+        <item quantity="few">Показати ще %d відповіді</item>
+        <item quantity="many">Показати ще %d відповідей</item>
+        <item quantity="other">Показати ще %d відповіді</item>
+    </plurals>
     <string name="comments_empty_title">Поки немає коментарів</string>
     <string name="comments_open_original">Оригінальний пост у %1$s</string>
     <string name="comments_empty_body">Нові коментарі зʼявляться тут одразу після публікації</string>

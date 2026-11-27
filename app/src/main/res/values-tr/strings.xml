@@ -315,6 +315,10 @@
         <item quantity="one">%d yorum</item>
         <item quantity="other">%d yorum</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="one">%d yanıt daha göster</item>
+        <item quantity="other">%d yanıt daha göster</item>
+    </plurals>
     <string name="comments_empty_title">Henüz yorum yok</string>
     <string name="comments_open_original">Özgün gönderi: %1$s</string>
     <string name="comments_empty_body">Yeni yorumlar geldikçe burada görünecek</string>

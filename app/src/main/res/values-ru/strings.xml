@@ -333,6 +333,12 @@
         <item quantity="many">%d комментариев</item>
         <item quantity="other">%d комментариев</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="one">Показать ещё %d ответ</item>
+        <item quantity="few">Показать ещё %d ответа</item>
+        <item quantity="many">Показать ещё %d ответов</item>
+        <item quantity="other">Показать ещё %d ответа</item>
+    </plurals>
     <string name="comments_empty_title">Комментариев пока нет</string>
     <string name="comments_open_original">Оригинальный пост в %1$s</string>
     <string name="comments_empty_body">Новые комментарии появятся здесь по мере поступления</string>

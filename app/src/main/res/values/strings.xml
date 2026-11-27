@@ -316,6 +316,10 @@
         <item quantity="one">%d comment</item>
         <item quantity="other">%d comments</item>
     </plurals>
+    <plurals name="comments_more_replies">
+        <item quantity="one">Show %d more reply</item>
+        <item quantity="other">Show %d more replies</item>
+    </plurals>
     <string name="comments_empty_title">No comments yet</string>
     <string name="comments_open_original">Original post in %1$s</string>
     <string name="comments_empty_body">New comments will appear here as they arrive</string>
