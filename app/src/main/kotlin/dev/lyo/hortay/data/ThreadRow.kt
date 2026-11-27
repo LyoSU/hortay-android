@@ -16,3 +16,43 @@ data class ThreadRow(
     /** True if this row is the last sibling in its parent's reply list — drives connector lines. */
     val isLastSibling: Boolean,
 )
+
+/**
+ * Flattens a thread's comments into depth-first [ThreadRow]s: replies under the comment
+ * they answer (by [TimelinePost.parentId], after mapping album members through
+ * [redirect]), siblings by date, depth capped at [maxDepth]. A reply whose parent is the
+ * thread root ([rootMessageId]) or isn't in [posts] (deleted, or on a page not loaded)
+ * becomes a top-level row. Shared by the signed-in [CommentsRepository] and the guest-mode
+ * [dev.lyo.hortay.data.web.WebCommentsThread] so both screens thread comments identically.
+ */
+internal fun buildThreadRows(
+    posts: List<TimelinePost>,
+    rootMessageId: Long,
+    maxDepth: Int,
+    redirect: Map<Long, Long> = emptyMap(),
+): List<ThreadRow> {
+    if (posts.isEmpty()) return emptyList()
+    val ids = posts.mapTo(HashSet()) { it.id }
+    val children: Map<Long, List<TimelinePost>> = posts.groupBy { post ->
+        val canonicalReplyId = post.parentId?.let { redirect[it] ?: it }
+        if (canonicalReplyId != null && canonicalReplyId != rootMessageId && canonicalReplyId in ids) {
+            canonicalReplyId
+        } else {
+            0L
+        }
+    }
+    val rows = ArrayList<ThreadRow>(posts.size)
+    fun walk(parentId: Long, depth: Int) {
+        val siblings = children[parentId].orEmpty().sortedBy { it.date }
+        siblings.forEachIndexed { idx, msg ->
+            rows += ThreadRow(
+                message = msg,
+                depth = depth.coerceAtMost(maxDepth),
+                isLastSibling = idx == siblings.lastIndex,
+            )
+            walk(msg.id, depth + 1)
+        }
+    }
+    walk(0L, 0)
+    return rows
+}

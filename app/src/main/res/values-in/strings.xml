@@ -70,7 +70,10 @@
     <string name="web_settings_clear_cache_confirm_body">Menghapus kiriman kanal dan gambar yang di-cache secara lokal. Langganan dan kiriman tersimpan tetap ada. Konten akan dimuat ulang dari t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Hapus</string>
     <string name="web_settings_clear_cache_cancel">Batal</string>
-    <string name="web_comments_unavailable">Komentar tidak tersedia di mode tamu. Masuk untuk membacanya</string>
+    <string name="web_comments_not_shown">Telegram tidak menampilkan komentar postingan ini tanpa akun. Buka postingan di Telegram, atau masuk untuk membacanya di sini</string>
+    <string name="web_comments_load_failed_body">Tidak dapat mengambil komentar dari Telegram. Coba lagi, buka postingan di Telegram, atau masuk</string>
+    <string name="comments_show_earlier">Tampilkan komentar sebelumnya</string>
+    <string name="comments_earlier_failed">Tidak dapat memuat komentar sebelumnya. Ketuk untuk mencoba lagi</string>
     <string name="web_comments_unavailable_title">Komentar tidak tersedia</string>
     <string name="web_settings_privacy_title">Apa yang dilihat Telegram di mode ini</string>
     <string name="web_settings_privacy_body">IP dan User-Agent browser desktop. Tanpa cookie, tanpa akun, tanpa data pribadimu</string>

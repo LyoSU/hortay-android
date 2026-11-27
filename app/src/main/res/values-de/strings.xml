@@ -71,7 +71,10 @@
     <string name="web_settings_clear_cache_confirm_body">Lokal gecachte Beiträge und Bilder werden entfernt. Abonnements und gespeicherte Beiträge bleiben erhalten. Inhalte werden erneut von t.me geladen</string>
     <string name="web_settings_clear_cache_confirm_action">Löschen</string>
     <string name="web_settings_clear_cache_cancel">Abbrechen</string>
-    <string name="web_comments_unavailable">Kommentare sind im Gastmodus nicht verfügbar. Melde dich an, um sie zu lesen</string>
+    <string name="web_comments_not_shown">Telegram zeigt die Kommentare zu diesem Beitrag nicht ohne Konto. Öffne den Beitrag in Telegram oder melde dich an, um sie hier zu lesen</string>
+    <string name="web_comments_load_failed_body">Die Kommentare konnten nicht von Telegram geladen werden. Versuch es erneut, öffne den Beitrag in Telegram oder melde dich an</string>
+    <string name="comments_show_earlier">Frühere Kommentare anzeigen</string>
+    <string name="comments_earlier_failed">Frühere Kommentare konnten nicht geladen werden. Tippe, um es erneut zu versuchen</string>
     <string name="web_comments_unavailable_title">Kommentare nicht verfügbar</string>
     <string name="web_settings_privacy_title">Was Telegram in diesem Modus sieht</string>
     <string name="web_settings_privacy_body">Deine IP und ein Desktop-Browser-User-Agent. Keine Cookies, kein Konto, keine persönlichen Daten</string>

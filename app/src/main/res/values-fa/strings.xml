@@ -71,7 +71,10 @@
     <string name="web_settings_clear_cache_confirm_body">پست‌ها و تصاویر کش‌شده محلی حذف می‌شوند. اشتراک‌ها و پست‌های ذخیره‌شده نگه داشته می‌شوند. محتوا دوباره از t.me بارگذاری می‌شود</string>
     <string name="web_settings_clear_cache_confirm_action">پاک کردن</string>
     <string name="web_settings_clear_cache_cancel">انصراف</string>
-    <string name="web_comments_unavailable">نظرات در حالت مهمان در دسترس نیستند. برای خواندن آن‌ها وارد شوید</string>
+    <string name="web_comments_not_shown">تلگرام نظرات این پست را بدون حساب کاربری نشان نمی‌دهد. پست را در تلگرام باز کنید یا وارد شوید تا آن‌ها را اینجا بخوانید</string>
+    <string name="web_comments_load_failed_body">دریافت نظرات از تلگرام ممکن نشد. دوباره تلاش کنید، پست را در تلگرام باز کنید یا وارد شوید</string>
+    <string name="comments_show_earlier">نمایش نظرات قبلی</string>
+    <string name="comments_earlier_failed">بارگیری نظرات قبلی ممکن نشد. برای تلاش دوباره ضربه بزنید</string>
     <string name="web_comments_unavailable_title">نظرات در دسترس نیست</string>
     <string name="web_settings_privacy_title">Telegram در این حالت چه می‌بیند</string>
     <string name="web_settings_privacy_body">آدرس IP شما و یک User-Agent مرورگر دسکتاپ. بدون کوکی، بدون حساب، هیچ اطلاعات شخصی</string>

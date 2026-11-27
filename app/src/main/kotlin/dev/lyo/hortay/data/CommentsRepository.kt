@@ -74,7 +74,15 @@ class CommentsRepository(
 
     sealed interface ThreadState {
         data object Loading : ThreadState
-        data class Ready(val rows: ImmutableList<ThreadRow>, val threadChatId: Long) : ThreadState
+        /**
+         * [totalCount] is the thread's full size when only part of it is loaded (guest mode
+         * pages through the public widget); null means [rows] is the whole thread.
+         */
+        data class Ready(
+            val rows: ImmutableList<ThreadRow>,
+            val threadChatId: Long,
+            val totalCount: Int? = null,
+        ) : ThreadState
         data class Error(val message: String) : ThreadState
         /**
          * The thread exists but its history couldn't be fetched (network / rate limit) even
@@ -975,34 +983,10 @@ class CommentsRepository(
             }
         }
 
-        val mapped: Map<Long, TimelinePost> = merged.associateBy { it.id }
-
         // Group by parent. The conversation root (the channel-post mirror) becomes the
         // virtual depth-0 parent; ids that no longer exist in the thread (deleted /
         // out-of-window) collapse under it too.
-        val children: Map<Long, List<TimelinePost>> = merged.groupBy { post ->
-            val rawReplyId = post.parentId
-            val canonicalReplyId = rawReplyId?.let { redirect[it] ?: it }
-            if (canonicalReplyId != null && canonicalReplyId != rootMessageId && canonicalReplyId in mapped) {
-                canonicalReplyId
-            } else 0L
-        }
-
-        val rows = mutableListOf<ThreadRow>()
-        fun walk(parentId: Long, depth: Int) {
-            val siblings = children[parentId].orEmpty().sortedBy { it.date }
-            siblings.forEachIndexed { idx, msg ->
-                rows += ThreadRow(
-                    message = msg,
-                    depth = depth.coerceAtMost(MAX_DEPTH),
-                    isLastSibling = idx == siblings.lastIndex,
-                )
-                walk(msg.id, depth + 1)
-            }
-        }
-        walk(0L, 0)
-
-        return rows
+        return buildThreadRows(merged, rootMessageId, MAX_DEPTH, redirect)
     }
 
     /**

@@ -656,6 +656,15 @@ class AppGraph(context: Context) {
     val webClient: WebTelegramClient = WebTelegramClient(webHttpClient)
 
     /**
+     * Guest-mode comments through Telegram's public discussion widget — see the KDoc of
+     * [dev.lyo.hortay.data.web.WebDiscussionClient] for the endpoint and its degradation
+     * contract. Stateless; each comments screen builds its own
+     * [dev.lyo.hortay.data.web.WebCommentsThread] on top.
+     */
+    val webDiscussion: dev.lyo.hortay.data.web.WebDiscussionClient =
+        dev.lyo.hortay.data.web.WebDiscussionClient(dev.lyo.hortay.data.web.OkHttpDiscussionTransport(webHttpClient))
+
+    /**
      * Resolves Telegram custom-emoji ids to renderable TGS / WebM / WebP assets via
      * the public `/i/emoji/<id>.json` endpoint. Used by the anonymous-mode UI to
      * surface real custom-emoji reactions and inline-emoji animations — without it

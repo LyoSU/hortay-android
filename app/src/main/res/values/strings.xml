@@ -74,7 +74,10 @@
     <string name="web_settings_clear_cache_confirm_body">Removes locally cached channel posts and images. Subscriptions and saved posts are kept. Visible content will be refreshed from t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Clear</string>
     <string name="web_settings_clear_cache_cancel">Cancel</string>
-    <string name="web_comments_unavailable">Comments are unavailable in guest mode. Sign in to read them</string>
+    <string name="web_comments_not_shown">Telegram doesn\'t show this post\'s comments without an account. Open the post in Telegram, or sign in to read them here</string>
+    <string name="web_comments_load_failed_body">Couldn\'t get the comments from Telegram. Try again, open the post in Telegram, or sign in</string>
+    <string name="comments_show_earlier">Show earlier comments</string>
+    <string name="comments_earlier_failed">Couldn\'t load earlier comments. Tap to try again</string>
     <string name="web_comments_unavailable_title">Comments unavailable</string>
     <string name="web_settings_privacy_title">What Telegram sees in this mode</string>
     <string name="web_settings_privacy_body">Your IP and a desktop-browser User-Agent. No cookies, no account, nothing about you personally</string>

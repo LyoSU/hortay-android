@@ -71,7 +71,10 @@
     <string name="web_settings_clear_cache_confirm_body">Rimuove i post e le immagini in cache locale. Le iscrizioni e i post salvati vengono conservati. Il contenuto verrà ricaricato da t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Svuota</string>
     <string name="web_settings_clear_cache_cancel">Annulla</string>
-    <string name="web_comments_unavailable">I commenti non sono disponibili in modalità ospite. Accedi per leggerli</string>
+    <string name="web_comments_not_shown">Telegram non mostra i commenti di questo post senza un account. Apri il post in Telegram o accedi per leggerli qui</string>
+    <string name="web_comments_load_failed_body">Impossibile ottenere i commenti da Telegram. Riprova, apri il post in Telegram o accedi</string>
+    <string name="comments_show_earlier">Mostra commenti precedenti</string>
+    <string name="comments_earlier_failed">Impossibile caricare i commenti precedenti. Tocca per riprovare</string>
     <string name="web_comments_unavailable_title">Commenti non disponibili</string>
     <string name="web_settings_privacy_title">Cosa vede Telegram in questa modalità</string>
     <string name="web_settings_privacy_body">Il tuo IP e un User-Agent da browser desktop. Nessun cookie, nessun account, niente di personale</string>

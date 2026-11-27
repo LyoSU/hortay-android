@@ -51,7 +51,7 @@ Hortay signs in to the same account through [TDLib](https://github.com/tdlib/td)
 
 **Guest mode**
 
-No account needed, public channels only. The app reads the `t.me/s/<channel>` previews and keeps your follows, bookmarks and read positions on the device. Reactions and comments need signing in.
+No account needed, public channels only. The app reads the `t.me/s/<channel>` previews and keeps your follows, bookmarks and read positions on the device. You can read a post's comments too; reacting and commenting need signing in.
 
 **And also**
 
@@ -66,7 +66,7 @@ No account needed, public channels only. The app reads the `t.me/s/<channel>` pr
 No analytics, no crash reporting, no ads, no third-party push. The app makes network requests to three places:
 
 - Telegram, through TDLib, when you are signed in.
-- `t.me/s/` in guest mode, anonymously.
+- `t.me` in guest mode, anonymously: the `t.me/s/` channel previews, and a post's comments through Telegram's public comments widget when you open the post.
 - `cdn.jsdelivr.net`, to fetch the public [list of suggested channels](suggestions.json) from this repository. No user data is sent, though the CDN sees the request's IP address.
 
 The post archive, bookmarks and settings never leave the device.

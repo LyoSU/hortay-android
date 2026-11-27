@@ -66,6 +66,8 @@ import dev.lyo.hortay.data.nav.ArchiveSettingsKey
 import dev.lyo.hortay.data.nav.ChannelKey
 import dev.lyo.hortay.data.nav.ChannelMediaKey
 import dev.lyo.hortay.data.nav.CommentsKey
+import dev.lyo.hortay.data.web.WebCommentsThread
+import dev.lyo.hortay.data.toStringResolver
 import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.nav.WebChannelKey
 import dev.lyo.hortay.data.web.WebPostAdapter
@@ -106,7 +108,7 @@ private val FLOATING_NAV_BAR_CLEARANCE = 76.dp
  * Navigation is the SAME Navigation 3 model MainScaffold uses (migration stage 5):
  * a single [NavDisplay] over the shared [AppGraph.backStack], with [HomeKey] rendering
  * the tab scaffold beneath and detail keys pushing on top. Guest mode only ever pushes
- * [WebChannelKey] (channel drill) and [CommentsKey] (post detail, disabled-comments hero);
+ * [WebChannelKey] (channel drill) and [CommentsKey] (post detail with its read-only comments);
  * the auth-mode keys are owned by MainScaffold. Because the back stack is shared and the
  * two scaffolds never compose simultaneously ([dev.lyo.hortay.MainActivity] routes between
  * them), the entryProvider here also carries self-healing no-op entries for the auth-mode
@@ -323,30 +325,14 @@ fun WebModeScaffold(graph: AppGraph) {
             WebPostAdapter.stableChatId(it.info.username) == chatId
         }?.info?.username
     }
-    // Post-tap in guest mode opens the same post-detail surface TDLib mode
-    // uses — [CommentsScreen] with the frozen anchor pinned at the top — but
-    // with an empty-state hero in place of the thread body explaining why
-    // replies aren't reachable here. Reuses the auth-mode [CommentsKey] entry:
-    // same nav-stack mechanics (predictive back, saveable state), same screen,
-    // just a [CommentsDisabledOverride] supplied below so the screen
-    // short-circuits its repository wiring. Previous behaviour was a bare
-    // snackbar with the same copy — kept the user from getting to the post
-    // detail at all.
-    val commentsDisabledTitle = stringResource(R.string.web_comments_unavailable_title)
-    val commentsDisabledBody = stringResource(R.string.web_comments_unavailable)
-    val commentsDisabledAction = stringResource(R.string.action_sign_in)
-    val webCommentsOverride = remember(commentsDisabledTitle, commentsDisabledBody, commentsDisabledAction) {
-        dev.lyo.hortay.ui.comments.CommentsDisabledOverride(
-            symbol = "chat_bubble",
-            title = commentsDisabledTitle,
-            body = commentsDisabledBody,
-            actionLabel = commentsDisabledAction,
-            // Flipping guestMode → false triggers MainActivity to re-route to
-            // AuthScreen. Same path as the deep-link snackbar SignIn action,
-            // just surfaced inline in the comments-empty hero where the user
-            // actually hit the wall.
-            onAction = { scope.launch { graph.guestMode.setGuest(false) } },
-        )
+    // Post-tap in guest mode opens the same post-detail surface TDLib mode uses —
+    // [CommentsScreen] with the frozen anchor pinned at the top and the comments read
+    // through Telegram's public discussion widget ([dev.lyo.hortay.data.web.WebCommentsThread]).
+    // Read-only: reaction taps and poll votes keep the sign-in nudge, and the screen's
+    // failure states offer this same Sign in. Flipping guestMode → false makes
+    // MainActivity re-route to AuthScreen — the deep-link snackbar's SignIn path.
+    val onGuestSignIn: () -> Unit = remember(graph, scope) {
+        { scope.launch { graph.guestMode.setGuest(false) } }
     }
     val onGuestPostClick: (TimelinePost) -> Unit = remember(graph) {
         { post -> backStack.add(CommentsKey(anchor = post)) }
@@ -717,17 +703,11 @@ fun WebModeScaffold(graph: AppGraph) {
                         }
 
                         entry<CommentsKey> { key ->
-                            dev.lyo.hortay.ui.comments.CommentsScreen(
+                            GuestCommentsEntry(
                                 post = key.anchor,
-                                // Guest mode has no TDLib session → no CommentsRepository, no
-                                // PostsRepository.posts to live-sync the anchor against. The screen
-                                // renders the frozen CommentsKey snapshot and shows the
-                                // [webCommentsOverride] empty-state hero in place of the thread body.
-                                repo = null,
-                                feedRepo = null,
+                                graph = graph,
                                 onDismiss = { popNav() },
-                                disabledOverride = webCommentsOverride,
-                                bookmarks = graph.bookmarkStore,
+                                onSignIn = onGuestSignIn,
                             )
                         }
 
@@ -798,4 +778,49 @@ fun WebModeScaffold(graph: AppGraph) {
         }
     }
     }
+}
+
+/**
+ * Guest-mode post detail: [dev.lyo.hortay.ui.comments.CommentsScreen] over a
+ * [WebCommentsThread] for the post's channel. Guest mode has no TDLib session, so there is
+ * no CommentsRepository and no PostsRepository to live-sync the anchor against — the
+ * frozen CommentsKey snapshot is the anchor, and the thread comes from the public widget.
+ *
+ * The thread lives in this entry's composition scope: leaving the screen cancels its
+ * requests and its live poll. A post without a channel handle (never produced by the
+ * guest adapter) gets no thread and the screen shows its failure state.
+ */
+@Composable
+private fun GuestCommentsEntry(
+    post: TimelinePost,
+    graph: dev.lyo.hortay.AppGraph,
+    onDismiss: () -> Unit,
+    onSignIn: () -> Unit,
+) {
+    val threadScope = rememberCoroutineScope()
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+    val channel = post.senderHandle?.removePrefix("@")?.lowercase()
+    val thread = remember(channel, post.id) {
+        channel?.let {
+            WebCommentsThread(
+                client = graph.webDiscussion,
+                channel = it,
+                postId = post.id,
+                strings = resources.toStringResolver(),
+                scope = threadScope,
+            )
+        }
+    }
+    val reactionNudge = dev.lyo.hortay.ui.timeline.rememberGuestReactionNudge()
+    dev.lyo.hortay.ui.comments.CommentsScreen(
+        post = post,
+        repo = null,
+        feedRepo = null,
+        onDismiss = onDismiss,
+        bookmarks = graph.bookmarkStore,
+        onReactionToggle = { _, _, _, _, _ -> reactionNudge() },
+        onPollVote = { _, _, _ -> reactionNudge() },
+        guestThread = thread,
+        onSignIn = onSignIn,
+    )
 }

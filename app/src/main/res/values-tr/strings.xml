@@ -71,7 +71,10 @@
     <string name="web_settings_clear_cache_confirm_body">Yerel olarak önbelleğe alınan kanal gönderileri ve görseller silinir. Abonelikler ve kaydedilen gönderiler korunur. Görünen içerik t.me\'den yeniden yüklenir</string>
     <string name="web_settings_clear_cache_confirm_action">Temizle</string>
     <string name="web_settings_clear_cache_cancel">İptal</string>
-    <string name="web_comments_unavailable">Yorumlar misafir modunda kullanılamaz. Okumak için giriş yap</string>
+    <string name="web_comments_not_shown">Telegram bu gönderinin yorumlarını hesap olmadan göstermiyor. Gönderiyi Telegram\'da aç ya da burada okumak için giriş yap</string>
+    <string name="web_comments_load_failed_body">Yorumlar Telegram\'dan alınamadı. Tekrar dene, gönderiyi Telegram\'da aç ya da giriş yap</string>
+    <string name="comments_show_earlier">Önceki yorumları göster</string>
+    <string name="comments_earlier_failed">Önceki yorumlar yüklenemedi. Tekrar denemek için dokun</string>
     <string name="web_comments_unavailable_title">Yorumlar kullanılamıyor</string>
     <string name="web_settings_privacy_title">Bu modda Telegram ne görüyor</string>
     <string name="web_settings_privacy_body">IP adresin ve masaüstü tarayıcı User-Agent\'ı. Çerez, hesap veya kişisel bilgi yok</string>

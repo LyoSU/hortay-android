@@ -73,7 +73,10 @@
     <string name="web_settings_clear_cache_confirm_body">Usuwa lokalnie zbuforowane wpisy i obrazy z kanałów. Subskrypcje i zapisane wpisy zostaną. Widoczne treści zostaną odświeżone z t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Wyczyść</string>
     <string name="web_settings_clear_cache_cancel">Anuluj</string>
-    <string name="web_comments_unavailable">Komentarze są niedostępne w trybie gościa. Zaloguj się, żeby je czytać</string>
+    <string name="web_comments_not_shown">Telegram nie pokazuje komentarzy do tego posta bez konta. Otwórz post w Telegramie albo zaloguj się, żeby czytać je tutaj</string>
+    <string name="web_comments_load_failed_body">Nie udało się pobrać komentarzy z Telegrama. Spróbuj ponownie, otwórz post w Telegramie albo zaloguj się</string>
+    <string name="comments_show_earlier">Pokaż wcześniejsze komentarze</string>
+    <string name="comments_earlier_failed">Nie udało się wczytać wcześniejszych komentarzy. Stuknij, żeby spróbować ponownie</string>
     <string name="web_comments_unavailable_title">Komentarze niedostępne</string>
     <string name="web_settings_privacy_title">Co Telegram widzi w tym trybie</string>
     <string name="web_settings_privacy_body">Twój adres IP i User-Agent przeglądarki desktopowej. Żadnych ciasteczek, konta ani danych osobowych</string>
