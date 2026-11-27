@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Leer sin unirte</string>
+    <string name="follow_stop_reading">Dejar de leer</string>
+    <string name="follow_stop_reading_channel">Dejar de leer este canal</string>
+    <string name="follow_not_joined">Sin unirte</string>
+    <string name="follow_not_joined_with_meta">Sin unirte · %1$s</string>
+    <string name="follow_added">Añadido a tu feed</string>
+    <string name="follow_added_at_limit">Añadido a tu feed: has llegado al límite de %d canales que lees sin unirte</string>
+    <string name="follow_limit_reached">Puedes leer hasta %d canales sin unirte. Únete a los que más lees para hacer sitio.</string>
+    <string name="follow_failed">Este canal no se puede leer sin unirte: puede que sea privado o no esté disponible</string>
+    <string name="follow_stopped">Has dejado de leer %1$s</string>
+    <string name="follow_unavailable">No se puede actualizar: puede que el canal ahora sea privado</string>
+    <string name="follow_tip_title">Leer sin unirte</string>
+    <string name="follow_tip_body">Las publicaciones nuevas de los canales que lees sin unirte pueden llegar con unos minutos de retraso. Desliza hacia abajo para actualizar y verlas al momento.</string>
+    <string name="follow_delay_note">Las publicaciones nuevas pueden llegar con unos minutos de retraso.</string>
+    <string name="follow_row_actions">Acciones del canal</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Añadido a tu feed: puedes leer %d canal más sin unirte</item>
+        <item quantity="other">Añadido a tu feed: puedes leer %d canales más sin unirte</item>
+    </plurals>
+</resources>

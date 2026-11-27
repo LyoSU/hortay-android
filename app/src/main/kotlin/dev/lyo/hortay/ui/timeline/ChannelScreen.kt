@@ -79,6 +79,13 @@ import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
+import dev.lyo.hortay.ui.channels.ChannelJoinState
+import dev.lyo.hortay.ui.channels.FollowDelayTipDialog
+import dev.lyo.hortay.ui.channels.FollowedChannelsUi
+import dev.lyo.hortay.ui.channels.rememberFollowController
+import dev.lyo.hortay.data.subscriptions.FollowedChannels.FollowResult
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
@@ -198,6 +205,12 @@ fun ChannelScreen(
     archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
     /** Companion to [archiveRepository]: renders archived media sharp in the revision sheet. */
     archiveMediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver? = null,
+    /**
+     * "Read without joining" (signed-in only). When non-null, a public channel the account
+     * has not joined shows a bottom bar with Join and "Read without joining", and the info
+     * sheet offers the same choice. Null hides all of it.
+     */
+    followedUi: FollowedChannelsUi? = null,
 ) {
     // Per-channel VM. viewModel() keys the instance by (class, key), so each chatId
     // gets its own VM rather than sharing the all-feed TimelineViewModel. The factory is
@@ -205,7 +218,7 @@ fun ChannelScreen(
     // with the same key reuse the existing instance regardless of the factory parameter.
     val vm: ChannelViewModel = viewModel(
         key = "channel:$chatId",
-        factory = remember(repo, channels, bookmarks, chatId, scrollToMessage) {
+        factory = remember(repo, channels, bookmarks, chatId, scrollToMessage, followedUi) {
             viewModelFactory {
                 initializer {
                     ChannelViewModel(
@@ -214,6 +227,8 @@ fun ChannelScreen(
                         bookmarks = bookmarks,
                         chatId = chatId,
                         scrollToMessageId = scrollToMessage?.second,
+                        membershipOf = followedUi?.actions?.let { actions -> { id: Long -> actions.membership(id) } },
+                        followedIds = followedUi?.store?.ids,
                     )
                 }
             }
@@ -243,6 +258,8 @@ fun ChannelScreen(
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val pinned by vm.pinned.collectAsStateWithLifecycle()
     val searchResults by vm.searchResults.collectAsStateWithLifecycle()
+    val joinState by vm.joinState.collectAsStateWithLifecycle()
+    val follow = rememberFollowController(followedUi)
     val translationsMap = translations.translations.collectAsStateWithLifecycle().value
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -251,6 +268,10 @@ fun ChannelScreen(
 
     // Info sheet: hoisted local state, dismissed by setting false.
     var infoSheetVisible by remember { mutableStateOf(false) }
+    // Measured height of [ChannelJoinBar] while it is (or animates) on screen; lifts the
+    // jump button and the list's bottom padding clear of it.
+    var joinBarHeight by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
 
     // Revision sheet target: the post whose "edited" chip (or tombstone body) was tapped.
     // Same shape as [TimelineScreen]'s `revisionsForPost`; rendered at the end of this body.
@@ -761,6 +782,7 @@ fun ChannelScreen(
                 ChannelTopBar(
                     channelTitle = channelTitle,
                     channelSubscribers = channelSubscribers,
+                    notJoined = joinState == ChannelJoinState.Followed,
                     channelAvatarFileId = channelAvatarFileId,
                     channelAvatarThumb = channelAvatarThumb,
                     searchActive = searchActive,
@@ -973,7 +995,9 @@ fun ChannelScreen(
                                 reverseLayout = feedOrder.reverseLayout,
                                 contentPadding = PaddingValues(
                                     top = 8.dp,
-                                    bottom = contentPadding.calculateBottomPadding(),
+                                    // The join bar draws over the nav-bar inset itself, so
+                                    // it replaces that padding rather than adding to it.
+                                    bottom = maxOf(contentPadding.calculateBottomPadding(), joinBarHeight),
                                 ),
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
@@ -1077,7 +1101,10 @@ fun ChannelScreen(
                             },
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(end = 16.dp, bottom = contentPadding.calculateBottomPadding() + 16.dp),
+                                .padding(
+                                    end = 16.dp,
+                                    bottom = maxOf(contentPadding.calculateBottomPadding(), joinBarHeight) + 16.dp,
+                                ),
                         )
                         // Cover the seeded-at-bottom mount until the boundary is
                         // repositioned (see [rememberBoundaryReveal]). Reuses the
@@ -1091,6 +1118,27 @@ fun ChannelScreen(
                     }
                 }
             }
+            // Public channel the account hasn't joined: Join or read it without joining.
+            // Hidden while searching — the search field's keyboard would push it into the
+            // way, and the bar is about the channel, not the results.
+            ChannelJoinBar(
+                visible = follow != null && joinState == ChannelJoinState.NotJoined && !searchActive,
+                busy = follow?.isBusy(chatId) == true,
+                bottomInset = contentPadding.calculateBottomPadding(),
+                onJoin = {
+                    scope.launch {
+                        if (channelActions.joinChat(chatId)) vm.recheckMembership()
+                    }
+                },
+                onReadWithoutJoining = {
+                    follow?.follow(chatId) { result ->
+                        if (result == FollowResult.AlreadyMember) vm.recheckMembership()
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .onSizeChanged { joinBarHeight = with(density) { it.height.toDp() } },
+            )
         }
     }
 
@@ -1098,6 +1146,9 @@ fun ChannelScreen(
         ChannelInfoSheet(
             chatId = chatId,
             actions = channelActions,
+            follow = follow,
+            isFollowed = joinState == ChannelJoinState.Followed,
+            onMembershipChanged = vm::recheckMembership,
             onDismiss = { infoSheetVisible = false },
             onReport = onReportChannel,
             ignoredChannels = ignoredChannels,
@@ -1108,6 +1159,8 @@ fun ChannelScreen(
             avatarThumb = channelAvatarThumb,
         )
     }
+
+    if (follow?.tipVisible == true) FollowDelayTipDialog(onDismiss = follow::dismissTip)
 
     // Revision sheet — mirrors [TimelineScreen]'s block, including the remembered Flow:
     // observeRevisions builds a fresh SQLDelight Flow per call and collectAsState keys on
@@ -1233,6 +1286,8 @@ private fun ChannelJumpButton(
 private fun ChannelTopBar(
     channelTitle: String?,
     channelSubscribers: Int?,
+    /** Read without joining: the subtitle leads with a quiet "Not joined". */
+    notJoined: Boolean,
     channelAvatarFileId: Int?,
     channelAvatarThumb: ByteArray?,
     searchActive: Boolean,
@@ -1323,8 +1378,13 @@ private fun ChannelTopBar(
                 windowInsets = barInsets,
             )
         } else {
-            val subtitleText = channelSubscribers?.let {
+            val subscribersText = channelSubscribers?.let {
                 stringResource(R.string.timeline_subscribers, formatSubscribers(it))
+            }
+            val subtitleText = when {
+                !notJoined -> subscribersText
+                subscribersText == null -> stringResource(R.string.follow_not_joined)
+                else -> stringResource(R.string.follow_not_joined_with_meta, subscribersText)
             }
             // Telegram / X chat-screen header convention: avatar + name on the
             // first line, subscribers on the second, entire title row tappable

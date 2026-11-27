@@ -292,6 +292,11 @@ fun TimelineScreen(
      * leads with it and keeps "Open Telegram" as a secondary action. Signed-in feed only.
      */
     onAddChannel: (() -> Unit)? = null,
+    /**
+     * "Read without joining" (signed-in feed only): a followed channel's hide sheet also
+     * offers "Stop reading this channel". Null in guest mode and the Saved tab.
+     */
+    followedUi: dev.lyo.hortay.ui.channels.FollowedChannelsUi? = null,
 ) {
     // Holders read by long-lived LaunchedEffects (home-tap, scope-switch) so
     // their captures stay live across recomposition without restarting the
@@ -1499,6 +1504,11 @@ fun TimelineScreen(
     // on the data layer, just on the UI side.
     val guestReactionNudge = rememberGuestReactionNudge()
     var hideChannelTarget by remember { mutableStateOf<TimelinePost?>(null) }
+    val follow = dev.lyo.hortay.ui.channels.rememberFollowController(followedUi)
+    val followedIdsFlow = remember(followedUi) {
+        followedUi?.store?.ids ?: kotlinx.coroutines.flow.MutableStateFlow(emptySet<Long>())
+    }
+    val followedIds by followedIdsFlow.collectAsStateWithLifecycle()
     hideChannelTarget?.let { target ->
         val bus = LocalUserMessageBus.current
         val channelName = target.channelContext?.name ?: target.senderName
@@ -1507,6 +1517,14 @@ fun TimelineScreen(
         HideChannelSheet(
             channelName = channelName,
             onDismiss = { hideChannelTarget = null },
+            onStopReading = if (follow != null && target.chatId in followedIds) {
+                {
+                    hideChannelTarget = null
+                    follow.stopReading(target.chatId, channelName)
+                }
+            } else {
+                null
+            },
             onPick = { duration ->
                 hideChannelTarget = null
                 val store = ignoredChannels ?: return@HideChannelSheet

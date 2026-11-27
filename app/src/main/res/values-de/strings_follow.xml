@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Ohne Abo lesen</string>
+    <string name="follow_stop_reading">Nicht mehr lesen</string>
+    <string name="follow_stop_reading_channel">Diesen Kanal nicht mehr lesen</string>
+    <string name="follow_not_joined">Nicht abonniert</string>
+    <string name="follow_not_joined_with_meta">Nicht abonniert · %1$s</string>
+    <string name="follow_added">Zum Feed hinzugefügt</string>
+    <string name="follow_added_at_limit">Zum Feed hinzugefügt – das Limit von %d Kanälen ohne Abo ist erreicht</string>
+    <string name="follow_limit_reached">Du kannst bis zu %d Kanäle ohne Abo lesen. Abonniere die, die du am meisten liest, um Platz zu schaffen.</string>
+    <string name="follow_failed">Dieser Kanal lässt sich nicht ohne Abo lesen – vielleicht ist er privat oder nicht verfügbar</string>
+    <string name="follow_stopped">%1$s wird nicht mehr gelesen</string>
+    <string name="follow_unavailable">Aktualisierung nicht möglich – der Kanal ist jetzt vielleicht privat</string>
+    <string name="follow_tip_title">Lesen ohne Abo</string>
+    <string name="follow_tip_body">Neue Beiträge von Kanälen, die du ohne Abo liest, können ein paar Minuten später ankommen. Zum Aktualisieren nach unten ziehen, um sie sofort zu prüfen.</string>
+    <string name="follow_delay_note">Neue Beiträge können ein paar Minuten später ankommen.</string>
+    <string name="follow_row_actions">Kanalaktionen</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Zum Feed hinzugefügt – du kannst noch %d Kanal ohne Abo lesen</item>
+        <item quantity="other">Zum Feed hinzugefügt – du kannst noch %d Kanäle ohne Abo lesen</item>
+    </plurals>
+</resources>

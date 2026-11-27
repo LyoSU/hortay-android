@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Читать без подписки</string>
+    <string name="follow_stop_reading">Больше не читать</string>
+    <string name="follow_stop_reading_channel">Больше не читать этот канал</string>
+    <string name="follow_not_joined">Без подписки</string>
+    <string name="follow_not_joined_with_meta">Без подписки · %1$s</string>
+    <string name="follow_added">Добавлено в ленту</string>
+    <string name="follow_added_at_limit">Добавлено в ленту — это предел: без подписки можно читать до %d каналов</string>
+    <string name="follow_limit_reached">Без подписки можно читать до %d каналов. Подпишись на те, что читаешь чаще всего, чтобы освободить место.</string>
+    <string name="follow_failed">Этот канал нельзя читать без подписки — возможно, он приватный или недоступен</string>
+    <string name="follow_stopped">Чтение «%1$s» остановлено</string>
+    <string name="follow_unavailable">Не удаётся обновить — возможно, канал теперь приватный</string>
+    <string name="follow_tip_title">Чтение без подписки</string>
+    <string name="follow_tip_body">Новые посты из каналов без подписки могут появляться на несколько минут позже. Потяни ленту вниз, чтобы проверить их сразу.</string>
+    <string name="follow_delay_note">Новые посты могут появляться на несколько минут позже.</string>
+    <string name="follow_row_actions">Действия с каналом</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Добавлено в ленту — без подписки можно читать ещё %d канал</item>
+        <item quantity="few">Добавлено в ленту — без подписки можно читать ещё %d канала</item>
+        <item quantity="many">Добавлено в ленту — без подписки можно читать ещё %d каналов</item>
+        <item quantity="other">Добавлено в ленту — без подписки можно читать ещё %d канала</item>
+    </plurals>
+</resources>

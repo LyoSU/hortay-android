@@ -25,6 +25,7 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.ui.channels.AddChannelTdSheet
 import dev.lyo.hortay.ui.channels.ChannelsScreen
+import dev.lyo.hortay.ui.channels.followedChannelsUi
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +72,7 @@ internal fun TabContentSwitcher(
     onSearchClick: (() -> Unit)? = null,
 ) {
     val groupFeed by graph.groupFeedState.collectAsStateWithLifecycle()
+    val followedUi = remember(graph) { graph.followedChannelsUi() }
     val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     val res = androidx.compose.ui.platform.LocalContext.current.resources
 
@@ -151,8 +153,10 @@ internal fun TabContentSwitcher(
                             archiveMediaResolver = graph.archivedMediaResolver,
                             onSearchClick = onSearchClick,
                             onAddChannel = { addSheetOpen = true },
+                            followedUi = followedUi,
                         )
                         if (addSheetOpen) {
+                            val followedIds by graph.followedChannelsStore.ids.collectAsStateWithLifecycle()
                             AddChannelTdSheet(
                                 suggestionsRepo = graph.channelSuggestions,
                                 discovery = graph.channelDiscovery,
@@ -164,6 +168,7 @@ internal fun TabContentSwitcher(
                                     addSheetOpen = false
                                     onPushChannel(chatId, null)
                                 },
+                                followedIds = followedIds,
                             )
                         }
                     }

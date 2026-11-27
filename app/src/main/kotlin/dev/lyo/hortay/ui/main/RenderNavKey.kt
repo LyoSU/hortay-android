@@ -4,6 +4,7 @@ package dev.lyo.hortay.ui.main
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -27,6 +28,7 @@ import dev.lyo.hortay.ui.archive.ArchiveViewModel
 import dev.lyo.hortay.ui.archive.openArchiveEntryInTelegram
 import dev.lyo.hortay.ui.channels.ChannelMediaScreen
 import dev.lyo.hortay.ui.channels.ChannelMediaViewModel
+import dev.lyo.hortay.ui.channels.followedChannelsUi
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.timeline.ChannelScreen
 import dev.lyo.hortay.ui.timeline.openForwardSource
@@ -96,6 +98,7 @@ internal fun RenderNavKey(
             startupPhase = graph.startupCoordinator.phase,
             archiveRepository = graph.archiveRepository,
             archiveMediaResolver = graph.archivedMediaResolver,
+            followedUi = remember(graph) { graph.followedChannelsUi() },
         )
 
         is CommentsKey -> CommentsScreen(

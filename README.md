@@ -33,6 +33,7 @@ Hortay signs in to the same account through [TDLib](https://github.com/tdlib/td)
 - One feed for all channels. Newest first, or chat-style: read posts above, unread below, and you land on the first unread one.
 - A post counts as read after it has stayed on screen for a moment, not when you scroll past it, and the read state goes back to Telegram.
 - Tabs for your Telegram folders and the archive.
+- Read a public channel without joining it: its posts come into the feed like any other.
 - A burst of posts from one channel folds under the first one. A post forwarded by several of your channels shows once.
 - Search across all channels, and a Saved tab for bookmarks.
 

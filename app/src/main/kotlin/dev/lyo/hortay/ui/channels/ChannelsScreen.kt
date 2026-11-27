@@ -69,7 +69,9 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -126,6 +128,11 @@ import androidx.compose.ui.text.intl.Locale
  *   ignored-filtered [PostsRepository.subscribedPosts]), so hidden channels DO appear here and
  *   would otherwise be indistinguishable; the trailing `visibility_off` toggle marks them and
  *   flips the state optimistically (the DataStore-backed flow re-emits immediately).
+ * - **Read without joining** — followed channels are unioned in from the followed store
+ *   ([channelSummaries]), so one with no post in the slice (just followed, Unavailable) still
+ *   has a row. Their unread badge counts slice posts above the local cursor — Telegram keeps
+ *   no unread count for a non-member — and they sit under the "Not joined" chip. A long-press
+ *   offers Join and Stop reading; the subtitle changes only for an Unavailable channel.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -136,7 +143,27 @@ fun ChannelsScreen(
     onChannelClick: (chatId: Long) -> Unit,
 ) {
     val posts by repo.posts.collectAsStateWithLifecycle()
-    val channels = remember(posts) { aggregate(posts) }
+    val followed by graph.followedChannelsStore.channels.collectAsStateWithLifecycle()
+    val followUi = remember(graph) { graph.followedChannelsUi() }
+    val follow = rememberFollowController(followUi)
+    val baseChannels = remember(posts, followed) { channelSummaries(posts, followed) }
+    // A followed channel with no post in the slice has no avatar source in the feed; its
+    // photo comes from TDLib's local chat object instead (no request).
+    val photoless = remember(baseChannels) {
+        baseChannels.filter { it.isFollowed && it.avatarFileId == null && it.avatarThumb == null }.map { it.chatId }
+    }
+    val followedPhotos by produceState(emptyMap<Long, Pair<Int?, ByteArray?>>(), photoless) {
+        value = photoless.mapNotNull { id -> graph.channelDirectory.chatAvatar(id)?.let { id to it } }.toMap()
+    }
+    val channels = remember(baseChannels, followedPhotos) {
+        if (followedPhotos.isEmpty()) {
+            baseChannels
+        } else {
+            baseChannels.map { ch ->
+                followedPhotos[ch.chatId]?.let { (fileId, thumb) -> ch.copy(avatarFileId = fileId, avatarThumb = thumb) } ?: ch
+            }
+        }
+    }
     val unreadCounts by repo.chatUnreadCounts.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(ChannelsFilter.All) }
@@ -158,10 +185,15 @@ fun ChannelsScreen(
                 channels.filter { ch ->
                     when (f) {
                         ChannelsFilter.All -> true
-                        ChannelsFilter.Unread -> (unreadCounts[ch.chatId] ?: 0) > 0 ||
-                            (ch.lastPostId > 0L && ch.lastPostId.isUnreadAgainst(cursors[ch.chatId]))
+                        ChannelsFilter.Unread -> if (ch.isFollowed) {
+                            followedUnreadCount(ch, cursors[ch.chatId]) > 0
+                        } else {
+                            (unreadCounts[ch.chatId] ?: 0) > 0 ||
+                                (ch.lastPostId > 0L && ch.lastPostId.isUnreadAgainst(cursors[ch.chatId]))
+                        }
                         ChannelsFilter.Today -> ch.lastPostDate >= dayAgo
                         ChannelsFilter.Hidden -> ch.chatId in hiddenChatIds
+                        ChannelsFilter.NotJoined -> ch.isFollowed
                     }
                 }
             }
@@ -380,15 +412,33 @@ fun ChannelsScreen(
                             Unit
                         }
                     }
+                    // Followed rows: Telegram keeps no unread count for a non-member, so the
+                    // badge counts slice posts above the local cursor instead.
+                    val unreadCount = if (ch.isFollowed) {
+                        followedUnreadCount(ch, cursors[ch.chatId])
+                    } else {
+                        unreadCounts[ch.chatId] ?: 0
+                    }
+                    val followActions = if (ch.isFollowed && follow != null) {
+                        remember(ch.chatId, ch.title, follow) {
+                            FollowedRowActions(
+                                onJoin = { graph.session.scope.launch { graph.channelActions.joinChat(ch.chatId) } },
+                                onStopReading = { follow.stopReading(ch.chatId, ch.title) },
+                            )
+                        }
+                    } else {
+                        null
+                    }
                     ChannelRow(
                         channel = ch,
                         index = index,
                         count = shown.size,
                         isHidden = isHidden,
                         isUnread = isUnread,
-                        unreadCount = unreadCounts[ch.chatId] ?: 0,
+                        unreadCount = unreadCount,
                         onClick = onClick,
                         onHideToggle = onHideToggle,
+                        followActions = followActions,
                         modifier = Modifier.animateItem(),
                     )
                 }
@@ -409,65 +459,13 @@ fun ChannelsScreen(
                 addSheetOpen = false
                 onChannelClick(chatId)
             },
+            followedIds = followed.keys,
         )
     }
 }
 
 /** True when the newest post id sits above the chat's read cursor (null cursor → read). */
 private fun Long.isUnreadAgainst(cursor: Long?): Boolean = cursor != null && this > cursor
-
-// @Immutable required: the ByteArray field defeats Compose's automatic
-// stability inference (arrays are mutable references), so without the
-// annotation every ChannelRow in a 200-channel LazyColumn re-composes on any
-// upstream list mutation — even if the row's own ChannelSummary didn't change.
-// The annotation is a contract: ChannelSummary instances are never mutated
-// after construction (and `aggregate` builds fresh ones every recomposition,
-// so this trivially holds).
-@androidx.compose.runtime.Immutable
-private data class ChannelSummary(
-    val chatId: Long,
-    val title: String,
-    val avatarThumb: ByteArray?,
-    val avatarFileId: Int?,
-    val lastPostExcerpt: String,
-    val lastPostDate: Long,
-    /**
-     * Highest (album-aware) message id this channel contributed to the loaded slice.
-     * Compared against the read cursor to derive the unread dot — same album-aware rule
-     * as [TimelinePost.isUnreadAt] (an album stays unread until every member is acked).
-     */
-    val lastPostId: Long,
-)
-
-private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
-    .groupBy { it.chatId }
-    .map { (chatId, list) ->
-        val anchor = list.maxByOrNull { it.date }!!
-        // Personal-author channel mode: each post's senderName / avatar is the admin who
-        // wrote it, NOT the channel. We need the channel's own identity here, which lives
-        // in [channelContext]. Prefer ANY post in the group whose channelContext is set
-        // (or, equivalently, whose own senderName is already the channel) so a channel
-        // with multiple posting admins still surfaces as one row with the right name and
-        // photo. Falling back to anchor.senderName covers the all-channel-as-sender case
-        // where channelContext is null on every post.
-        val channelLike = list.firstNotNullOfOrNull { it.channelContext }
-        val title = channelLike?.name ?: anchor.senderName
-        val thumb = channelLike?.avatarThumb ?: anchor.avatarThumb
-        val fileId = channelLike?.avatarFileId ?: anchor.avatarFileId
-        // Highest id across every post (and album member) this channel put in the slice.
-        // Album-aware so a partially-read album still reads as unread, mirroring isUnreadAt.
-        val highestId = list.maxOf { p -> p.albumMessageIds.maxOrNull() ?: p.id }
-        ChannelSummary(
-            chatId = chatId,
-            title = title,
-            avatarThumb = thumb,
-            avatarFileId = fileId,
-            lastPostExcerpt = anchor.content.captionPlain.take(120),
-            lastPostDate = anchor.date,
-            lastPostId = highestId,
-        )
-    }
-    .sortedByDescending { it.lastPostDate }
 
 /**
  * One subscribed channel. Swipe left (or right) toggles "hidden from feed" — the row snaps
@@ -488,6 +486,8 @@ private fun ChannelRow(
     onClick: () -> Unit,
     onHideToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Join / Stop reading for a channel read without joining; null for joined rows. */
+    followActions: FollowedRowActions? = null,
 ) {
     val shapes = ListItemDefaults.segmentedShapes(
         index = index,
@@ -511,14 +511,25 @@ private fun ChannelRow(
         channel.title,
     )
     val dim = if (isHidden) 0.5f else 1f
-    val hasSupportingLine = isHidden || channel.lastPostExcerpt.isNotBlank()
+    val unavailable = showsUnavailableLine(channel)
+    val hasSupportingLine = unavailable || isHidden || channel.lastPostExcerpt.isNotBlank()
+    var menuOpen by remember { mutableStateOf(false) }
+    val joinLabel = stringResource(R.string.channels_join)
+    val stopLabel = stringResource(R.string.follow_stop_reading)
+    val menuLabel = stringResource(R.string.follow_row_actions)
     // At large font scale the title and excerpt may wrap to a second line instead of
     // truncating after a word or two.
     val textLines = if (LocalDensity.current.fontScale > LARGE_FONT_SCALE) 2 else 1
     SwipeToDismissBox(
         state = swipeState,
         modifier = modifier.semantics {
-            customActions = listOf(CustomAccessibilityAction(toggleLabel) { currentToggle(); true })
+            customActions = buildList {
+                add(CustomAccessibilityAction(toggleLabel) { currentToggle(); true })
+                if (followActions != null) {
+                    add(CustomAccessibilityAction(joinLabel) { followActions.onJoin(); true })
+                    add(CustomAccessibilityAction(stopLabel) { followActions.onStopReading(); true })
+                }
+            }
         },
         backgroundContent = {
             Row(
@@ -551,8 +562,13 @@ private fun ChannelRow(
             }
         },
     ) {
+        Box {
         SegmentedListItem(
             onClick = onClick,
+            // Followed rows: long-press opens Join / Stop reading (also offered to screen
+            // readers as custom actions above). Joined rows keep plain taps.
+            onLongClick = followActions?.let { { menuOpen = true } },
+            onLongClickLabel = followActions?.let { menuLabel },
             shapes = shapes,
             colors = ListItemDefaults.colors(containerColor = channelsRowColor()),
             leadingContent = {
@@ -566,7 +582,15 @@ private fun ChannelRow(
                 }
             },
             supportingContent = {
-                if (isHidden) {
+                if (unavailable) {
+                    Text(
+                        text = stringResource(R.string.follow_unavailable),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = textLines,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else if (isHidden) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Symbol(
                             name = "visibility_off",
@@ -607,13 +631,16 @@ private fun ChannelRow(
                         }
                     }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = formatRelative(channel.lastPostDate),
-                        style = MaterialTheme.typography.labelSmall.tabularFigures().capFontScale(METADATA_MAX_FONT_SCALE),
-                        maxLines = 1,
-                        color = if (unreadCount > 0 && !isHidden) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    // A followed channel with no post loaded yet has no time to show.
+                    if (channel.lastPostDate > 0L) {
+                        Text(
+                            text = formatRelative(channel.lastPostDate),
+                            style = MaterialTheme.typography.labelSmall.tabularFigures().capFontScale(METADATA_MAX_FONT_SCALE),
+                            maxLines = 1,
+                            color = if (unreadCount > 0 && !isHidden) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     when {
                         unreadCount > 0 -> {
                             Spacer(Modifier.height(6.dp))
@@ -642,8 +669,27 @@ private fun ChannelRow(
                 )
             },
         )
+        if (followActions != null) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(joinLabel) },
+                    leadingIcon = { Symbol(name = "add", contentDescription = null) },
+                    onClick = { menuOpen = false; followActions.onJoin() },
+                )
+                DropdownMenuItem(
+                    text = { Text(stopLabel) },
+                    leadingIcon = { Symbol(name = "close", contentDescription = null) },
+                    onClick = { menuOpen = false; followActions.onStopReading() },
+                )
+            }
+        }
+        }
     }
 }
+
+/** Long-press actions of a row read without joining. */
+@Immutable
+internal class FollowedRowActions(val onJoin: () -> Unit, val onStopReading: () -> Unit)
 
 /**
  * TDLib's unread count as a Telegram-style pill. Muted (neutral tone) for channels hidden
@@ -849,6 +895,8 @@ internal enum class ChannelsFilter(@param:StringRes val label: Int) {
     Unread(R.string.channels_filter_unread),
     Today(R.string.channels_filter_today),
     Hidden(R.string.channels_filter_hidden),
+    /** Channels read without joining; the chip appears only when there is one. */
+    NotJoined(R.string.follow_not_joined),
 }
 
 /**

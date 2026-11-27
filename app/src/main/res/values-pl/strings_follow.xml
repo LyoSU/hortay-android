@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Czytaj bez dołączania</string>
+    <string name="follow_stop_reading">Przestań czytać</string>
+    <string name="follow_stop_reading_channel">Przestań czytać ten kanał</string>
+    <string name="follow_not_joined">Nie dołączono</string>
+    <string name="follow_not_joined_with_meta">Nie dołączono · %1$s</string>
+    <string name="follow_added">Dodano do feedu</string>
+    <string name="follow_added_at_limit">Dodano do feedu — to limit %d kanałów czytanych bez dołączania</string>
+    <string name="follow_limit_reached">Bez dołączania możesz czytać do %d kanałów. Dołącz do tych, które czytasz najczęściej, aby zwolnić miejsce.</string>
+    <string name="follow_failed">Tego kanału nie da się czytać bez dołączania — może jest prywatny lub niedostępny</string>
+    <string name="follow_stopped">Już nie czytasz %1$s</string>
+    <string name="follow_unavailable">Nie można zaktualizować — kanał może być teraz prywatny</string>
+    <string name="follow_tip_title">Czytanie bez dołączania</string>
+    <string name="follow_tip_body">Nowe wpisy z kanałów czytanych bez dołączania mogą docierać z kilkuminutowym opóźnieniem. Pociągnij w dół, aby odświeżyć i od razu je sprawdzić.</string>
+    <string name="follow_delay_note">Nowe wpisy mogą docierać z kilkuminutowym opóźnieniem.</string>
+    <string name="follow_row_actions">Działania kanału</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Dodano do feedu — bez dołączania możesz czytać jeszcze %d kanał</item>
+        <item quantity="few">Dodano do feedu — bez dołączania możesz czytać jeszcze %d kanały</item>
+        <item quantity="many">Dodano do feedu — bez dołączania możesz czytać jeszcze %d kanałów</item>
+        <item quantity="other">Dodano do feedu — bez dołączania możesz czytać jeszcze %d kanału</item>
+    </plurals>
+</resources>

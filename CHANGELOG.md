@@ -6,6 +6,7 @@
 
 ### Added
 - In guest mode the Add channel sheet searches by name as you type — through the channels the app already knows, plus a live check of the text as a @username.
+- Public channels can be read without joining them — their posts join the All feed, and the Channels tab lists them under “Not joined”.
 
 ### Fixed
 - The full-screen post search no longer draws a stray line under the search field.

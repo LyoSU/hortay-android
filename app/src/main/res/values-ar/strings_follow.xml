@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">القراءة دون اشتراك</string>
+    <string name="follow_stop_reading">إيقاف القراءة</string>
+    <string name="follow_stop_reading_channel">إيقاف قراءة هذه القناة</string>
+    <string name="follow_not_joined">غير مشترك</string>
+    <string name="follow_not_joined_with_meta">غير مشترك · %1$s</string>
+    <string name="follow_added">أُضيفت إلى خلاصتك</string>
+    <string name="follow_added_at_limit">أُضيفت إلى خلاصتك — بلغتَ حدّ %d قناة دون اشتراك</string>
+    <string name="follow_limit_reached">يمكنك قراءة %d قناة كحد أقصى دون اشتراك. اشترك في القنوات التي تقرأها أكثر لتفريغ مكان.</string>
+    <string name="follow_failed">لا يمكن قراءة هذه القناة دون اشتراك — ربما هي خاصة أو غير متاحة</string>
+    <string name="follow_stopped">توقفت قراءة %1$s</string>
+    <string name="follow_unavailable">تعذّر التحديث — ربما أصبحت القناة خاصة</string>
+    <string name="follow_tip_title">القراءة دون اشتراك</string>
+    <string name="follow_tip_body">قد تصل المنشورات الجديدة من القنوات التي تقرأها دون اشتراك متأخرة بضع دقائق. اسحب للأسفل للتحديث والاطلاع عليها فورًا.</string>
+    <string name="follow_delay_note">قد تصل المنشورات الجديدة متأخرة بضع دقائق.</string>
+    <string name="follow_row_actions">إجراءات القناة</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="zero">أُضيفت إلى خلاصتك — يمكنك قراءة %d قناة أخرى دون اشتراك</item>
+        <item quantity="one">أُضيفت إلى خلاصتك — يمكنك قراءة %d قناة أخرى دون اشتراك</item>
+        <item quantity="two">أُضيفت إلى خلاصتك — يمكنك قراءة %d قناتين أخريين دون اشتراك</item>
+        <item quantity="few">أُضيفت إلى خلاصتك — يمكنك قراءة %d قنوات أخرى دون اشتراك</item>
+        <item quantity="many">أُضيفت إلى خلاصتك — يمكنك قراءة %d قناة أخرى دون اشتراك</item>
+        <item quantity="other">أُضيفت إلى خلاصتك — يمكنك قراءة %d قناة أخرى دون اشتراك</item>
+    </plurals>
+</resources>

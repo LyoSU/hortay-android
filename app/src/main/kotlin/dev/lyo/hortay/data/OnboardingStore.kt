@@ -67,6 +67,12 @@ class OnboardingStore(context: Context) {
     /** True once the split-button caption was shown. */
     val splitButtonHintSeen: Flow<Boolean> = flag(KEY_SPLIT_BUTTON_HINT_SEEN)
 
+    /**
+     * True once the "read without joining" delay explanation was dismissed — shown after the
+     * first successful follow, since a followed channel's new posts arrive by polling.
+     */
+    val followDelayTipSeen: Flow<Boolean> = flag(KEY_FOLLOW_DELAY_TIP_SEEN)
+
     /** Whether the rate-on-Google-Play sheet may appear now. See [RatePromptPolicy]. */
     val ratePromptEligible: Flow<Boolean> = dataStore.data.map { prefs ->
         RatePromptPolicy.isEligible(
@@ -104,6 +110,8 @@ class OnboardingStore(context: Context) {
 
     suspend fun setSplitButtonHintSeen(value: Boolean = true) = set(KEY_SPLIT_BUTTON_HINT_SEEN, value)
 
+    suspend fun setFollowDelayTipSeen(value: Boolean = true) = set(KEY_FOLLOW_DELAY_TIP_SEEN, value)
+
     private fun isUpgradedInstall(): Boolean = runCatching {
         val pm = appContext.packageManager
         val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -126,6 +134,7 @@ class OnboardingStore(context: Context) {
         val KEY_FEED_ORDER_CHOSEN = booleanPreferencesKey("feed_order_chosen")
         val KEY_CHANNELS_SWIPE_HINT_SEEN = booleanPreferencesKey("channels_swipe_hint_seen")
         val KEY_SPLIT_BUTTON_HINT_SEEN = booleanPreferencesKey("split_button_hint_seen")
+        val KEY_FOLLOW_DELAY_TIP_SEEN = booleanPreferencesKey("follow_delay_tip_seen")
         val KEY_INSTALL_SEEDED = booleanPreferencesKey("install_seeded")
         val KEY_RATE_FIRST_SEEN_MS = longPreferencesKey("rate_first_seen_ms")
         val KEY_RATE_DAY_COUNT = intPreferencesKey("rate_launch_day_count")

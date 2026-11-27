@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">خواندن بدون عضویت</string>
+    <string name="follow_stop_reading">توقف خواندن</string>
+    <string name="follow_stop_reading_channel">توقف خواندن این کانال</string>
+    <string name="follow_not_joined">بدون عضویت</string>
+    <string name="follow_not_joined_with_meta">بدون عضویت · %1$s</string>
+    <string name="follow_added">به فید اضافه شد</string>
+    <string name="follow_added_at_limit">به فید اضافه شد — به سقف %d کانال بدون عضویت رسیدید</string>
+    <string name="follow_limit_reached">بدون عضویت می‌توانید حداکثر %d کانال بخوانید. برای باز کردن جا، در کانال‌هایی که بیشتر می‌خوانید عضو شوید.</string>
+    <string name="follow_failed">این کانال را نمی‌توان بدون عضویت خواند — شاید خصوصی یا در دسترس نباشد</string>
+    <string name="follow_stopped">دیگر %1$s را نمی‌خوانید</string>
+    <string name="follow_unavailable">به‌روزرسانی ممکن نیست — شاید کانال اکنون خصوصی باشد</string>
+    <string name="follow_tip_title">خواندن بدون عضویت</string>
+    <string name="follow_tip_body">پست‌های تازهٔ کانال‌هایی که بدون عضویت می‌خوانید ممکن است چند دقیقه دیرتر برسند. برای بررسی فوری، فید را به پایین بکشید.</string>
+    <string name="follow_delay_note">پست‌های تازه ممکن است چند دقیقه دیرتر برسند.</string>
+    <string name="follow_row_actions">گزینه‌های کانال</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">به فید اضافه شد — می‌توانید %d کانال دیگر را بدون عضویت بخوانید</item>
+        <item quantity="other">به فید اضافه شد — می‌توانید %d کانال دیگر را بدون عضویت بخوانید</item>
+    </plurals>
+</resources>

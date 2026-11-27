@@ -245,6 +245,28 @@ class ChannelActionsRepository(
             .isSuccess
 
     /**
+     * Whether the account is a member of [chatId], and whether the chat could be read
+     * without joining (a public channel). Offline only: `GetChat` / `GetSupergroup` are
+     * served from TDLib's local store, so the channel screen can ask on every chat-list
+     * change without a server call. Null when TDLib has never seen the chat.
+     */
+    suspend fun membership(chatId: Long): ChannelMembership? {
+        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }
+            .warnUnlessCancelled(TAG, "membership/getChat")
+            .getOrNull() ?: return null
+        val type = chat.type as? TdApi.ChatTypeSupergroup
+            ?: return ChannelMembership(isChannel = false, isMember = false, isPublic = false)
+        val group = runCatching { td.send(TdApi.GetSupergroup(type.supergroupId)) }
+            .warnUnlessCancelled(TAG, "membership/getSupergroup")
+            .getOrNull() ?: return null
+        return ChannelMembership(
+            isChannel = group.isChannel,
+            isMember = isChannelMember(group.status),
+            isPublic = !group.usernames?.activeUsernames.isNullOrEmpty(),
+        )
+    }
+
+    /**
      * Resolve a channel info bundle for the bottom sheet: title, handle, description,
      * subscriber count, mute state. Several TDLib calls coalesced — kept on this single
      * suspend method so the UI fires one coroutine and lays out when everything is in.
@@ -413,6 +435,15 @@ data class ChatInvitePreview(
 /** Discriminator on [ChatInvitePreview.kind]. Hortay only joins channels natively;
  *  group invites surface a snackbar and hand off to Telegram. */
 enum class InviteLinkKind { Channel, Group }
+
+/** Offline membership answer from [ChannelActionsRepository.membership]. */
+@androidx.compose.runtime.Immutable
+data class ChannelMembership(
+    val isChannel: Boolean,
+    val isMember: Boolean,
+    /** Has an active public username — the only kind of channel that can be read without joining. */
+    val isPublic: Boolean,
+)
 
 /** Data bundle backing the channel info bottom sheet. */
 data class ChannelInfo(

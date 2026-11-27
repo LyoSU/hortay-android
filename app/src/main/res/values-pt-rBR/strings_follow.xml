@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Ler sem se inscrever</string>
+    <string name="follow_stop_reading">Parar de ler</string>
+    <string name="follow_stop_reading_channel">Parar de ler este canal</string>
+    <string name="follow_not_joined">Não inscrito</string>
+    <string name="follow_not_joined_with_meta">Não inscrito · %1$s</string>
+    <string name="follow_added">Adicionado ao seu feed</string>
+    <string name="follow_added_at_limit">Adicionado ao seu feed — você chegou ao limite de %d canais sem inscrição</string>
+    <string name="follow_limit_reached">Você pode ler até %d canais sem se inscrever. Inscreva-se nos que você mais lê para abrir espaço.</string>
+    <string name="follow_failed">Não é possível ler este canal sem se inscrever — talvez ele seja privado ou esteja indisponível</string>
+    <string name="follow_stopped">Você parou de ler %1$s</string>
+    <string name="follow_unavailable">Não foi possível atualizar — o canal pode ter ficado privado</string>
+    <string name="follow_tip_title">Leitura sem inscrição</string>
+    <string name="follow_tip_body">Publicações novas de canais que você lê sem se inscrever podem chegar alguns minutos depois. Puxe para baixo para atualizar e vê-las na hora.</string>
+    <string name="follow_delay_note">Publicações novas podem chegar alguns minutos depois.</string>
+    <string name="follow_row_actions">Ações do canal</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Adicionado ao seu feed — você pode ler mais %d canal sem se inscrever</item>
+        <item quantity="many">Adicionado ao seu feed — você pode ler mais %d de canais sem se inscrever</item>
+        <item quantity="other">Adicionado ao seu feed — você pode ler mais %d canais sem se inscrever</item>
+    </plurals>
+</resources>

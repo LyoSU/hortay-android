@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Baca tanpa mengikuti</string>
+    <string name="follow_stop_reading">Berhenti membaca</string>
+    <string name="follow_stop_reading_channel">Berhenti membaca kanal ini</string>
+    <string name="follow_not_joined">Tidak diikuti</string>
+    <string name="follow_not_joined_with_meta">Tidak diikuti · %1$s</string>
+    <string name="follow_added">Ditambahkan ke feed</string>
+    <string name="follow_added_at_limit">Ditambahkan ke feed — batas %d kanal tanpa mengikuti sudah tercapai</string>
+    <string name="follow_limit_reached">Kamu bisa membaca hingga %d kanal tanpa mengikuti. Ikuti kanal yang paling sering kamu baca untuk mengosongkan tempat.</string>
+    <string name="follow_failed">Kanal ini tidak bisa dibaca tanpa mengikuti — mungkin privat atau tidak tersedia</string>
+    <string name="follow_stopped">Berhenti membaca %1$s</string>
+    <string name="follow_unavailable">Tidak bisa memperbarui — kanal ini mungkin sekarang privat</string>
+    <string name="follow_tip_title">Membaca tanpa mengikuti</string>
+    <string name="follow_tip_body">Kiriman baru dari kanal yang kamu baca tanpa mengikuti bisa terlambat beberapa menit. Tarik ke bawah untuk menyegarkan dan langsung melihatnya.</string>
+    <string name="follow_delay_note">Kiriman baru bisa terlambat beberapa menit.</string>
+    <string name="follow_row_actions">Tindakan kanal</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="other">Ditambahkan ke feed — kamu bisa membaca %d kanal lagi tanpa mengikuti</item>
+    </plurals>
+</resources>

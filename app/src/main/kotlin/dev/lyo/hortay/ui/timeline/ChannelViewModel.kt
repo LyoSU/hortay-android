@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelDirectory
+import dev.lyo.hortay.data.ChannelMembership
+import dev.lyo.hortay.ui.channels.ChannelJoinState
+import dev.lyo.hortay.ui.channels.channelJoinState
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.PinnedPreview
 import dev.lyo.hortay.data.TimelinePost
@@ -21,6 +24,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -82,6 +88,13 @@ class ChannelViewModel(
     private val bookmarks: BookmarkStore,
     val chatId: Long,
     val scrollToMessageId: Long?,
+    /**
+     * Offline membership lookup ([dev.lyo.hortay.data.ChannelActionsRepository.membership])
+     * and the followed-channel ids. Both null (tests, or a host without "read without
+     * joining") leave [joinState] at [ChannelJoinState.Unknown], so no join bar shows.
+     */
+    private val membershipOf: (suspend (Long) -> ChannelMembership?)? = null,
+    private val followedIds: StateFlow<Set<Long>>? = null,
 ) : ViewModel() {
 
     /**
@@ -199,6 +212,35 @@ class ChannelViewModel(
     // Bookmark set forwarded from the shared [BookmarkStore].
     val bookmarkedKeys: StateFlow<Set<String>> = bookmarks.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
+
+    /** Bumped to re-read membership after a join from this screen. */
+    private val membershipRecheck = MutableStateFlow(0)
+
+    /**
+     * Whether this account is a member of the channel, reads it without joining, or could
+     * do either. Re-read (offline) whenever the followed set or the chat lists change: a
+     * join lands the channel in the main list, a leave takes it out, and the follow hand-off
+     * drops it from the followed set — no polling and no server call.
+     */
+    val joinState: StateFlow<ChannelJoinState> = run {
+        val lookup = membershipOf
+        val followed = followedIds
+        if (lookup == null || followed == null) return@run MutableStateFlow(ChannelJoinState.Unknown).asStateFlow()
+        combine(
+            followed.map { chatId in it }.distinctUntilChanged(),
+            repo.mainChatIds.map { chatId in it }.distinctUntilChanged(),
+            repo.archivedChatIds.map { chatId in it }.distinctUntilChanged(),
+            membershipRecheck,
+        ) { isFollowed, _, _, _ -> isFollowed }
+            .mapLatest { isFollowed -> channelJoinState(lookup(chatId), isFollowed) }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ChannelJoinState.Unknown)
+    }
+
+    /** Re-read membership now (after a join or a follow answered "already a member"). */
+    fun recheckMembership() {
+        membershipRecheck.update { it + 1 }
+    }
 
     // --- Search state ---
 

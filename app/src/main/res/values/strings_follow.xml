@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Read without joining</string>
+    <string name="follow_stop_reading">Stop reading</string>
+    <string name="follow_stop_reading_channel">Stop reading this channel</string>
+    <string name="follow_not_joined">Not joined</string>
+    <string name="follow_not_joined_with_meta">Not joined · %1$s</string>
+    <string name="follow_added">Added to your feed</string>
+    <string name="follow_added_at_limit">Added to your feed — that\'s the limit of %d channels read without joining</string>
+    <string name="follow_limit_reached">You can read up to %d channels without joining. Join the ones you read most to make room.</string>
+    <string name="follow_failed">This channel can\'t be read without joining — it may be private or unavailable</string>
+    <string name="follow_stopped">Stopped reading %1$s</string>
+    <string name="follow_unavailable">Can\'t update — the channel may be private now</string>
+    <string name="follow_tip_title">Reading without joining</string>
+    <string name="follow_tip_body">New posts from channels you read without joining may arrive a few minutes late. Pull to refresh to check them right away.</string>
+    <string name="follow_delay_note">New posts may arrive a few minutes late.</string>
+    <string name="follow_row_actions">Channel actions</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Added to your feed — you can read %d more channel without joining</item>
+        <item quantity="other">Added to your feed — you can read %d more channels without joining</item>
+    </plurals>
+</resources>

@@ -58,6 +58,7 @@ import dev.lyo.hortay.data.ChannelInfo
 import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
 import dev.lyo.hortay.data.discover.DiscoverChannel
+import dev.lyo.hortay.data.subscriptions.FollowedChannels
 import dev.lyo.hortay.ui.components.copyPlainText
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.discover.ChannelDiscoverRow
@@ -136,6 +137,16 @@ fun ChannelInfoSheet(
      */
     avatarFileId: Int? = null,
     avatarThumb: ByteArray? = null,
+    /**
+     * "Read without joining" actions (signed-in only). Non-null: a public channel the
+     * account isn't in offers "Read without joining" next to Join, and a followed one
+     * offers "Stop reading". Null keeps the plain Join row.
+     */
+    follow: FollowController? = null,
+    /** The channel is read without joining right now. */
+    isFollowed: Boolean = false,
+    /** A join from this sheet landed — lets the host re-read membership. */
+    onMembershipChanged: () -> Unit = {},
 ) {
     val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
@@ -182,6 +193,7 @@ fun ChannelInfoSheet(
                 info = current,
                 avatarFileId = avatarFileId,
                 avatarThumb = avatarThumb,
+                notJoined = isFollowed && !current.isMember,
                 modifier = blockPadding,
             )
             current.description?.let { desc ->
@@ -301,10 +313,40 @@ fun ChannelInfoSheet(
                     onClick = {
                         info = current.copy(isMember = true)
                         scope.launch {
-                            if (!actions.joinChat(chatId)) info = info?.copy(isMember = false)
+                            if (actions.joinChat(chatId)) onMembershipChanged()
+                            else info = info?.copy(isMember = false)
                         }
                     },
                 )
+                // Read without joining — public channels only (a private one has no handle
+                // to read it by). Quiet rows: Join stays the one positive action.
+                if (follow != null && isFollowed) {
+                    ActionRow(
+                        symbol = "close",
+                        label = stringResource(R.string.follow_stop_reading),
+                        onClick = {
+                            follow.stopReading(chatId, current.title)
+                            onDismiss()
+                        },
+                    )
+                    Text(
+                        text = stringResource(R.string.follow_delay_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = blockPadding.padding(vertical = 8.dp),
+                    )
+                } else if (follow != null && current.handle != null) {
+                    ActionRow(
+                        symbol = "rss_feed",
+                        label = stringResource(R.string.follow_read_without_joining),
+                        onClick = {
+                            follow.follow(chatId) { result ->
+                                if (result == FollowedChannels.FollowResult.AlreadyMember) onMembershipChanged()
+                            }
+                            onDismiss()
+                        },
+                    )
+                }
             }
             // Report (CSAE-compliance): channel-level entry point into the same
             // TDLib reportChat dynamic flow the long-press post sheet uses. Hidden
@@ -353,6 +395,7 @@ private fun ChannelInfoHeader(
     info: ChannelInfo,
     avatarFileId: Int?,
     avatarThumb: ByteArray?,
+    notJoined: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -414,6 +457,15 @@ private fun ChannelInfoHeader(
                     )
                 }
             }
+        }
+        // Quiet state line for a channel read without joining — no chip, no colour.
+        if (notJoined) {
+            Text(
+                text = stringResource(R.string.follow_not_joined),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

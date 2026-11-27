@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Lire sans s\'abonner</string>
+    <string name="follow_stop_reading">Ne plus lire</string>
+    <string name="follow_stop_reading_channel">Ne plus lire cette chaîne</string>
+    <string name="follow_not_joined">Sans abonnement</string>
+    <string name="follow_not_joined_with_meta">Sans abonnement · %1$s</string>
+    <string name="follow_added">Ajoutée à ton fil</string>
+    <string name="follow_added_at_limit">Ajoutée à ton fil — tu as atteint la limite de %d chaînes sans abonnement</string>
+    <string name="follow_limit_reached">Tu peux lire jusqu\'à %d chaînes sans t\'abonner. Abonne-toi à celles que tu lis le plus pour faire de la place.</string>
+    <string name="follow_failed">Impossible de lire cette chaîne sans s\'abonner — elle est peut-être privée ou indisponible</string>
+    <string name="follow_stopped">Tu ne lis plus %1$s</string>
+    <string name="follow_unavailable">Mise à jour impossible — la chaîne est peut-être devenue privée</string>
+    <string name="follow_tip_title">Lire sans s\'abonner</string>
+    <string name="follow_tip_body">Les nouvelles publications des chaînes lues sans abonnement peuvent arriver avec quelques minutes de retard. Tire vers le bas pour actualiser et les voir tout de suite.</string>
+    <string name="follow_delay_note">Les nouvelles publications peuvent arriver avec quelques minutes de retard.</string>
+    <string name="follow_row_actions">Actions de la chaîne</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Ajoutée à ton fil — tu peux encore lire %d chaîne sans t\'abonner</item>
+        <item quantity="many">Ajoutée à ton fil — tu peux encore lire %d de chaînes sans t\'abonner</item>
+        <item quantity="other">Ajoutée à ton fil — tu peux encore lire %d chaînes sans t\'abonner</item>
+    </plurals>
+</resources>

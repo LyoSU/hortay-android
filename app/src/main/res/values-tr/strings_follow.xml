@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Read without joining": channel join bar, info sheet, Channels tab, hide-channel sheet. -->
+<resources>
+    <string name="follow_read_without_joining">Abone olmadan oku</string>
+    <string name="follow_stop_reading">Okumayı bırak</string>
+    <string name="follow_stop_reading_channel">Bu kanalı okumayı bırak</string>
+    <string name="follow_not_joined">Abone değil</string>
+    <string name="follow_not_joined_with_meta">Abone değil · %1$s</string>
+    <string name="follow_added">Akışına eklendi</string>
+    <string name="follow_added_at_limit">Akışına eklendi — abone olmadan okunabilecek %d kanal sınırına ulaştın</string>
+    <string name="follow_limit_reached">Abone olmadan en fazla %d kanal okuyabilirsin. Yer açmak için en çok okuduklarına abone ol.</string>
+    <string name="follow_failed">Bu kanal abone olmadan okunamıyor — gizli ya da erişilemez olabilir</string>
+    <string name="follow_stopped">%1$s artık okunmuyor</string>
+    <string name="follow_unavailable">Güncellenemiyor — kanal artık gizli olabilir</string>
+    <string name="follow_tip_title">Abone olmadan okuma</string>
+    <string name="follow_tip_body">Abone olmadan okuduğun kanallardaki yeni gönderiler birkaç dakika gecikmeyle gelebilir. Hemen kontrol etmek için aşağı çekip yenile.</string>
+    <string name="follow_delay_note">Yeni gönderiler birkaç dakika gecikmeyle gelebilir.</string>
+    <string name="follow_row_actions">Kanal işlemleri</string>
+    <plurals name="follow_added_slots_left">
+        <item quantity="one">Akışına eklendi — abone olmadan %d kanal daha okuyabilirsin</item>
+        <item quantity="other">Akışına eklendi — abone olmadan %d kanal daha okuyabilirsin</item>
+    </plurals>
+</resources>
