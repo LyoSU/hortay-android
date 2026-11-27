@@ -26,16 +26,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import android.os.Build
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
@@ -202,6 +210,15 @@ internal fun MediaWithSpoiler(
     // posters fetch through Coil and have no MediaCache slot to observe, so
     // we keep the badge visible for them (Coil's HTTP fetch is fast and we
     // don't have a state signal to drive the hide).
+    // Letterbox backdrop: the poster is cropped to the slot while the player fits the
+    // video inside it, so whenever the two aspects differ (the 21:9 / 9:16 feed clamp, or
+    // poster geometry that disagrees with the stream) the poster's sharp edges showed as a
+    // second copy around the moving picture. Once the first frame is on screen the poster
+    // blurs and dims into a backdrop; before that it stays sharp so the slot never flashes
+    // a blurred preview. Keyed on the player being mounted so a remount starts sharp again.
+    var videoFrameShown by remember(autoplayVideo || autoplayAnimation) { mutableStateOf(false) }
+    val backdrop = rememberLetterboxBackdrop(videoFrameShown)
+    val onFirstFrame = remember { { videoFrameShown = true } }
     val posterLoading = !autoplayVideo &&
         revealed &&
         isPosterDownloading(item.media.fileId)
@@ -236,7 +253,8 @@ internal fun MediaWithSpoiler(
             modifier = Modifier
                 .fillMaxSize()
                 .let { if (unplayable) it.blur(UNPLAYABLE_VIDEO_BLUR_RADIUS) else it }
-                .mediaSpoilerBlur(spoiler, SPOILER_BLUR_RADIUS),
+                .mediaSpoilerBlur(spoiler, SPOILER_BLUR_RADIUS)
+                .letterboxBackdrop(backdrop),
         )
         when {
             autoplayVideo -> {
@@ -254,6 +272,7 @@ internal fun MediaWithSpoiler(
                     // fills the parent box until [Player.Listener.onVideoSizeChanged]
                     // fires, visible as a brief stretch-then-snap on autoplay mount.
                     initialAspect = asVideo.media.aspectRatio,
+                    onFirstFrameRendered = onFirstFrame,
                     modifier = Modifier.fillMaxSize(),
                 )
                 DurationChip(
@@ -274,6 +293,7 @@ internal fun MediaWithSpoiler(
                     showControls = false,
                     muted = true,
                     initialAspect = asAnimation.media.aspectRatio,
+                    onFirstFrameRendered = onFirstFrame,
                     modifier = Modifier.fillMaxSize(),
                 )
                 DurationChip(
@@ -494,6 +514,11 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
     // autoplayer or route a tap to a server-deleted file. See [LocalMediaPassive].
     val passive = LocalMediaPassive.current
     val viewerAnchor = rememberViewerSourceAnchor(content.media, MaterialTheme.shapes.medium)
+    // Same letterbox backdrop as [MediaWithSpoiler].
+    val playerMounted = revealed && !passive
+    var videoFrameShown by remember(playerMounted) { mutableStateOf(false) }
+    val backdrop = rememberLetterboxBackdrop(videoFrameShown)
+    val onFirstFrame = remember { { videoFrameShown = true } }
 
     MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
     Box(
@@ -515,7 +540,8 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
             showProgress = !revealed,
             modifier = Modifier
                 .fillMaxSize()
-                .mediaSpoilerBlur(spoiler, SPOILER_BLUR_RADIUS),
+                .mediaSpoilerBlur(spoiler, SPOILER_BLUR_RADIUS)
+                .letterboxBackdrop(backdrop),
         )
         // Only mount the video player once the spoiler is revealed — otherwise we'd start
         // an ExoPlayer + TDLib download for content the user explicitly hasn't asked to see
@@ -536,6 +562,7 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
                     // animation stream so the poster and the player layout in a
                     // single frame.
                     initialAspect = content.media.aspectRatio,
+                    onFirstFrameRendered = onFirstFrame,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -652,3 +679,42 @@ internal fun DurationChip(text: String, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * 0 → 1 progress of the poster turning into a letterbox backdrop behind inline video,
+ * eased with the theme's effects spec. Read in the draw phase by [letterboxBackdrop].
+ */
+@Composable
+private fun rememberLetterboxBackdrop(active: Boolean): () -> Float {
+    val progress by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "letterboxBackdrop",
+    )
+    return remember { { progress } }
+}
+
+/**
+ * Blurs (API 31+) and dims the poster under a playing inline video, so the bands the
+ * fitted video leaves read as a soft backdrop instead of a second sharp copy of the
+ * picture. Below API 31 RenderEffect is unavailable and only the dim applies.
+ */
+private fun Modifier.letterboxBackdrop(progress: () -> Float): Modifier = this
+    .graphicsLayer {
+        val p = progress()
+        renderEffect = if (p > 0f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val r = LETTERBOX_BLUR_RADIUS.toPx() * p
+            BlurEffect(r, r, TileMode.Clamp)
+        } else {
+            null
+        }
+        clip = p > 0f
+    }
+    .drawWithContent {
+        drawContent()
+        val p = progress()
+        if (p > 0f) drawRect(Color.Black, alpha = LETTERBOX_SCRIM_ALPHA * p)
+    }
+
+private val LETTERBOX_BLUR_RADIUS = 24.dp
+private const val LETTERBOX_SCRIM_ALPHA = 0.35f
