@@ -11,6 +11,13 @@
 - Posts you read in guest mode now count in the channels' view counters, as on the t.me website — Settings → Privacy can turn this off.
 - The Channels tab can export your channel list as text or a file and import one back, and sharing channel links to Hortay offers to follow them.
 
+### Changed
+- In guest mode, long quotes collapse to a few lines as they do when signed in, and “Show more” opens the post with its comments.
+
+### Fixed
+- Guest-mode channels load older posts as you scroll back, instead of ending at the last few posts the app had fetched.
+- In guest mode, Settings no longer says you need to sign in to see comments, and the Privacy row no longer mentions invisible reading.
+
 ## [0.13.0] — 2026-11-26
 
 ### Added

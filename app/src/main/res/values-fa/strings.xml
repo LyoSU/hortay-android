@@ -63,7 +63,7 @@
     <string name="web_retry_for">تلاش مجدد برای %1$s</string>
     <string name="web_settings_subtitle">بدون ورود به Telegram</string>
     <string name="web_settings_signin">ورود به Telegram</string>
-    <string name="web_settings_signin_helper">نظرات، واکنش‌ها و کانال‌های خصوصی فعال می‌شوند. اشتراک‌ها حفظ می‌شوند</string>
+    <string name="web_settings_signin_helper">واکنش، رأی‌دادن، نظر گذاشتن، کانال‌های خصوصی و همگام‌سازی با تلگرام. اشتراک‌ها حفظ می‌شوند</string>
     <string name="web_settings_clear_cache">پاک کردن کش</string>
     <string name="web_settings_clearing">در حال پاک کردن…</string>
     <string name="web_settings_clear_cache_helper">پست‌ها و فایل‌های کش‌شده را حذف می‌کند. اشتراک‌ها و پست‌های ذخیره‌شده باقی می‌مانند</string>
@@ -75,6 +75,7 @@
     <string name="web_comments_load_failed_body">دریافت نظرات از تلگرام ممکن نشد. دوباره تلاش کنید، پست را در تلگرام باز کنید یا وارد شوید</string>
     <string name="comments_show_earlier">نمایش نظرات قبلی</string>
     <string name="comments_earlier_failed">بارگیری نظرات قبلی ممکن نشد. برای تلاش دوباره ضربه بزنید</string>
+    <string name="web_channel_older_failed">بارگیری پست‌های قبلی ممکن نشد. برای تلاش دوباره ضربه بزنید</string>
     <string name="web_comments_unavailable_title">نظرات در دسترس نیست</string>
     <string name="web_settings_privacy_title">Telegram در این حالت چه می‌بیند</string>
     <string name="web_settings_privacy_body">آدرس IP شما و یک User-Agent مرورگر دسکتاپ. بدون کوکی، بدون حساب، هیچ اطلاعات شخصی</string>
@@ -423,6 +424,7 @@
     <string name="settings_category_data_title">داده‌ها و فضای ذخیره‌سازی</string>
     <string name="settings_category_data_subtitle">ترافیک، فضای ذخیره‌سازی، دانلود خودکار</string>
     <string name="settings_category_privacy_subtitle">خواندن نامرئی، سیاست‌ها</string>
+    <string name="settings_category_privacy_subtitle_guest">بازدیدها، پروکسی، سیاست‌ها</string>
     <string name="settings_language">زبان</string>
     <string name="settings_language_summary_system">پیش‌فرض سیستم</string>
     <string name="settings_language_dialog_title">زبان برنامه</string>

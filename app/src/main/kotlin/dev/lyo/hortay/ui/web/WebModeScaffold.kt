@@ -331,6 +331,12 @@ fun WebModeScaffold(graph: AppGraph) {
     val onGuestPostClick: (TimelinePost) -> Unit = remember(graph) {
         { post -> backStack.add(CommentsKey(anchor = post)) }
     }
+    // Hero open, as MainScaffold's pushCommentsHero: a card tap or "Show more" opens the
+    // post screen pinned to where the card sits. Passing it also tells RichText that the
+    // card can open its post, so clamped cards collapse expandable quotes like signed-in.
+    val onGuestShowFull: (TimelinePost, Int) -> Unit = remember(graph) {
+        { post, anchorY -> backStack.add(CommentsKey(anchor = post, heroAnchorY = anchorY)) }
+    }
     // Feed → channel-name tap routes through the same WebChannelScreen overlay
     // that the Channels tab uses. resolveUsername returns null for channels not
     // in our subscriptions (e.g. a forwarded-from chip pointing at a stranger's
@@ -594,6 +600,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                             .collectAsStateWithLifecycle().value,
                                                         onChannelOpen = onFeedChannelOpen,
                                                         onOpenComments = onGuestPostClick,
+                                                        onShowFullPost = onGuestShowFull,
                                                         homeTapTrigger = homeTapTrigger,
                                                         onBrandTap = { homeTapTrigger = System.nanoTime() },
                                                         onSearchClick = { searchOpen = true },
@@ -628,6 +635,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                 showOnlyBookmarked = true,
                                                 onChannelOpen = onFeedChannelOpen,
                                                 onOpenComments = onGuestPostClick,
+                                                onShowFullPost = onGuestShowFull,
                                                 onReportClick = onGuestReport,
                                                 canReport = { true },
                                                 markAsRead = webMarkAsRead,
@@ -696,12 +704,14 @@ fun WebModeScaffold(graph: AppGraph) {
                                 feedOrder = feedOrder,
                                 onChannelOpen = onFeedChannelOpen,
                                 onReportClick = onGuestReport,
+                                onShowFullPost = onGuestShowFull,
                             )
                         }
 
                         entry<CommentsKey> { key ->
                             GuestCommentsEntry(
                                 post = key.anchor,
+                                heroAnchorY = key.heroAnchorY,
                                 graph = graph,
                                 onDismiss = { popNav() },
                                 onSignIn = onGuestSignIn,
@@ -790,6 +800,7 @@ fun WebModeScaffold(graph: AppGraph) {
 @Composable
 private fun GuestCommentsEntry(
     post: TimelinePost,
+    heroAnchorY: Int?,
     graph: dev.lyo.hortay.AppGraph,
     onDismiss: () -> Unit,
     onSignIn: () -> Unit,
@@ -819,5 +830,6 @@ private fun GuestCommentsEntry(
         onPollVote = { _, _, _ -> reactionNudge() },
         guestThread = thread,
         onSignIn = onSignIn,
+        heroAnchorY = heroAnchorY,
     )
 }

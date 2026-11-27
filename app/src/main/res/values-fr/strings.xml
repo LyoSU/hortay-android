@@ -64,7 +64,7 @@
     <string name="web_retry_for">Réessayer pour %1$s</string>
     <string name="web_settings_subtitle">Sans connexion Telegram</string>
     <string name="web_settings_signin">Se connecter à Telegram</string>
-    <string name="web_settings_signin_helper">Débloque les commentaires, réactions et chaînes privées. Les abonnements sont conservés</string>
+    <string name="web_settings_signin_helper">Réagis, vote, commente, ouvre les chaînes privées et synchronise avec Telegram. Les abonnements sont conservés</string>
     <string name="web_settings_clear_cache">Vider le cache</string>
     <string name="web_settings_clearing">Nettoyage…</string>
     <string name="web_settings_clear_cache_helper">Supprime les publications et médias mis en cache. Les abonnements et publications enregistrées sont conservés</string>
@@ -76,6 +76,7 @@
     <string name="web_comments_load_failed_body">Impossible de récupérer les commentaires depuis Telegram. Réessaie, ouvre la publication dans Telegram ou connecte-toi</string>
     <string name="comments_show_earlier">Afficher les commentaires précédents</string>
     <string name="comments_earlier_failed">Impossible de charger les commentaires précédents. Touche pour réessayer</string>
+    <string name="web_channel_older_failed">Impossible de charger les publications précédentes. Touche pour réessayer</string>
     <string name="web_comments_unavailable_title">Commentaires indisponibles</string>
     <string name="web_settings_privacy_title">Ce que Telegram voit dans ce mode</string>
     <string name="web_settings_privacy_body">Ton IP et un User-Agent de navigateur de bureau. Pas de cookies, pas de compte, rien de personnel</string>
@@ -437,6 +438,7 @@
     <string name="settings_category_data_title">Données et stockage</string>
     <string name="settings_category_data_subtitle">Trafic, stockage, téléchargement auto</string>
     <string name="settings_category_privacy_subtitle">Lecture invisible, politiques</string>
+    <string name="settings_category_privacy_subtitle_guest">Vues, proxy, politiques</string>
     <string name="settings_language">Langue</string>
     <string name="settings_language_summary_system">Par défaut du système</string>
     <string name="settings_language_dialog_title">Langue de l\'application</string>

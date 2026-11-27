@@ -63,7 +63,7 @@
     <string name="web_retry_for">Reintentar para %1$s</string>
     <string name="web_settings_subtitle">Sin sesión en Telegram</string>
     <string name="web_settings_signin">Iniciar sesión en Telegram</string>
-    <string name="web_settings_signin_helper">Desbloquea comentarios, reacciones y canales privados. Las suscripciones se mantienen</string>
+    <string name="web_settings_signin_helper">Reacciona, vota, comenta, abre canales privados y sincroniza con Telegram. Las suscripciones se mantienen</string>
     <string name="web_settings_clear_cache">Limpiar caché</string>
     <string name="web_settings_clearing">Limpiando…</string>
     <string name="web_settings_clear_cache_helper">Elimina publicaciones y recursos en caché. Las suscripciones y publicaciones guardadas se conservan</string>
@@ -75,6 +75,7 @@
     <string name="web_comments_load_failed_body">No se pudieron obtener los comentarios de Telegram. Inténtalo de nuevo, abre la publicación en Telegram o inicia sesión</string>
     <string name="comments_show_earlier">Mostrar comentarios anteriores</string>
     <string name="comments_earlier_failed">No se pudieron cargar los comentarios anteriores. Toca para reintentar</string>
+    <string name="web_channel_older_failed">No se pudieron cargar las publicaciones anteriores. Toca para reintentar</string>
     <string name="web_comments_unavailable_title">Comentarios no disponibles</string>
     <string name="web_settings_privacy_title">Qué ve Telegram en este modo</string>
     <string name="web_settings_privacy_body">Tu IP y un User-Agent de navegador de escritorio. Sin cookies, sin cuenta, nada personal tuyo</string>
@@ -433,6 +434,7 @@
     <string name="settings_category_data_title">Datos y almacenamiento</string>
     <string name="settings_category_data_subtitle">Tráfico, almacenamiento, descarga automática</string>
     <string name="settings_category_privacy_subtitle">Lectura invisible, políticas</string>
+    <string name="settings_category_privacy_subtitle_guest">Visualizaciones, proxy, políticas</string>
     <string name="settings_language">Idioma</string>
     <string name="settings_language_summary_system">Predeterminado del sistema</string>
     <string name="settings_language_dialog_title">Idioma de la app</string>

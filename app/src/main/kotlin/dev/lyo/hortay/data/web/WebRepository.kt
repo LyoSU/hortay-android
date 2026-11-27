@@ -65,6 +65,9 @@ class WebRepository(
     private val suggestionQueries get() = db.channelSuggestionQueries
     private val readCursorQueries: ChannelReadCursorQueries get() = db.channelReadCursorQueries
 
+    /** Reads and the start-of-history mark of the user-driven older-page walk. */
+    val olderWalk = WebOlderWalkStore(db, ioDispatcher)
+
     // ---- Reads (Flow) -------------------------------------------------------
 
     /**

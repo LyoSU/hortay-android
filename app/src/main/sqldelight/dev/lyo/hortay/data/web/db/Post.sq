@@ -237,6 +237,18 @@ SELECT id FROM post WHERE is_bookmarked = 1;
 selectMaxSeq:
 SELECT MAX(seq) AS max_seq FROM post WHERE channel_username = ?;
 
+-- Where the older-page walk (WebChannelHistoryLoader) continues: the oldest stored
+-- post that isn't only there as a bookmark. Retention keeps bookmarks of any age, so
+-- the overall MIN can be a lone saved post far below a hole the retention sweep cut —
+-- paging below it would skip that hole for good. With nothing but bookmarks stored the
+-- overall MIN is all there is. NULL when the channel has no posts. Served by the
+-- (channel_username, seq) primary key.
+selectOlderWalkCursor:
+SELECT COALESCE(
+    (SELECT MIN(seq) FROM post WHERE channel_username = :username AND is_bookmarked = 0),
+    (SELECT MIN(seq) FROM post WHERE channel_username = :username)
+) AS cursor_seq;
+
 countByChannel:
 SELECT COUNT(*) FROM post WHERE channel_username = :username;
 

@@ -476,7 +476,11 @@ object WebPostAdapter {
                             text.append("\n\n")
                             val start = text.length
                             node.childNodes().forEach { walk(it) }
-                            spans += FormattedText.Span(start, text.length, FormattedText.Style.BlockQuote(expandable = false))
+                            // t.me marks a collapsible quote with a bare `expandable` attribute
+                            // (widget-frame.js collapses `blockquote[expandable]`); TDLib's
+                            // BlockQuote(expandable) carries the same meaning to RichText.
+                            val expandable = node.hasAttr("expandable")
+                            spans += FormattedText.Span(start, text.length, FormattedText.Style.BlockQuote(expandable = expandable))
                             text.append("\n\n")
                         }
                         "pre" -> {

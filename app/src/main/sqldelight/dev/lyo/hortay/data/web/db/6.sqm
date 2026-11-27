@@ -1,0 +1,14 @@
+-- Schema migration: version 6 → 7.
+--
+-- Where a guest channel's history begins, as far as the reader has paged back
+-- (WebChannelHistoryLoader). Set to the `?before=` seq whose page had nothing older:
+-- no post of the channel lies below it. Lets the channel screen stop at the start of
+-- history without asking t.me again on every open. NULL = not reached (or cleared by
+-- "Clear cache"). Retention can drop the oldest posts later; the walk then resumes
+-- from the oldest post still stored, since that sits above this mark.
+--
+-- Additive only, plain ALTER TABLE ADD COLUMN (Android 8 SQLite 3.18).
+
+ALTER TABLE channel ADD COLUMN history_start_seq INTEGER;
+
+PRAGMA user_version = 7;

@@ -737,6 +737,15 @@ fun CommentsScreen(
         // (bar = `background`, nothing under it) the fade is fully transparent.
         val topInsetPx = with(density) { padding.calculateTopPadding().toPx() }
         val fadePx = with(density) { TOP_FADE_DP.dp.toPx() }
+        // The guest "earlier comments" row auto-loads once the READER has scrolled. A hero
+        // open scrolls the list itself (within the post, to [heroTarget]); that offset is the
+        // starting point, not a scroll by the reader.
+        val readerScrolledPastHero by remember(listState, heroTarget) {
+            derivedStateOf {
+                listState.firstVisibleItemIndex > 0 ||
+                    listState.firstVisibleItemScrollOffset > heroTarget
+            }
+        }
         val commentsScrolled by remember(listState) {
             derivedStateOf {
                 listState.firstVisibleItemIndex > 0 ||
@@ -897,7 +906,7 @@ fun CommentsScreen(
                         item(key = "older") {
                             EarlierCommentsRow(
                                 state = guestOlder,
-                                autoLoad = commentsScrolled,
+                                autoLoad = readerScrolledPastHero,
                                 onLoad = guestThread::loadOlder,
                             )
                         }

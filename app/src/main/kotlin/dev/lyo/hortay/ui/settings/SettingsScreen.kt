@@ -547,7 +547,15 @@ private fun SettingsMain(
                     SettingsRow(
                         symbol = "shield",
                         title = stringResource(R.string.settings_section_privacy),
-                        subtitle = stringResource(R.string.settings_category_privacy_subtitle),
+                        // Invisible reading is a signed-in setting; the guest page holds
+                        // "Count my views", the proxy and the policies instead.
+                        subtitle = stringResource(
+                            if (onSignIn != null) {
+                                R.string.settings_category_privacy_subtitle_guest
+                            } else {
+                                R.string.settings_category_privacy_subtitle
+                            },
+                        ),
                         chevron = true, index = i++, count = total,
                         onClick = onOpenPrivacy,
                     )

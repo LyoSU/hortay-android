@@ -65,7 +65,7 @@
     <string name="web_retry_for">Повторити для %1$s</string>
     <string name="web_settings_subtitle">Без входу в Telegram</string>
     <string name="web_settings_signin">Увійти в Telegram</string>
-    <string name="web_settings_signin_helper">Коментарі, реакції й приватні канали стануть доступними. Підписки збережуться</string>
+    <string name="web_settings_signin_helper">Зможеш реагувати, голосувати, коментувати, читати приватні канали й синхронізуватися з Telegram. Підписки збережуться</string>
     <string name="web_settings_clear_cache">Очистити кеш</string>
     <string name="web_settings_clearing">Очищаємо…</string>
     <string name="web_settings_clear_cache_helper">Видаляє кешовані пости й медіа. Підписки та збережені пости залишаються</string>
@@ -77,6 +77,7 @@
     <string name="web_comments_load_failed_body">Не вдалося отримати коментарі з Telegram. Спробуй ще раз, відкрий допис у Telegram або увійди</string>
     <string name="comments_show_earlier">Показати попередні коментарі</string>
     <string name="comments_earlier_failed">Не вдалося завантажити попередні коментарі. Торкнись, щоб спробувати ще раз</string>
+    <string name="web_channel_older_failed">Не вдалося завантажити попередні дописи. Торкнись, щоб спробувати ще раз</string>
     <string name="web_comments_unavailable_title">Коментарі недоступні</string>
     <string name="web_settings_privacy_title">Що бачить Telegram у цьому режимі</string>
     <string name="web_settings_privacy_body">Твій IP і User-Agent настільного браузера. Без файлів cookie, акаунта чи персональних даних</string>
@@ -444,6 +445,7 @@
     <string name="settings_category_data_title">Дані та сховище</string>
     <string name="settings_category_data_subtitle">Трафік, сховище, автозавантаження</string>
     <string name="settings_category_privacy_subtitle">Невидиме читання, правила</string>
+    <string name="settings_category_privacy_subtitle_guest">Перегляди, проксі, правила</string>
     <string name="settings_language">Мова</string>
     <string name="settings_language_summary_system">Системна</string>
     <string name="settings_language_dialog_title">Мова застосунку</string>

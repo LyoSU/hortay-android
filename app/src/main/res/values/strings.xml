@@ -66,7 +66,7 @@
     <string name="web_retry_for">Retry for %1$s</string>
     <string name="web_settings_subtitle">No Telegram sign-in</string>
     <string name="web_settings_signin">Sign in to Telegram</string>
-    <string name="web_settings_signin_helper">Unlocks comments, reactions and private channels. Subscriptions stay</string>
+    <string name="web_settings_signin_helper">React, vote, comment, open private channels and sync with Telegram. Subscriptions stay</string>
     <string name="web_settings_clear_cache">Clear cache</string>
     <string name="web_settings_clearing">Clearing…</string>
     <string name="web_settings_clear_cache_helper">Removes cached posts and assets. Subscriptions and saved posts stay</string>
@@ -78,6 +78,7 @@
     <string name="web_comments_load_failed_body">Couldn\'t get the comments from Telegram. Try again, open the post in Telegram, or sign in</string>
     <string name="comments_show_earlier">Show earlier comments</string>
     <string name="comments_earlier_failed">Couldn\'t load earlier comments. Tap to try again</string>
+    <string name="web_channel_older_failed">Couldn\'t load earlier posts. Tap to try again</string>
     <string name="web_comments_unavailable_title">Comments unavailable</string>
     <string name="web_settings_privacy_title">What Telegram sees in this mode</string>
     <string name="web_settings_privacy_body">Your IP and a desktop-browser User-Agent. No cookies, no account, nothing about you personally</string>
@@ -426,6 +427,7 @@
     <string name="settings_category_data_title">Data and storage</string>
     <string name="settings_category_data_subtitle">Traffic, storage, auto-download</string>
     <string name="settings_category_privacy_subtitle">Invisible reading, policies</string>
+    <string name="settings_category_privacy_subtitle_guest">Views, proxy, policies</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_summary_system">System default</string>
     <!-- Native names shown as-is in every UI locale (Telegram convention). -->

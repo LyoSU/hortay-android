@@ -65,7 +65,7 @@
     <string name="web_retry_for">Ponów dla %1$s</string>
     <string name="web_settings_subtitle">Bez logowania do Telegrama</string>
     <string name="web_settings_signin">Zaloguj się do Telegrama</string>
-    <string name="web_settings_signin_helper">Odblokuje komentarze, reakcje i prywatne kanały. Subskrypcje zostaną</string>
+    <string name="web_settings_signin_helper">Pozwoli reagować, głosować, komentować, czytać prywatne kanały i synchronizować się z Telegramem. Subskrypcje zostaną</string>
     <string name="web_settings_clear_cache">Wyczyść cache</string>
     <string name="web_settings_clearing">Czyszczenie…</string>
     <string name="web_settings_clear_cache_helper">Usuwa zbuforowane wpisy i multimedia. Subskrypcje i zapisane wpisy zostają</string>
@@ -77,6 +77,7 @@
     <string name="web_comments_load_failed_body">Nie udało się pobrać komentarzy z Telegrama. Spróbuj ponownie, otwórz post w Telegramie albo zaloguj się</string>
     <string name="comments_show_earlier">Pokaż wcześniejsze komentarze</string>
     <string name="comments_earlier_failed">Nie udało się wczytać wcześniejszych komentarzy. Stuknij, żeby spróbować ponownie</string>
+    <string name="web_channel_older_failed">Nie udało się wczytać wcześniejszych postów. Stuknij, żeby spróbować ponownie</string>
     <string name="web_comments_unavailable_title">Komentarze niedostępne</string>
     <string name="web_settings_privacy_title">Co Telegram widzi w tym trybie</string>
     <string name="web_settings_privacy_body">Twój adres IP i User-Agent przeglądarki desktopowej. Żadnych ciasteczek, konta ani danych osobowych</string>
@@ -447,6 +448,7 @@
     <string name="settings_category_data_title">Dane i pamięć</string>
     <string name="settings_category_data_subtitle">Transfer, pamięć, autopobieranie</string>
     <string name="settings_category_privacy_subtitle">Niewidoczne czytanie, zasady</string>
+    <string name="settings_category_privacy_subtitle_guest">Wyświetlenia, proxy, zasady</string>
     <string name="settings_language">Język</string>
     <string name="settings_language_summary_system">Domyślny systemowy</string>
     <string name="settings_language_dialog_title">Język aplikacji</string>

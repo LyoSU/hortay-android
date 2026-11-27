@@ -3,6 +3,28 @@
 package dev.lyo.hortay.ui.web
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.data.web.OlderPageResult
+import dev.lyo.hortay.ui.text.LocalShowFullPost
+import dev.lyo.hortay.ui.theme.HortaySpacing
+import dev.lyo.hortay.ui.timeline.shouldLoadOlder
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,12 +81,15 @@ import dev.lyo.hortay.data.isUnplayableVideo
  * not a feed filter) but with a much lighter feature set because the guest data
  * path is intrinsically simpler:
  *
- *   - No per-channel pagination RPC — [WebFeedSource] polls each subscribed
- *     channel's full visible head; the user already sees everything we have
- *     on disk.
+ *   - Older history pages in as the reader nears the older edge, like the TDLib
+ *     channel: [dev.lyo.hortay.data.web.WebFeedSource.loadOlder] fetches the t.me/s/
+ *     page before the oldest stored post. Sweeps only keep each channel's newest
+ *     page, so without it the screen ended at whatever they had stored. See
+ *     [OlderHistoryEdge] for the trigger and the edge row.
  *   - No in-channel search bar — the cross-channel [WebSearchScreen] overlay
  *     already serves that role and works equally well over a single-channel
- *     subset (the user types the channel's distinctive vocabulary anyway).
+ *     subset (the user types the channel's distinctive vocabulary anyway). It
+ *     reads the same `post` table, so paged-in older history is searchable too.
  *   - No info sheet for v1 — guest mode has no join/mute/notifications
  *     affordances that would populate it; the unsubscribe action lives on
  *     [WebChannelsScreen]. Title-tap opens the public t.me page so the
@@ -116,6 +141,13 @@ fun WebChannelScreen(
      * [dev.lyo.hortay.ui.report.GuestReportDelegator] path the guest feed uses.
      */
     onReportClick: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
+    /**
+     * Opens the post screen as a hero from the card's on-screen top Y — the same contract
+     * as the TDLib ChannelScreen's `onShowFullPost`. Non-null makes a body tap and "Show
+     * more" open the post (and lets clamped cards collapse expandable quotes); null keeps
+     * [onPostClick] and in-place expansion.
+     */
+    onShowFullPost: ((dev.lyo.hortay.data.TimelinePost, Int) -> Unit)? = null,
 ) {
     val bookmarks = graph.bookmarkStore
     val perChannelPosts by remember(username) {
@@ -193,6 +225,7 @@ fun WebChannelScreen(
     val onPostClickState = rememberUpdatedState(onPostClick)
     val onChannelOpenState = rememberUpdatedState(onChannelOpen)
     val onReportClickState = rememberUpdatedState(onReportClick)
+    val onShowFullState = rememberUpdatedState(onShowFullPost)
     val context = LocalContext.current
 
     // Rows wrapped as [FeedItem.Post] so the shared [rememberReadAckDwell] can match
@@ -299,8 +332,16 @@ fun WebChannelScreen(
                 markPostReadState.value(post)
                 onPostClickState.value(post)
             },
+            onShowFull = onShowFullPost?.let {
+                { post: dev.lyo.hortay.data.TimelinePost, topY: Int ->
+                    markPostReadState.value(post)
+                    onShowFullState.value?.invoke(post, topY)
+                }
+            },
         )
     }
+
+    val olderHistory = rememberOlderHistory(username = username, graph = graph, listState = listState)
 
     val title = channelInfo?.title?.takeIf { it.isNotBlank() } ?: "@$username"
     val subtitle = channelInfo?.subscribers
@@ -346,8 +387,142 @@ fun WebChannelScreen(
         ) {
             // Keyed on [FeedItem.key] so the read-ack dwell above can match visible rows.
             items(items = feedItems, key = { it.key }) { item ->
-                PostCard(post = item.post, interactions = interactions)
+                WebChannelPostItem(post = item.post, itemKey = item.key, interactions = interactions)
+            }
+            // Data is newest-first, so the last item is the older edge in both feed orders
+            // (reverseLayout draws it at the top). Older pages land above this row's index,
+            // away from the first visible item LazyColumn anchors on, so nothing jumps.
+            if (olderHistory.state == OlderHistoryState.Loading || olderHistory.state == OlderHistoryState.Failed) {
+                item(key = OLDER_EDGE_KEY, contentType = OLDER_EDGE_KEY) {
+                    OlderHistoryEdge(state = olderHistory.state, onRetry = olderHistory::load)
+                }
             }
         }
     }
 }
+
+/**
+ * One post row: captures the card's on-screen top Y so a tap or "Show more" opens the
+ * post screen as a hero from where the card sits — the same wiring as the TDLib
+ * ChannelScreen / TimelineFeedColumn rows. With no hero handler the row keeps
+ * [PostInteractions.onPostClick] and in-place expansion.
+ */
+@Composable
+private fun WebChannelPostItem(
+    post: dev.lyo.hortay.data.TimelinePost,
+    itemKey: String,
+    interactions: PostInteractions,
+) {
+    // FloatArray, not State: per-frame position writes must not recompose the card.
+    val topY = remember(itemKey) { floatArrayOf(0f) }
+    val showFull = remember(post, interactions, topY) {
+        interactions.onShowFull?.let { hero -> { hero(post, topY[0].toInt()) } }
+    }
+    val itemInteractions = remember(post, interactions, topY) {
+        val hero = interactions.onShowFull
+        if (hero != null) interactions.copy(onPostClick = { hero(post, topY[0].toInt()) }) else interactions
+    }
+    CompositionLocalProvider(LocalShowFullPost provides showFull) {
+        Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
+            PostCard(post = post, interactions = itemInteractions)
+        }
+    }
+}
+
+/** Older-edge state of a guest channel screen. */
+internal enum class OlderHistoryState { Idle, Loading, Failed, End }
+
+/**
+ * Drives [dev.lyo.hortay.data.web.WebFeedSource.loadOlder] for one screen. The request
+ * itself runs on the feed source's scope, so leaving the screen only drops the wait;
+ * [state] lives in composition and starts [OlderHistoryState.Idle] on every open — an
+ * already-reached start of history answers End from the database without a request.
+ */
+@Stable
+internal class OlderHistoryController(
+    private val username: String,
+    private val graph: AppGraph,
+    private val scope: kotlinx.coroutines.CoroutineScope,
+) {
+    var state by mutableStateOf(OlderHistoryState.Idle)
+        private set
+
+    /** Starts a page unless one is loading or the start of history was reached. */
+    fun load() {
+        if (state == OlderHistoryState.Loading || state == OlderHistoryState.End) return
+        state = OlderHistoryState.Loading
+        scope.launch {
+            state = when (graph.webFeedSource.loadOlder(username)) {
+                is OlderPageResult.Loaded -> OlderHistoryState.Idle
+                OlderPageResult.End -> OlderHistoryState.End
+                OlderPageResult.RateLimited, OlderPageResult.Failed -> OlderHistoryState.Failed
+            }
+        }
+    }
+}
+
+/**
+ * Pages older history in when the reader comes within [OLDER_PAGINATION_THRESHOLD] rows
+ * of the older edge — the same `shouldLoadOlder` trigger and threshold as the TDLib
+ * ChannelScreen, so both modes start loading at the same point. Only from
+ * [OlderHistoryState.Idle]: a failure waits for the edge row's Retry, never an automatic
+ * loop, and the trigger re-arms only when the layout changes (a landed page, a scroll).
+ */
+@Composable
+private fun rememberOlderHistory(
+    username: String,
+    graph: AppGraph,
+    listState: LazyListState,
+): OlderHistoryController {
+    val scope = rememberCoroutineScope()
+    val controller = remember(username, graph, scope) { OlderHistoryController(username, graph, scope) }
+    LaunchedEffect(listState, controller) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            Triple(
+                info.totalItemsCount,
+                info.visibleItemsInfo.firstOrNull()?.index ?: -1,
+                info.visibleItemsInfo.lastOrNull()?.index ?: -1,
+            )
+        }
+            .distinctUntilChanged()
+            .collect { (total, first, last) ->
+                if (first < 0) return@collect
+                if (controller.state == OlderHistoryState.Idle &&
+                    shouldLoadOlder(first, last, total, OLDER_PAGINATION_THRESHOLD)
+                ) {
+                    controller.load()
+                }
+            }
+    }
+    return controller
+}
+
+/**
+ * The older-edge row: a loading indicator while a page is on its way, a Retry button
+ * after a failure (rate limit included). Not composed at all when idle or at the start
+ * of history, so the edge reads exactly like the TDLib channel's.
+ */
+@Composable
+private fun OlderHistoryEdge(state: OlderHistoryState, onRetry: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .padding(horizontal = HortaySpacing.lg, vertical = HortaySpacing.xs),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (state == OlderHistoryState.Failed) {
+            TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(text = stringResource(R.string.web_channel_older_failed), textAlign = TextAlign.Center)
+            }
+        } else {
+            LoadingIndicator(modifier = Modifier.size(32.dp))
+        }
+    }
+}
+
+private const val OLDER_EDGE_KEY = "older_edge"
+
+/** Rows from the older edge that start the next page; matches the TDLib ChannelScreen. */
+private const val OLDER_PAGINATION_THRESHOLD = 6

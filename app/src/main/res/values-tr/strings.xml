@@ -63,7 +63,7 @@
     <string name="web_retry_for">%1$s için yeniden dene</string>
     <string name="web_settings_subtitle">Telegram girişi yok</string>
     <string name="web_settings_signin">Telegram\'a giriş yap</string>
-    <string name="web_settings_signin_helper">Yorumlar, tepkiler ve özel kanallara erişim açılır. Abonelikler korunur</string>
+    <string name="web_settings_signin_helper">Tepki ver, oy kullan, yorum yap, özel kanalları aç ve Telegram ile eşitle. Abonelikler korunur</string>
     <string name="web_settings_clear_cache">Önbelleği temizle</string>
     <string name="web_settings_clearing">Temizleniyor…</string>
     <string name="web_settings_clear_cache_helper">Önbelleğe alınan gönderileri ve içerikleri siler. Abonelikler ve kaydedilen gönderiler korunur</string>
@@ -75,6 +75,7 @@
     <string name="web_comments_load_failed_body">Yorumlar Telegram\'dan alınamadı. Tekrar dene, gönderiyi Telegram\'da aç ya da giriş yap</string>
     <string name="comments_show_earlier">Önceki yorumları göster</string>
     <string name="comments_earlier_failed">Önceki yorumlar yüklenemedi. Tekrar denemek için dokun</string>
+    <string name="web_channel_older_failed">Önceki gönderiler yüklenemedi. Tekrar denemek için dokun</string>
     <string name="web_comments_unavailable_title">Yorumlar kullanılamıyor</string>
     <string name="web_settings_privacy_title">Bu modda Telegram ne görüyor</string>
     <string name="web_settings_privacy_body">IP adresin ve masaüstü tarayıcı User-Agent\'ı. Çerez, hesap veya kişisel bilgi yok</string>
@@ -425,6 +426,7 @@
     <string name="settings_category_data_title">Veri ve depolama</string>
     <string name="settings_category_data_subtitle">Trafik, depolama, otomatik indirme</string>
     <string name="settings_category_privacy_subtitle">Görünmez okuma, ilkeler</string>
+    <string name="settings_category_privacy_subtitle_guest">Görüntülemeler, proxy, ilkeler</string>
     <string name="settings_language">Dil</string>
     <string name="settings_language_summary_system">Sistem varsayılanı</string>
     <string name="settings_language_dialog_title">Uygulama dili</string>

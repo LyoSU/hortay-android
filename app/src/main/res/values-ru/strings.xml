@@ -65,7 +65,7 @@
     <string name="web_retry_for">Повторить для %1$s</string>
     <string name="web_settings_subtitle">Без входа в Telegram</string>
     <string name="web_settings_signin">Войти в Telegram</string>
-    <string name="web_settings_signin_helper">Откроет комментарии, реакции и приватные каналы. Подписки сохранятся</string>
+    <string name="web_settings_signin_helper">Можно будет реагировать, голосовать, комментировать, читать приватные каналы и синхронизироваться с Telegram. Подписки сохранятся</string>
     <string name="web_settings_clear_cache">Очистить кеш</string>
     <string name="web_settings_clearing">Очищаем…</string>
     <string name="web_settings_clear_cache_helper">Удаляет кешированные посты и медиафайлы. Подписки и сохранённые посты остаются</string>
@@ -77,6 +77,7 @@
     <string name="web_comments_load_failed_body">Не удалось получить комментарии из Telegram. Попробуйте ещё раз, откройте пост в Telegram или войдите</string>
     <string name="comments_show_earlier">Показать предыдущие комментарии</string>
     <string name="comments_earlier_failed">Не удалось загрузить предыдущие комментарии. Нажмите, чтобы попробовать ещё раз</string>
+    <string name="web_channel_older_failed">Не удалось загрузить предыдущие посты. Нажмите, чтобы попробовать ещё раз</string>
     <string name="web_comments_unavailable_title">Комментарии недоступны</string>
     <string name="web_settings_privacy_title">Что видит Telegram в этом режиме</string>
     <string name="web_settings_privacy_body">Ваш IP и User-Agent десктопного браузера. Без куки, аккаунта и личных данных</string>
@@ -449,6 +450,7 @@
     <string name="settings_category_data_title">Данные и хранилище</string>
     <string name="settings_category_data_subtitle">Трафик, хранилище, автозагрузка</string>
     <string name="settings_category_privacy_subtitle">Невидимое чтение, политики</string>
+    <string name="settings_category_privacy_subtitle_guest">Просмотры, прокси, политики</string>
     <string name="settings_language">Язык</string>
     <string name="settings_language_summary_system">Системный</string>
     <string name="settings_language_dialog_title">Язык приложения</string>

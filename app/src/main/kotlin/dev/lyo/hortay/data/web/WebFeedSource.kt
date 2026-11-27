@@ -760,6 +760,27 @@ class WebFeedSource(
 
     private fun channelLock(username: String): Mutex = channelLocks.getOrPut(username) { Mutex() }
 
+    /** User-driven older pages of one channel; see [loadOlder]. */
+    private val olderHistory = WebChannelHistoryLoader(
+        repository = repository,
+        scope = scope,
+        isGated = { client.isGateActive },
+        lockFor = ::channelLock,
+        fetchBefore = { username, beforeSeq ->
+            fetchSemaphore.withPermit {
+                client.fetchChannelPage(username, before = beforeSeq.toString(), useCache = false)
+            }
+        },
+        onPage = { page -> viewReporter?.recordPage(page) },
+    )
+
+    /**
+     * The guest channel screen reached its older edge: fetch the page before the oldest
+     * stored post of [username]. Joins a request already in flight for the channel and
+     * never waits on the rate-limit gate — see [WebChannelHistoryLoader].
+     */
+    suspend fun loadOlder(username: String): OlderPageResult = olderHistory.loadOlder(username)
+
     private suspend fun fetchOne(
         username: String,
         forceNetwork: Boolean,

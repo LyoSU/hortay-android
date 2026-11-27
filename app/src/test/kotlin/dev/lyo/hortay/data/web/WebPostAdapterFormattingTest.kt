@@ -143,6 +143,24 @@ class WebPostAdapterFormattingTest {
         }
     }
 
+    @Test
+    fun `expandable attribute marks the quote collapsible`() {
+        val (_, span) = parseSingleSpan(
+            "<blockquote expandable>long quoted body</blockquote>",
+            FormattedText.Style.BlockQuote::class.java,
+        )
+        assertEquals(true, (span.style as FormattedText.Style.BlockQuote).expandable)
+    }
+
+    @Test
+    fun `plain blockquote stays expanded`() {
+        val (_, span) = parseSingleSpan(
+            "<blockquote>short quoted body</blockquote>",
+            FormattedText.Style.BlockQuote::class.java,
+        )
+        assertEquals(false, (span.style as FormattedText.Style.BlockQuote).expandable)
+    }
+
     private fun parseAll(html: String): FormattedText =
         WebPostAdapterFormattingHook.htmlToFormatted(html)
 

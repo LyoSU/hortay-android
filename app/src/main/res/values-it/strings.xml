@@ -63,7 +63,7 @@
     <string name="web_retry_for">Riprova per %1$s</string>
     <string name="web_settings_subtitle">Senza accesso a Telegram</string>
     <string name="web_settings_signin">Accedi a Telegram</string>
-    <string name="web_settings_signin_helper">Sblocca commenti, reazioni e canali privati. Le iscrizioni restano</string>
+    <string name="web_settings_signin_helper">Reagisci, vota, commenta, apri canali privati e sincronizza con Telegram. Le iscrizioni restano</string>
     <string name="web_settings_clear_cache">Svuota cache</string>
     <string name="web_settings_clearing">Svuotamento…</string>
     <string name="web_settings_clear_cache_helper">Rimuove i post e i media in cache. Le iscrizioni e i post salvati restano</string>
@@ -75,6 +75,7 @@
     <string name="web_comments_load_failed_body">Impossibile ottenere i commenti da Telegram. Riprova, apri il post in Telegram o accedi</string>
     <string name="comments_show_earlier">Mostra commenti precedenti</string>
     <string name="comments_earlier_failed">Impossibile caricare i commenti precedenti. Tocca per riprovare</string>
+    <string name="web_channel_older_failed">Impossibile caricare i post precedenti. Tocca per riprovare</string>
     <string name="web_comments_unavailable_title">Commenti non disponibili</string>
     <string name="web_settings_privacy_title">Cosa vede Telegram in questa modalità</string>
     <string name="web_settings_privacy_body">Il tuo IP e un User-Agent da browser desktop. Nessun cookie, nessun account, niente di personale</string>
@@ -433,6 +434,7 @@
     <string name="settings_category_data_title">Dati e archiviazione</string>
     <string name="settings_category_data_subtitle">Traffico, archiviazione, download automatico</string>
     <string name="settings_category_privacy_subtitle">Lettura invisibile, criteri</string>
+    <string name="settings_category_privacy_subtitle_guest">Visualizzazioni, proxy, criteri</string>
     <string name="settings_language">Lingua</string>
     <string name="settings_language_summary_system">Predefinita del sistema</string>
     <string name="settings_language_dialog_title">Lingua dell\'app</string>

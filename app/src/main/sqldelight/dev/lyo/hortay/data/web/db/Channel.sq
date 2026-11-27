@@ -29,7 +29,10 @@ CREATE TABLE channel (
     -- Real Telegram channel id (positive), from the page's `data-view` token. NULL until
     -- a full fetch has seen one. Added by 5.sqm, hence last. Used to tell whether a
     -- signed-in account already follows the channel (MigrationCoordinator / import).
-    channel_id INTEGER
+    channel_id INTEGER,
+    -- The channel has no post below this seq: a `?before=` page for it came back with
+    -- nothing older. NULL until the reader pages back to the start. Added by 6.sqm.
+    history_start_seq INTEGER
 );
 
 CREATE INDEX channel_subscribed_idx ON channel(is_subscribed);
@@ -53,6 +56,13 @@ SELECT channel_id FROM channel WHERE username = :username;
 
 selectOlderCursor:
 SELECT username, older_cursor FROM channel WHERE username = :username;
+
+-- Start-of-history mark for the older-page walk (WebChannelHistoryLoader).
+selectHistoryStart:
+SELECT history_start_seq FROM channel WHERE username = :username;
+
+markHistoryStart:
+UPDATE channel SET history_start_seq = :seq WHERE username = :username;
 
 selectStaleSubscribed:
 -- Channels overdue for a re-fetch. Driven by tiered polling (Phase 1.5).
@@ -176,7 +186,8 @@ UPDATE channel SET
     older_cursor = NULL,
     fetch_status = 'idle',
     fetch_error = NULL,
-    fetch_retry_after_ms = NULL
+    fetch_retry_after_ms = NULL,
+    history_start_seq = NULL
 WHERE is_subscribed = 1;
 
 -- Username case normalisation (WebRepository.normalizeUsernameCase). Builds before

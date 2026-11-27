@@ -63,7 +63,7 @@
     <string name="web_retry_for">Erneut versuchen für %1$s</string>
     <string name="web_settings_subtitle">Ohne Telegram-Anmeldung</string>
     <string name="web_settings_signin">Bei Telegram anmelden</string>
-    <string name="web_settings_signin_helper">Schaltet Kommentare, Reaktionen und private Kanäle frei. Abonnements bleiben erhalten</string>
+    <string name="web_settings_signin_helper">Reagieren, abstimmen, kommentieren, private Kanäle öffnen und mit Telegram synchronisieren. Abonnements bleiben erhalten</string>
     <string name="web_settings_clear_cache">Cache leeren</string>
     <string name="web_settings_clearing">Wird geleert…</string>
     <string name="web_settings_clear_cache_helper">Entfernt gecachte Beiträge und Medien. Abonnements und gespeicherte Beiträge bleiben erhalten</string>
@@ -75,6 +75,7 @@
     <string name="web_comments_load_failed_body">Die Kommentare konnten nicht von Telegram geladen werden. Versuch es erneut, öffne den Beitrag in Telegram oder melde dich an</string>
     <string name="comments_show_earlier">Frühere Kommentare anzeigen</string>
     <string name="comments_earlier_failed">Frühere Kommentare konnten nicht geladen werden. Tippe, um es erneut zu versuchen</string>
+    <string name="web_channel_older_failed">Frühere Beiträge konnten nicht geladen werden. Tippe, um es erneut zu versuchen</string>
     <string name="web_comments_unavailable_title">Kommentare nicht verfügbar</string>
     <string name="web_settings_privacy_title">Was Telegram in diesem Modus sieht</string>
     <string name="web_settings_privacy_body">Deine IP und ein Desktop-Browser-User-Agent. Keine Cookies, kein Konto, keine persönlichen Daten</string>
@@ -425,6 +426,7 @@
     <string name="settings_category_data_title">Daten und Speicher</string>
     <string name="settings_category_data_subtitle">Datenverkehr, Speicher, Auto-Download</string>
     <string name="settings_category_privacy_subtitle">Unsichtbares Lesen, Richtlinien</string>
+    <string name="settings_category_privacy_subtitle_guest">Aufrufe, Proxy, Richtlinien</string>
     <string name="settings_language">Sprache</string>
     <string name="settings_language_summary_system">Systemstandard</string>
     <string name="settings_language_dialog_title">App-Sprache</string>

@@ -62,7 +62,7 @@
     <string name="web_retry_for">Coba lagi untuk %1$s</string>
     <string name="web_settings_subtitle">Tanpa masuk Telegram</string>
     <string name="web_settings_signin">Masuk ke Telegram</string>
-    <string name="web_settings_signin_helper">Membuka komentar, reaksi, dan kanal privat. Langganan tetap tersimpan</string>
+    <string name="web_settings_signin_helper">Beri reaksi, ikut voting, berkomentar, buka kanal privat, dan sinkron dengan Telegram. Langganan tetap tersimpan</string>
     <string name="web_settings_clear_cache">Hapus cache</string>
     <string name="web_settings_clearing">Menghapus…</string>
     <string name="web_settings_clear_cache_helper">Menghapus kiriman dan aset yang di-cache. Langganan dan kiriman tersimpan tetap ada</string>
@@ -74,6 +74,7 @@
     <string name="web_comments_load_failed_body">Tidak dapat mengambil komentar dari Telegram. Coba lagi, buka postingan di Telegram, atau masuk</string>
     <string name="comments_show_earlier">Tampilkan komentar sebelumnya</string>
     <string name="comments_earlier_failed">Tidak dapat memuat komentar sebelumnya. Ketuk untuk mencoba lagi</string>
+    <string name="web_channel_older_failed">Tidak dapat memuat postingan sebelumnya. Ketuk untuk mencoba lagi</string>
     <string name="web_comments_unavailable_title">Komentar tidak tersedia</string>
     <string name="web_settings_privacy_title">Apa yang dilihat Telegram di mode ini</string>
     <string name="web_settings_privacy_body">IP dan User-Agent browser desktop. Tanpa cookie, tanpa akun, tanpa data pribadimu</string>
@@ -411,6 +412,7 @@
     <string name="settings_category_data_title">Data dan penyimpanan</string>
     <string name="settings_category_data_subtitle">Lalu lintas, penyimpanan, unduh otomatis</string>
     <string name="settings_category_privacy_subtitle">Membaca tanpa terlihat, kebijakan</string>
+    <string name="settings_category_privacy_subtitle_guest">Tayangan, proxy, kebijakan</string>
     <string name="settings_language">Bahasa</string>
     <string name="settings_language_summary_system">Default sistem</string>
     <string name="settings_language_dialog_title">Bahasa aplikasi</string>
