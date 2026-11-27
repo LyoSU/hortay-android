@@ -255,6 +255,7 @@
     <string name="post_copy_text">نسخ النص</string>
     <string name="post_select_text">تحديد النص</string>
     <string name="post_share">مشاركة</string>
+    <string name="post_share_screenshot">مشاركة لقطة شاشة</string>
     <string name="post_open_telegram">فتح في Telegram</string>
     <string name="post_copied_toast">تم النسخ</string>
     <string name="post_show_more">عرض المزيد</string>

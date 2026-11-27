@@ -237,6 +237,7 @@
     <string name="post_copy_text">Metni kopyala</string>
     <string name="post_select_text">Metni seç</string>
     <string name="post_share">Paylaş</string>
+    <string name="post_share_screenshot">Ekran görüntüsünü paylaş</string>
     <string name="post_open_telegram">Telegram\'da aç</string>
     <string name="post_copied_toast">Kopyalandı</string>
     <string name="post_show_more">Daha fazla göster</string>

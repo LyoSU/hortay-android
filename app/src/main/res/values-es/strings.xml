@@ -241,6 +241,7 @@
     <string name="post_copy_text">Copiar texto</string>
     <string name="post_select_text">Seleccionar texto</string>
     <string name="post_share">Compartir</string>
+    <string name="post_share_screenshot">Compartir captura</string>
     <string name="post_open_telegram">Abrir en Telegram</string>
     <string name="post_copied_toast">Copiado</string>
     <string name="post_show_more">Ver más</string>

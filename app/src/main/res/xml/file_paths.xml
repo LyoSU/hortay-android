@@ -13,7 +13,8 @@
     (cacheDir/coil) is additionally exposed for guest (web) mode where the
     photo never reaches filesDir/tdlib-files — Coil holds the bytes there
     and the viewer's Share / Copy actions mint a URI against the cached
-    file directly.
+    file directly. cacheDir/shared holds pictures the app draws itself for
+    sharing (a post's screenshot, MediaShareActions.writeSharedImage).
 -->
 <paths>
     <files-path
@@ -22,4 +23,7 @@
     <cache-path
         name="coil_cache"
         path="coil/" />
+    <cache-path
+        name="shared_images"
+        path="shared/" />
 </paths>

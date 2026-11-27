@@ -230,6 +230,7 @@
     <string name="post_copy_text">Salin teks</string>
     <string name="post_select_text">Pilih teks</string>
     <string name="post_share">Bagikan</string>
+    <string name="post_share_screenshot">Bagikan tangkapan layar</string>
     <string name="post_open_telegram">Buka di Telegram</string>
     <string name="post_copied_toast">Disalin</string>
     <string name="post_show_more">Tampilkan lebih banyak</string>

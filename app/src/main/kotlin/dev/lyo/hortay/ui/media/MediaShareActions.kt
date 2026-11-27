@@ -54,6 +54,8 @@ object MediaShareActions {
 
     private const val TAG = "MediaShareActions"
     private const val SUBFOLDER = "Hortay"
+    private const val SHARED_IMAGES_DIR = "shared"
+    private const val SHARED_IMAGE_TTL_MS = 60L * 60L * 1000L
 
     sealed interface Result {
         data object Success : Result
@@ -287,6 +289,22 @@ object MediaShareActions {
                 debugDetail = t.message ?: t.javaClass.simpleName,
             )
         }
+    }
+
+    /**
+     * Writes [image] — a picture the app drew itself, such as a post's screenshot — as a PNG
+     * under `cacheDir/shared/` (exposed through the same FileProvider) and returns the file,
+     * ready for [shareFile]. Pictures older than [SHARED_IMAGE_TTL_MS] are removed on the way,
+     * so shared images never pile up while a share target can still read the latest ones.
+     * Blocking: call off the main thread.
+     */
+    fun writeSharedImage(context: Context, image: android.graphics.Bitmap, fileName: String): File {
+        val dir = File(context.cacheDir, SHARED_IMAGES_DIR).apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        dir.listFiles()?.forEach { if (now - it.lastModified() > SHARED_IMAGE_TTL_MS) it.delete() }
+        val file = File(dir, fileName)
+        file.outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        return file
     }
 
     /**

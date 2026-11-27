@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.AlignmentLine
@@ -75,6 +76,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.MultiContentMeasurePolicy
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -136,6 +138,7 @@ import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 import dev.lyo.hortay.ui.theme.tabularFigures
 import dev.lyo.hortay.ui.util.rememberReducedMotion
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 // Card body chrome — the header Row's horizontal padding, the avatar diameter, and the gap between
@@ -217,6 +220,9 @@ fun PostCard(
     chain: PostChain = PostChain.None,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
+    // The menu's "Share screenshot" outlives the menu (it closes first, then the image is
+    // drawn and encoded off the main thread), so it runs in the card's scope.
+    val screenshotScope = rememberCoroutineScope()
     val hostChannel = post.channelContext.takeIf { showHostChannel }
     val menuAnchor = remember { ContextMenuAnchor() }
     // Picker → chip hand-off for the choose animation: the sheet dismisses as it toggles,
@@ -344,18 +350,25 @@ fun PostCard(
             // common case stays layer-free.
             .then(if (post.isDeleted) Modifier.alpha(HortayAlpha.FAINT) else Modifier)
             // Press-scale layer is installed ONLY while pressed (pressScale < 1f); a
-            // resting card stays compositing-layer-free.
+            // resting card stays compositing-layer-free. It drops at once when the
+            // long-press menu opens: the menu lifts a snapshot of this card taken on the
+            // next frame, and a card still springing back from 0.985 would be lifted
+            // shrunk and leave a seam against the original on the way back.
             .then(
-                if (pressScale != 1f) {
+                if (pressScale != 1f && !sheetOpen) {
                     Modifier.graphicsLayer {
                         scaleX = pressScale
                         scaleY = pressScale
                     }
                 } else Modifier,
             )
-            .background(highlightColor)
+            // The highlight, the unread strip and the thread connector are the feed's chrome,
+            // not the post: the long-press menu's snapshot frame leaves them out
+            // ([ContextMenuAnchor.isCapturing], read here in the draw phase only), so the
+            // lifted copy and a shared screenshot show the post alone.
+            .drawBehind { if (!menuAnchor.isCapturing) drawRect(highlightColor) }
             .drawBehind {
-                if (unreadAlpha <= 0f) return@drawBehind
+                if (unreadAlpha <= 0f || menuAnchor.isCapturing) return@drawBehind
                 val stripWidth = 3.dp.toPx()
                 val verticalInset = 14.dp.toPx()
                 val cornerRadius = 2.dp.toPx()
@@ -376,7 +389,9 @@ fun PostCard(
             }
             .then(
                 if (chain != PostChain.None) {
-                    Modifier.drawBehind { drawThreadConnector(chain, connectorX, connectorColor) }
+                    Modifier.drawBehind {
+                        if (!menuAnchor.isCapturing) drawThreadConnector(chain, connectorX, connectorColor)
+                    }
                 } else Modifier,
             ),
     ) {
@@ -416,7 +431,9 @@ fun PostCard(
                 .fillMaxWidth()
                 .combinedClickable(
                     interactionSource = cardInteractionSource,
-                    indication = LocalIndication.current,
+                    // No ripple while the long-press menu is up: the finger is still down, and
+                    // a pressed ripple would be baked into the menu's snapshot of the card.
+                    indication = if (sheetOpen) null else LocalIndication.current,
                     enabled = clickable || actionsEnabled,
                     // A tombstone's message no longer exists on Telegram, so its comments
                     // screen would open on nothing; its tap opens the archived revision
@@ -758,6 +775,7 @@ fun PostCard(
             anchor = menuAnchor,
             interactions = interactions,
             effectRequest = reactionEffect,
+            screenshotScope = screenshotScope,
             onSelectText = { selectTextOpen = true },
             onSummarize = if (post.canSummarize && summarizer != null) ({ summaryOpen = true }) else null,
             onDismiss = { sheetOpen = false },
@@ -2440,6 +2458,9 @@ internal fun ReactionChip(
  * opens the thread, and two filled buttons on top of the list outweighed everything else in
  * the menu. Save, Share and Copy link lead instead as one row of quiet tonal tiles
  * ([ContextMenuTiles]) — the most-used actions, in a third of the height three rows took.
+ * "Share screenshot" follows them as the first row: it shares the menu's own snapshot of the
+ * card — the post alone, with no menu, blur or unread strip — as a PNG, and is hidden where
+ * the channel forbids saving its content, like Copy and Select text.
  * The destructive Report keeps a divider of its own at the bottom.
  */
 @Composable
@@ -2448,11 +2469,16 @@ private fun PostContextMenu(
     anchor: ContextMenuAnchor,
     interactions: PostInteractions,
     effectRequest: ReactionEffectRequest,
+    screenshotScope: CoroutineScope,
     onSelectText: () -> Unit,
     onSummarize: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    // The shared picture sits on the colour the feed does, a little padding around the post.
+    val backing = MaterialTheme.colorScheme.background.toArgb()
+    val screenshotPadding = with(LocalDensity.current) { SCREENSHOT_PADDING.roundToPx() }
     val isBookmarked = interactions.isBookmarked(post)
     // Available reactions are fetched once when the menu opens (a single on-demand RPC;
     // empty in guest mode → no capsule).
@@ -2533,6 +2559,20 @@ private fun PostContextMenu(
                     }
                 }
                 ContextMenuTiles(tiles)
+                val screenshot = anchorSnapshot
+                if (screenshot != null && !post.protectedContent) {
+                    ContextMenuItem(
+                        symbol = "image",
+                        label = stringResource(R.string.post_share_screenshot),
+                        onClick = {
+                            close {
+                                screenshotScope.launch {
+                                    sharePostScreenshot(context, screenshot, backing, screenshotPadding)
+                                }
+                            }
+                        },
+                    )
+                }
                 ContextMenuItem(
                     symbol = "open_in_new",
                     label = stringResource(R.string.post_open_telegram),
@@ -2805,3 +2845,5 @@ private const val ZERO_WIDTH_JOINER = '\u200D'
  * default (300 ms); much shorter and a relaxed double tap starts opening the post instead.
  */
 private const val QUICK_REACTION_WINDOW_MS = 220L
+
+private val SCREENSHOT_PADDING = 16.dp

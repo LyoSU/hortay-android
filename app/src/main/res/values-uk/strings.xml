@@ -243,6 +243,7 @@
     <string name="post_copy_text">Скопіювати текст</string>
     <string name="post_select_text">Виділити текст</string>
     <string name="post_share">Поділитися</string>
+    <string name="post_share_screenshot">Поділитися скріншотом</string>
     <string name="post_open_telegram">Відкрити в Telegram</string>
     <string name="post_copied_toast">Скопійовано</string>
     <string name="post_show_more">Показати більше</string>

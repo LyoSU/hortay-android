@@ -7,6 +7,11 @@
 ### Added
 - In guest mode the Add channel sheet searches by name as you type — through the channels the app already knows, plus a live check of the text as a @username.
 - Public channels can be read without joining them — their posts join the All feed, and the Channels tab lists them under “Not joined”.
+- A post's long-press menu can share a screenshot of the post alone, without the menu or the feed around it.
+
+### Changed
+- Long-pressing a post or a comment blurs the screen behind the menu and lifts the post at full size above it, with the reactions above and the actions below — a tall post scrolls together with the menu.
+- After a long-press you can slide your finger onto a menu action and lift it to choose, and the menu's rows are larger and easier to hit.
 
 ### Fixed
 - The full-screen post search no longer draws a stray line under the search field.

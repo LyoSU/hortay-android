@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.widget.Toast
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -34,7 +36,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.components.BackdropBlur
+import dev.lyo.hortay.ui.components.backdropScrimAlpha
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.launch
 
 /**
@@ -55,6 +60,10 @@ import kotlinx.coroutines.launch
  * plain tail, truncated past 96 chars). Bolding the host puts the user's attention on
  * the security-relevant part of the URL — the same anti-phishing affordance the
  * confirmation dialog uses.
+ *
+ * Like the post and comment long-press menus, the screen behind blurs while the sheet is up
+ * ([BackdropBlur], composed outside the sheet's window), following the sheet's target state
+ * rather than its drag offset, and the scrim lightens to match.
  */
 @Composable
 fun LinkActionsSheet(
@@ -74,7 +83,21 @@ fun LinkActionsSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    val blur = remember { Animatable(0f) }
+    val reducedMotion = rememberReducedMotion()
+    val blurSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val shown = sheetState.targetValue != SheetValue.Hidden
+    LaunchedEffect(shown) {
+        val target = if (shown) 1f else 0f
+        if (reducedMotion) blur.snapTo(target) else blur.animateTo(target, blurSpec)
+    }
+    BackdropBlur(progress = { blur.value })
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = backdropScrimAlpha()),
+    ) {
         Column(modifier = Modifier.padding(bottom = 12.dp)) {
             Text(
                 text = pretty,
