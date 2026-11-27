@@ -597,7 +597,7 @@
 
     <!-- CTA «Войти», когда найденный канал приватный. -->
     <string name="web_add_signin_for_private">Войдите, чтобы читать приватные каналы</string>
-    <string name="web_add_search_hint">Название, @username или ссылка t.me</string>
+    <string name="web_add_search_hint">Название, @username или ссылка</string>
     <string name="web_add_search_empty">Без аккаунта по названию ищутся только каналы, которые приложение уже знает. Точный @username или ссылка t.me сработают всегда.</string>
     <string name="web_add_search_sign_in">Войти, чтобы искать по всему Telegram</string>
     <plurals name="web_add_search_results">

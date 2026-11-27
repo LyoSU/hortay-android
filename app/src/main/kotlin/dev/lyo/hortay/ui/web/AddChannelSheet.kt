@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -510,6 +512,12 @@ fun AddChannelSheet(
     val addLabel = stringResource(R.string.web_add_confirm)
     val subscribedLabel = stringResource(R.string.discover_subscribed)
 
+    val windowHeightPx = LocalWindowInfo.current.containerSize.height
+    val density = LocalDensity.current
+    val sheetContentHeight = remember(windowHeightPx, density) {
+        with(density) { (windowHeightPx * SHEET_HEIGHT_FRACTION).toDp() }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -517,9 +525,12 @@ fun AddChannelSheet(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                // Bound the height so the LazyColumn never gets an infinite max
-                // constraint from the sheet's wrap-content Column (would crash).
-                .heightIn(max = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.82f)
+                // A fixed height, not a cap: the sheet wraps its content, so a cap let it
+                // shrink with every keystroke that left fewer results and the search
+                // field slid under the finger. Fixed in every state, it stays put; the
+                // results or the empty state fill it or leave space. Also gives the
+                // LazyColumn the finite max constraint the wrap-content Column lacks.
+                .height(sheetContentHeight)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -557,14 +568,15 @@ fun AddChannelSheet(
                         hint = stringResource(R.string.web_add_search_hint),
                         onSearch = { trySubmit() },
                         onClear = ::clearInput,
-                        trailing = {
-                            TextButton(
-                                onClick = ::trySubmit,
-                                enabled = input.isNotBlank() &&
-                                    lookupState !is LookupState.Loading &&
-                                    (linkMode || parseUsernameFromInput(input) != null),
-                            ) {
-                                Text(stringResource(R.string.web_add_lookup))
+                        // Only with text to act on: an empty field would show a disabled
+                        // Find that steals the width the hint needs.
+                        trailing = if (input.isBlank()) null else {
+                            {
+                                FindButton(
+                                    onClick = ::trySubmit,
+                                    enabled = lookupState !is LookupState.Loading &&
+                                        (linkMode || parseUsernameFromInput(input) != null),
+                                )
                             }
                         },
                     )
@@ -703,6 +715,13 @@ fun AddChannelSheet(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FindButton(onClick: () -> Unit, enabled: Boolean) {
+    TextButton(onClick = onClick, enabled = enabled) {
+        Text(stringResource(R.string.web_add_lookup))
     }
 }
 
@@ -956,6 +975,9 @@ private const val HYDRATE_TOP_RESULTS = 8
 
 // Concurrent t.me/s card fetches across catalog and search hydration.
 private const val HYDRATE_CONCURRENCY = 4
+
+// Share of the window height the sheet's content takes, in every state.
+private const val SHEET_HEIGHT_FRACTION = 0.82f
 
 // Coalesces a burst of hydration results into one index rebuild.
 private const val INDEX_REBUILD_DEBOUNCE_MS = 300L

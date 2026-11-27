@@ -569,7 +569,7 @@
 
     <!-- Aranan kanal özel olduğunda gösterilen giriş CTA\'sı. -->
     <string name="web_add_signin_for_private">Özel kanallara erişmek için giriş yap</string>
-    <string name="web_add_search_hint">Ad, @kullanıcıadı veya t.me bağlantısı</string>
+    <string name="web_add_search_hint">Ad, @kullanıcıadı veya bağlantı</string>
     <string name="web_add_search_empty">Hesap olmadan adla arama yalnızca uygulamanın zaten bildiği kanalları kapsar. Tam bir @kullanıcıadı veya t.me bağlantısı her zaman çalışır.</string>
     <string name="web_add_search_sign_in">Tüm Telegram\'da aramak için giriş yap</string>
     <plurals name="web_add_search_results">
