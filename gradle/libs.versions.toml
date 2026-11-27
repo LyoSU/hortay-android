@@ -32,7 +32,7 @@ browser = "1.10.0"
 # ViewModelStore for Nav3). All lifecycle-* artifacts share this version.
 lifecycle = "2.11.0"
 coroutines = "1.11.0"
-serialization = "1.12.0"
+serialization = "1.13.0"
 # java-diff-utils — text-diff for the post-archive edit-history snapshots.
 diffUtils = "4.18"
 datastore = "1.3.0"
