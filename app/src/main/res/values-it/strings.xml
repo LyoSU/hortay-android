@@ -79,8 +79,6 @@
     <string name="web_comments_unavailable_title">Commenti non disponibili</string>
     <string name="web_settings_privacy_title">Cosa vede Telegram in questa modalità</string>
     <string name="web_settings_privacy_body">Il tuo IP e un User-Agent da browser desktop. Nessun cookie, nessun account, niente di personale</string>
-    <string name="web_add_body">@username, link t.me/username, oppure incolla dagli appunti</string>
-    <string name="web_add_input_label">Canale</string>
     <string name="web_add_paste_clipboard">Incolla dagli appunti: %1$s</string>
     <string name="web_add_validating">Verifica in corso…</string>
     <string name="web_add_lookup">Trova</string>
@@ -581,6 +579,13 @@
 
     <!-- CTA accesso mostrata quando il canale trovato è privato. -->
     <string name="web_add_signin_for_private">Accedi per aprire i canali privati</string>
+    <string name="web_add_search_hint">Nome, @username o link t.me</string>
+    <string name="web_add_search_empty">Senza account la ricerca per nome copre solo i canali che l’app conosce già. Un @username esatto o un link t.me funziona sempre.</string>
+    <string name="web_add_search_sign_in">Accedi per cercare in tutto Telegram</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">%1$d canale trovato</item>
+        <item quantity="other">%1$d canali trovati</item>
+    </plurals>
 
     <!-- Etichetta TalkBack per l\'icona di cancellazione iscrizione con nome canale. -->
     <string name="web_unsubscribe_from">Annulla iscrizione a %1$s</string>

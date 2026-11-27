@@ -78,8 +78,6 @@
     <string name="web_comments_unavailable_title">Komentar tidak tersedia</string>
     <string name="web_settings_privacy_title">Apa yang dilihat Telegram di mode ini</string>
     <string name="web_settings_privacy_body">IP dan User-Agent browser desktop. Tanpa cookie, tanpa akun, tanpa data pribadimu</string>
-    <string name="web_add_body">@username, tautan t.me/username, atau tempel dari clipboard</string>
-    <string name="web_add_input_label">Kanal</string>
     <string name="web_add_paste_clipboard">Tempel dari clipboard: %1$s</string>
     <string name="web_add_validating">Memvalidasi…</string>
     <string name="web_add_lookup">Cari</string>
@@ -555,6 +553,12 @@
 
     <!-- CTA masuk saat kanal yang ditemukan bersifat privat. -->
     <string name="web_add_signin_for_private">Masuk untuk mengakses kanal privat</string>
+    <string name="web_add_search_hint">Nama, @username, atau tautan t.me</string>
+    <string name="web_add_search_empty">Tanpa akun, pencarian nama hanya mencakup kanal yang sudah dikenal aplikasi. @username yang tepat atau tautan t.me selalu berhasil.</string>
+    <string name="web_add_search_sign_in">Masuk untuk mencari di seluruh Telegram</string>
+    <plurals name="web_add_search_results">
+        <item quantity="other">%1$d kanal ditemukan</item>
+    </plurals>
 
     <!-- Label Talkback untuk ikon berhenti berlangganan dengan nama kanal. -->
     <string name="web_unsubscribe_from">Berhenti berlangganan dari %1$s</string>

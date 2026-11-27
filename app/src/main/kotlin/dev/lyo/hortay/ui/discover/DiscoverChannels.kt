@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +43,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -136,7 +138,26 @@ fun DiscoverSearchField(
     modifier: Modifier = Modifier,
     onSearch: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    // When set, a clear (×) button leads the trailing slot while the field has text.
+    // Null keeps the field exactly as before for callers that don't opt in.
+    onClear: (() -> Unit)? = null,
 ) {
+    val trailingIcon: (@Composable () -> Unit)? = if (onClear != null && value.isNotEmpty()) {
+        {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClear) {
+                    Symbol(
+                        name = "close",
+                        contentDescription = stringResource(R.string.web_search_clear),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                trailing?.invoke()
+            }
+        }
+    } else {
+        trailing
+    }
     TextField(
         value = value,
         onValueChange = onValueChange,
@@ -146,7 +167,7 @@ fun DiscoverSearchField(
         leadingIcon = {
             Symbol(name = "search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         },
-        trailingIcon = trailing,
+        trailingIcon = trailingIcon,
         keyboardOptions = KeyboardOptions(
             imeAction = if (onSearch != null) ImeAction.Search else ImeAction.Done,
         ),
@@ -189,6 +210,9 @@ fun ChannelDiscoverRow(
     onAction: suspend () -> Boolean,
     // Opens the channel itself; null keeps the row a plain card (curated / search lists).
     onClick: (() -> Unit)? = null,
+    // Styled title (search results emphasise the matched part); [name] stays the plain
+    // text for the avatar initial and the handle comparison.
+    nameText: AnnotatedString? = null,
 ) {
     Row(
         modifier = Modifier
@@ -210,7 +234,7 @@ fun ChannelDiscoverRow(
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = name,
+                text = nameText ?: AnnotatedString(name),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,

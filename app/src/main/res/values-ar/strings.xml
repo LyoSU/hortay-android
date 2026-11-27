@@ -83,8 +83,6 @@
     <string name="web_comments_unavailable_title">التعليقات غير متاحة</string>
     <string name="web_settings_privacy_title">ما يراه Telegram في هذا الوضع</string>
     <string name="web_settings_privacy_body">عنوان IP الخاص بك وUser-Agent متصفح سطح المكتب. بدون ملفات تعريف ارتباط، ولا حساب، ولا بيانات شخصية</string>
-    <string name="web_add_body">@username أو رابط t.me/username أو لصق من الحافظة</string>
-    <string name="web_add_input_label">القناة</string>
     <string name="web_add_paste_clipboard">لصق من الحافظة: %1$s</string>
     <string name="web_add_validating">جارٍ التحقق…</string>
     <string name="web_add_lookup">بحث</string>
@@ -625,6 +623,17 @@
 
     <!-- دعوة لتسجيل الدخول حين تكون القناة المبحوث عنها خاصة. -->
     <string name="web_add_signin_for_private">سجّل الدخول للوصول إلى القنوات الخاصة</string>
+    <string name="web_add_search_hint">الاسم أو ‎@username أو رابط t.me</string>
+    <string name="web_add_search_empty">بدون حساب، يقتصر البحث بالاسم على القنوات التي يعرفها التطبيق مسبقًا. أمّا ‎@username الدقيق أو رابط t.me فيعمل دائمًا.</string>
+    <string name="web_add_search_sign_in">سجّل الدخول للبحث في كل Telegram</string>
+    <plurals name="web_add_search_results">
+        <item quantity="zero">عُثر على %1$d قناة</item>
+        <item quantity="one">عُثر على %1$d قناة</item>
+        <item quantity="two">عُثر على %1$d قناتين</item>
+        <item quantity="few">عُثر على %1$d قنوات</item>
+        <item quantity="many">عُثر على %1$d قناة</item>
+        <item quantity="other">عُثر على %1$d قناة</item>
+    </plurals>
 
     <!-- تسمية Talkback لأيقونة إلغاء الاشتراك مع اسم القناة. -->
     <string name="web_unsubscribe_from">إلغاء الاشتراك من %1$s</string>

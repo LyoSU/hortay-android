@@ -263,6 +263,73 @@ class WebRepository(
             .map { it.key to it.value }
     }
 
+    /**
+     * Everything web.db knows about channels, as raw [GuestChannelCandidate]s for
+     * [GuestChannelIndex.build] — the guest Add-channel sheet's offline name search.
+     * Read once when the sheet opens (and again when the subscriptions change), never
+     * per keystroke:
+     *
+     *  - every `channel` row, followed or not ([GuestChannelSource.Subscribed] /
+     *    [GuestChannelSource.Known]), with its title, description, avatar and count;
+     *  - `channel_suggestion` rows;
+     *  - forward sources (name + username) and visible `@mentions` in the newest
+     *    [postSample] posts of followed channels, counted per username.
+     *
+     * The curated catalog lives outside web.db; the caller adds it.
+     */
+    suspend fun guestSearchCandidates(
+        postSample: Long = SEARCH_POSTS_SAMPLE,
+    ): List<GuestChannelCandidate> = withContext(ioDispatcher) {
+        val out = ArrayList<GuestChannelCandidate>()
+        channelQueries.selectAll().executeAsList().forEach { row ->
+            out += GuestChannelCandidate(
+                username = row.username,
+                title = row.title,
+                description = row.description,
+                avatarUrl = row.avatar_url,
+                subscribers = row.subscribers,
+                source = if (row.is_subscribed) GuestChannelSource.Subscribed else GuestChannelSource.Known,
+            )
+        }
+        suggestionQueries.selectAll().executeAsList().forEach { row ->
+            out += GuestChannelCandidate(
+                username = row.username,
+                title = row.title,
+                description = row.description,
+                avatarUrl = row.avatar_url,
+                source = if (row.source == "history") GuestChannelSource.History else GuestChannelSource.Catalog,
+            )
+        }
+        val forwardCount = HashMap<String, Int>()
+        // Newest name per forward source: rows come newest first, so the first wins.
+        val forwardName = HashMap<String, String>()
+        val mentionCount = HashMap<String, Int>()
+        postQueries.selectMentionsSource(postSample).executeAsList().forEach { row ->
+            VISIBLE_MENTION_REGEX.findAll(row.text_html).forEach { match ->
+                val u = match.groupValues[1].lowercase()
+                if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN) mentionCount.merge(u, 1, Int::plus)
+            }
+            val forward = row.forwarded_from_json?.let { decodeForward(it) } ?: return@forEach
+            val u = FORWARD_URL_REGEX.find(forward.channelLink)?.groupValues?.get(1)?.lowercase()
+                ?: return@forEach
+            if (u.length !in MENTION_MIN_LEN..MENTION_MAX_LEN) return@forEach
+            forwardCount.merge(u, 1, Int::plus)
+            if (forward.channelName.isNotBlank()) forwardName.putIfAbsent(u, forward.channelName)
+        }
+        forwardCount.forEach { (u, n) ->
+            out += GuestChannelCandidate(
+                username = u,
+                title = forwardName[u],
+                source = GuestChannelSource.Forwarded,
+                count = n,
+            )
+        }
+        mentionCount.forEach { (u, n) ->
+            out += GuestChannelCandidate(username = u, source = GuestChannelSource.Mentioned, count = n)
+        }
+        out
+    }
+
     // ---- Writes (suspend) ---------------------------------------------------
 
     /**
@@ -1076,6 +1143,13 @@ class WebRepository(
          */
         const val MENTIONS_DEFAULT_LIMIT = 200L
 
+        /**
+         * Post sample for [guestSearchCandidates]. Larger than [MENTIONS_DEFAULT_LIMIT]:
+         * the search wants breadth (any channel the reader may have seen forwarded),
+         * and it runs once per sheet open, not per keystroke.
+         */
+        const val SEARCH_POSTS_SAMPLE = 1000L
+
         // Telegram public-username constraints (matches parseUsernameFromInput).
         private const val MENTION_MIN_LEN = 2
         private const val MENTION_MAX_LEN = 32
@@ -1089,6 +1163,10 @@ class WebRepository(
         // "channelLink":"https://t.me/<u>" / "tg://resolve?domain=<u>"
         private val FORWARD_LINK_REGEX =
             Regex(""""channelLink"\s*:\s*"(?:https?://)?t\.me/(?:s/)?([A-Za-z][A-Za-z0-9_]{1,31})""")
+
+        // The same, on a decoded [WebForwardSource.channelLink].
+        private val FORWARD_URL_REGEX =
+            Regex("""^(?:https?://)?t\.me/(?:s/)?([A-Za-z][A-Za-z0-9_]{1,31})""")
     }
 }
 

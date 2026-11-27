@@ -79,8 +79,6 @@
     <string name="web_comments_unavailable_title">Comentarios no disponibles</string>
     <string name="web_settings_privacy_title">Qué ve Telegram en este modo</string>
     <string name="web_settings_privacy_body">Tu IP y un User-Agent de navegador de escritorio. Sin cookies, sin cuenta, nada personal tuyo</string>
-    <string name="web_add_body">@usuario, enlace t.me/usuario o pegar desde el portapapeles</string>
-    <string name="web_add_input_label">Canal</string>
     <string name="web_add_paste_clipboard">Pegar del portapapeles: %1$s</string>
     <string name="web_add_validating">Verificando…</string>
     <string name="web_add_lookup">Buscar</string>
@@ -581,6 +579,13 @@
 
     <!-- Sign-in CTA shown when the looked-up channel is private. -->
     <string name="web_add_signin_for_private">Inicia sesión para acceder a canales privados</string>
+    <string name="web_add_search_hint">Nombre, @usuario o enlace t.me</string>
+    <string name="web_add_search_empty">Sin cuenta, la búsqueda por nombre solo abarca los canales que la app ya conoce. Un @usuario exacto o un enlace t.me siempre funciona.</string>
+    <string name="web_add_search_sign_in">Inicia sesión para buscar en todo Telegram</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">%1$d canal encontrado</item>
+        <item quantity="other">%1$d canales encontrados</item>
+    </plurals>
 
     <!-- Channel-aware Talkback label for the unsubscribe icon. -->
     <string name="web_unsubscribe_from">Cancelar suscripción a %1$s</string>

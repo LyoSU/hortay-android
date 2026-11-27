@@ -4,6 +4,7 @@ package dev.lyo.hortay.ui.web
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -36,11 +38,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -48,16 +57,26 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.discover.ChannelCardData
 import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
 import dev.lyo.hortay.data.discover.SuggestedGroup
+import dev.lyo.hortay.data.web.GuestChannelCandidate
+import dev.lyo.hortay.data.web.GuestChannelHit
+import dev.lyo.hortay.data.web.GuestChannelIndex
+import dev.lyo.hortay.data.web.GuestChannelSource
+import dev.lyo.hortay.data.web.GuestMatchTier
 import dev.lyo.hortay.data.web.LookupResult
 import dev.lyo.hortay.data.web.WebChannelInfo
 import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.data.web.parseUsernameFromInput
+import dev.lyo.hortay.data.web.probeableUsername
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
+import dev.lyo.hortay.ui.discover.ChannelDiscoverRow
 import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.ui.discover.discoverSuggestions
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -65,6 +84,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 
 /**
  * Modal bottom sheet for subscribing to a new public channel in guest mode. UX:
@@ -82,6 +102,16 @@ import kotlinx.coroutines.sync.withPermit
  * mode uses. Already-subscribed channels drop out of the list the moment the
  * subscription lands. Authenticated mode shares the same catalog but hydrates via
  * TDLib instead — see `ui/channels/AddChannelTdSheet.kt`.
+ *
+ * Search by name: guest mode has no Telegram-wide name search (TDLib is unauthorised
+ * and t.me only resolves an exact username), so typed text that isn't a link filters
+ * a local [GuestChannelIndex] instantly — followed and formerly followed channels, the
+ * catalog, forward sources and @mentions — and, when it has a username's shape, is
+ * probed live as `@username` after [PROBE_DEBOUNCE_MS] (cached t.me/s page, newest
+ * probe wins, a miss shows nothing). The IME Search key and Find still run the explicit
+ * FORCE_NETWORK lookup with its error messages; a pasted t.me / tg:// link looks up at
+ * once, as before. Only the top results without an avatar are hydrated, after
+ * [HYDRATE_DEBOUNCE_MS], through the same 4-permit gate as the catalog.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 // LocalContextGetResourceValueCall: error strings are formatted inside an async
@@ -110,8 +140,12 @@ fun AddChannelSheet(
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     var input by remember { mutableStateOf("") }
+    // A link is resolved, never searched; anything else is a name query.
+    val linkMode = isLinkLike(input)
+    val query = if (linkMode) "" else input.trim()
     var lookupState by remember { mutableStateOf<LookupState>(LookupState.Idle) }
 
     // One lookup at a time: a new lookup cancels the previous one, so a slow earlier
@@ -166,10 +200,26 @@ fun AddChannelSheet(
     fun trySubmit() {
         val username = parseUsernameFromInput(input)
         if (username == null) {
-            showInvalidInput()
+            // A name query has its own empty state; only a link that doesn't parse
+            // (an invite, a private c/ link) earns the "enter @username" error.
+            if (isLinkLike(input)) showInvalidInput() else keyboard?.hide()
             return
         }
         lookup(username)
+    }
+
+    fun clearInput() {
+        input = ""
+        lookupJob[0]?.cancel()
+        lookupState = LookupState.Idle
+    }
+
+    fun signIn(action: () -> Unit) {
+        scope.launch {
+            sheetState.hide()
+            onDismiss()
+            action()
+        }
     }
 
     fun confirmSubscribe(channel: WebChannelInfo) {
@@ -251,9 +301,11 @@ fun AddChannelSheet(
     // re-open costs conditional GETs instead of 10-22 full page downloads; the
     // user-typed lookup below stays FORCE_NETWORK.
     val hydrated = remember { mutableStateMapOf<String, ChannelCardData>() }
+    // One gate for every hydration source (catalog rows and search results), so the
+    // two never add up to more than four concurrent t.me/s fetches.
+    val gate = remember { Semaphore(HYDRATE_CONCURRENCY) }
     LaunchedEffect(visibleGroups) {
         val names = visibleGroups.flatMap { it.channels }.map { it.username }.distinct()
-        val gate = Semaphore(4)
         coroutineScope {
             names.forEach { u ->
                 if (hydrated.containsKey(u.lowercase())) return@forEach
@@ -295,6 +347,164 @@ fun AddChannelSheet(
         }
     }
 
+    // ---- Search by name -------------------------------------------------------
+
+    // Raw candidates from web.db, re-read when the subscriptions change — but only while
+    // the field is empty: a reload re-ranks the results (a followed channel outweighs
+    // others), and the row just subscribed to must not jump away under the finger.
+    var candidateKey by remember { mutableStateOf<Set<String>>(subscribedSet) }
+    LaunchedEffect(subscribedSet, query.isEmpty()) {
+        if (query.isEmpty()) candidateKey = subscribedSet
+    }
+    val dbCandidates by produceState<List<GuestChannelCandidate>?>(initialValue = null, candidateKey) {
+        value = repository.guestSearchCandidates()
+    }
+    // The index merges web.db, the catalog and this session's live card data, built off
+    // the main thread. Hydration lands one channel at a time; after the first build a
+    // short pause coalesces a burst of them into one rebuild.
+    val hydratedCount = hydrated.size
+    val index by produceState<GuestChannelIndex?>(initialValue = null, dbCandidates, groups, hydratedCount) {
+        val base = dbCandidates ?: return@produceState
+        if (value != null) delay(INDEX_REBUILD_DEBOUNCE_MS)
+        val catalog = groups.orEmpty().asSequence().flatMap { it.channels.asSequence() }.map {
+            GuestChannelCandidate(
+                username = it.username,
+                title = it.titleOverride,
+                description = it.description,
+                source = GuestChannelSource.Catalog,
+            )
+        }.toList()
+        val live = hydrated.toMap().map { (u, card) ->
+            GuestChannelCandidate(
+                username = u,
+                title = card.title,
+                avatarUrl = card.avatarUrl,
+                subscribers = card.subscribersText,
+                source = GuestChannelSource.Live,
+            )
+        }
+        value = withContext(Dispatchers.Default) { GuestChannelIndex.build(base + catalog + live) }
+    }
+    val explicitFound = (lookupState as? LookupState.Found)?.channel?.username?.lowercase()
+    // Plain string ops over pre-folded fields: cheap enough for every keystroke.
+    val hits: ImmutableList<GuestChannelHit> = remember(query, index, explicitFound) {
+        val idx = index
+        if (query.isEmpty() || idx == null) {
+            persistentListOf()
+        } else {
+            idx.search(query).filter { it.channel.username != explicitFound }.toImmutableList()
+        }
+    }
+
+    // Live probe of the typed text as an exact username. Skipped while an explicit
+    // lookup owns the field, and when the index already has that channel with its card
+    // data. Keyed on the name, so a newer keystroke cancels the pending or in-flight
+    // probe; a miss simply leaves no row.
+    val probeName = if (linkMode) null else probeableUsername(input)
+    val localExact = probeName?.let { index?.get(it) }
+    val probeNeeded = probeName != null &&
+        index != null &&
+        lookupState is LookupState.Idle &&
+        !(localExact?.title != null && (localExact.avatarUrl != null || hydrated.containsKey(probeName)))
+    var probe by remember { mutableStateOf<ProbeState>(ProbeState.Idle) }
+    LaunchedEffect(probeName, probeNeeded) {
+        probe = ProbeState.Idle
+        if (!probeNeeded) return@LaunchedEffect
+        probe = ProbeState.Pending
+        delay(PROBE_DEBOUNCE_MS)
+        probe = ProbeState.Loading
+        val info = when (val r = client.lookupChannel(probeName, useCache = true)) {
+            is LookupResult.Found -> r.channel
+            is LookupResult.Empty -> r.channel
+            else -> null
+        }
+        ensureActive()
+        // A known channel takes the live card data into its own row; an unknown one
+        // gets the probe row. Kept out of `hydrated` then, or the next index rebuild
+        // would turn the probe row into a local row with a different key.
+        if (info != null && localExact != null) {
+            hydrated[probeName] = ChannelCardData(
+                title = info.title,
+                subscribersText = info.subscribers,
+                avatarUrl = info.avatarUrl,
+            )
+        }
+        probe = if (info != null) ProbeState.Found(info) else ProbeState.Missing
+    }
+    val probeSlot = localExact == null && (probe is ProbeState.Loading || probe is ProbeState.Found)
+    val resultCount = hits.size + if (localExact == null && probe is ProbeState.Found) 1 else 0
+    val searchActive = query.isNotEmpty()
+    val showSearchEmpty = searchActive &&
+        index != null &&
+        resultCount == 0 &&
+        (probe is ProbeState.Idle || probe is ProbeState.Missing)
+
+    // Card data for the top results that lack an avatar, once typing pauses. Keyed on
+    // the usernames, so a re-rank that keeps the same top rows doesn't restart it; a
+    // channel is tried once per sheet, found or not.
+    val topUsernames = remember(hits) { hits.take(HYDRATE_TOP_RESULTS).map { it.channel.username } }
+    val hydrateAttempted = remember { HashSet<String>() }
+    LaunchedEffect(topUsernames) {
+        if (topUsernames.isEmpty()) return@LaunchedEffect
+        delay(HYDRATE_DEBOUNCE_MS)
+        coroutineScope {
+            topUsernames.forEach { u ->
+                val known = index?.get(u)
+                if (known?.avatarUrl != null || hydrated.containsKey(u) || u in hydrateAttempted) return@forEach
+                launch {
+                    gate.withPermit {
+                        val info = when (val r = client.lookupChannel(u, useCache = true)) {
+                            is LookupResult.Found -> r.channel
+                            is LookupResult.Empty -> r.channel
+                            else -> null
+                        }
+                        hydrateAttempted += u
+                        if (info != null) {
+                            hydrated[u] = ChannelCardData(
+                                title = info.title,
+                                subscribersText = info.subscribers,
+                                avatarUrl = info.avatarUrl,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Optimistic subscribe (DESIGN_POLISH M2): the row owns its in-flight / "Subscribed"
+    // morph; here we run the subscribe, then keep the handle in `holdVisible` for
+    // SUBSCRIBE_CONFIRM_HOLD_MS so the confirmation reads before the live subscription
+    // flow drops the row from the curated list (search results keep followed channels,
+    // shown as subscribed). `subscribeAndRefresh` surfaces its own errors; returning
+    // true reflects the dispatch.
+    //
+    // The very first channel closes the sheet: with nothing followed yet the user came
+    // here to get something to read, and the feed behind the sheet now shows that
+    // channel loading. Later adds keep the sheet open so several channels can be
+    // picked in a row. Read through an updated state: result rows remember this
+    // callback across recompositions.
+    val currentSubscribed by rememberUpdatedState(subscribedSet)
+    suspend fun addChannel(username: String, title: String?): Boolean {
+        val key = username.lowercase()
+        val firstChannel = currentSubscribed.isEmpty()
+        holdVisible[key] = Unit
+        val placeholder = title?.takeIf { it.isNotBlank() } ?: hydrated[key]?.title ?: username
+        feedSource.subscribeAndRefresh(username, placeholderTitle = placeholder)
+        if (firstChannel) {
+            scope.launch {
+                sheetState.hide()
+                onDismiss()
+            }
+        } else {
+            scope.launch {
+                delay(SUBSCRIBE_CONFIRM_HOLD_MS)
+                holdVisible.remove(key)
+            }
+        }
+        return true
+    }
+
     // Hoisted out of the LazyColumn body: stringResource() is @Composable and the
     // LazyListScope content lambda is not, so it can't be read inside discoverSuggestions().
     val addLabel = stringResource(R.string.web_add_confirm)
@@ -322,30 +532,37 @@ fun AddChannelSheet(
                 )
             }
             item(key = "lookup", contentType = "lookup") {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = stringResource(R.string.web_add_body),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    // Stadium search-bar idiom (DESIGN_POLISH H2). The submit
-                    // affordance: the IME "search" key and the trailing button both
-                    // fire the lookup, since the curated-suggestions redesign dropped
-                    // the standalone button row.
+                Column(
+                    modifier = Modifier.padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // Stadium search-bar idiom (DESIGN_POLISH H2). Typing filters the
+                    // local index as you go; the IME "search" key and the trailing
+                    // Find button run the explicit lookup of an @username or link.
                     DiscoverSearchField(
                         value = input,
-                        onValueChange = {
-                            input = it
+                        onValueChange = { new ->
+                            val previous = input
+                            input = new
                             if (lookupState is LookupState.Error || lookupState is LookupState.Found) {
                                 lookupState = LookupState.Idle
                             }
+                            // A pasted link resolves at once, as the clipboard auto-paste
+                            // does. Typed one character at a time it waits for Find, so a
+                            // half-typed t.me/du never flashes "not found".
+                            if (new.length - previous.length > 1 && isLinkLike(new)) {
+                                parseUsernameFromInput(new)?.let(::lookup)
+                            }
                         },
-                        hint = stringResource(R.string.web_add_input_label),
+                        hint = stringResource(R.string.web_add_search_hint),
                         onSearch = { trySubmit() },
+                        onClear = ::clearInput,
                         trailing = {
                             TextButton(
                                 onClick = ::trySubmit,
-                                enabled = input.isNotBlank() && lookupState !is LookupState.Loading,
+                                enabled = input.isNotBlank() &&
+                                    lookupState !is LookupState.Loading &&
+                                    (linkMode || parseUsernameFromInput(input) != null),
                             ) {
                                 Text(stringResource(R.string.web_add_lookup))
                             }
@@ -376,13 +593,7 @@ fun AddChannelSheet(
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             if (state.isPrivate && onSignIn != null) {
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        sheetState.hide()
-                                        onDismiss()
-                                        onSignIn()
-                                    }
-                                }) {
+                                TextButton(onClick = { signIn(onSignIn) }) {
                                     Text(stringResource(R.string.web_add_signin_for_private))
                                 }
                             }
@@ -391,7 +602,63 @@ fun AddChannelSheet(
                 }
             }
 
-            if (mentionedSuggestions.isNotEmpty()) {
+            if (searchActive) {
+                if (resultCount > 0) {
+                    item(key = "search_header", contentType = "discover_header") {
+                        SearchResultsHeader(count = resultCount)
+                    }
+                }
+                if (probeSlot) {
+                    // One key for the loading and the found state, so the slot keeps
+                    // its place while the probe resolves.
+                    item(key = "search_probe", contentType = "search_probe") {
+                        when (val p = probe) {
+                            is ProbeState.Found -> {
+                                val info = p.channel
+                                ChannelDiscoverRow(
+                                    name = info.title.ifBlank { "@${info.username}" },
+                                    handle = "@${info.username}",
+                                    // Raw t.me count, as on the catalog rows.
+                                    subscribers = info.subscribers,
+                                    description = null,
+                                    avatarThumb = null,
+                                    avatarFileId = null,
+                                    avatarUrl = info.avatarUrl,
+                                    actionLabel = addLabel,
+                                    subscribedLabel = subscribedLabel,
+                                    actionEnabled = info.username.lowercase() !in subscribedSet,
+                                    onAction = remember(info) { { addChannel(info.username, info.title) } },
+                                )
+                            }
+                            else -> ProbeLoadingRow(username = probeName.orEmpty())
+                        }
+                    }
+                }
+                items(
+                    items = hits,
+                    key = { "hit_${it.channel.username}" },
+                    contentType = { "discover_row" },
+                ) { hit ->
+                    val username = hit.channel.username
+                    SearchHitRow(
+                        hit = hit,
+                        card = hydrated[username],
+                        subscribed = username in subscribedSet,
+                        addLabel = addLabel,
+                        subscribedLabel = subscribedLabel,
+                        onAdd = remember(username) { { addChannel(username, hit.channel.title) } },
+                    )
+                }
+                if (showSearchEmpty) {
+                    item(key = "search_empty", contentType = "search_empty") {
+                        SearchEmptyState(
+                            onSignIn = onSignIn?.let { action -> { signIn(action) } },
+                        )
+                    }
+                }
+            }
+
+            if (!searchActive && mentionedSuggestions.isNotEmpty()) {
                 item(key = "mentioned_header", contentType = "discover_header") {
                     Text(
                         text = stringResource(R.string.web_add_mentioned_title),
@@ -411,7 +678,7 @@ fun AddChannelSheet(
                 }
             }
 
-            if (groups == null) {
+            if (!searchActive && groups == null) {
                 item(key = "suggestions_loading", contentType = "suggestions_loading") {
                     val loadingLabel = stringResource(R.string.web_loading)
                     Row(
@@ -426,41 +693,15 @@ fun AddChannelSheet(
                 }
             }
 
-            discoverSuggestions(
-                groups = visibleGroups,
-                hydrated = hydrated,
-                addLabel = addLabel,
-                subscribedLabel = subscribedLabel,
-                // Optimistic subscribe (DESIGN_POLISH M2): the row owns its in-flight /
-                // "Subscribed" morph; here we run the subscribe, then keep the handle in
-                // `holdVisible` for SUBSCRIBE_CONFIRM_HOLD_MS so the confirmation reads
-                // before the live subscription flow drops the row. `subscribeAndRefresh`
-                // surfaces its own errors; returning true reflects the dispatch.
-                //
-                // The very first channel closes the sheet: with nothing followed yet the
-                // user came here to get something to read, and the feed behind the sheet
-                // now shows that channel loading. Later adds keep the sheet open so
-                // several channels can be picked in a row.
-                onAdd = { username ->
-                    val key = username.lowercase()
-                    val firstChannel = subscribedSet.isEmpty()
-                    holdVisible[key] = Unit
-                    val title = hydrated[key]?.title ?: username
-                    feedSource.subscribeAndRefresh(username, placeholderTitle = title)
-                    if (firstChannel) {
-                        scope.launch {
-                            sheetState.hide()
-                            onDismiss()
-                        }
-                    } else {
-                        scope.launch {
-                            delay(SUBSCRIBE_CONFIRM_HOLD_MS)
-                            holdVisible.remove(key)
-                        }
-                    }
-                    true
-                },
-            )
+            if (!searchActive) {
+                discoverSuggestions(
+                    groups = visibleGroups,
+                    hydrated = hydrated,
+                    addLabel = addLabel,
+                    subscribedLabel = subscribedLabel,
+                    onAdd = { username -> addChannel(username, null) },
+                )
+            }
         }
     }
 }
@@ -539,6 +780,159 @@ private fun MentionedRow(suggestion: MentionedChannel, onTap: () -> Unit) {
     }
 }
 
+/** "N channels found", announced politely as the count changes while typing. */
+@Composable
+private fun SearchResultsHeader(count: Int) {
+    Text(
+        text = pluralStringResource(R.plurals.web_add_search_results, count, count),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 4.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+    )
+}
+
+/**
+ * One local search result on the shared discover row. The matched part of the title
+ * (or of the handle, for a channel known only by its username) is drawn in `primary`.
+ * Live card data fills what the index lacks; the emphasis applies only while the shown
+ * title is the one the index matched against.
+ */
+@Composable
+private fun SearchHitRow(
+    hit: GuestChannelHit,
+    card: ChannelCardData?,
+    subscribed: Boolean,
+    addLabel: String,
+    subscribedLabel: String,
+    onAdd: suspend () -> Boolean,
+) {
+    val channel = hit.channel
+    val handle = "@${channel.username}"
+    val title = channel.title ?: card?.title?.takeIf { it.isNotBlank() }
+    val accent = MaterialTheme.colorScheme.primary
+    val nameText = remember(hit, title, accent) {
+        when {
+            title == null -> emphasised(handle, hit.usernameRanges.map { (it.first + 1)..(it.last + 1) }, accent)
+            title == channel.title -> emphasised(title, hit.titleRanges, accent)
+            else -> AnnotatedString(title)
+        }
+    }
+    val seenCount = channel.forwardCount + channel.mentionCount
+    val onlySeenInPosts = !channel.hasSource(GuestChannelSource.Subscribed) &&
+        !channel.hasSource(GuestChannelSource.Known) &&
+        !channel.hasSource(GuestChannelSource.Catalog) &&
+        seenCount > 0
+    val description = when {
+        hit.tier == GuestMatchTier.DescriptionSubstring -> channel.description
+        onlySeenInPosts -> pluralStringResource(R.plurals.web_add_mentioned_count, seenCount, seenCount)
+        else -> null
+    }
+    ChannelDiscoverRow(
+        name = title ?: handle,
+        handle = handle,
+        subscribers = channel.subscribers ?: card?.subscribersText,
+        description = description,
+        avatarThumb = null,
+        avatarFileId = null,
+        avatarUrl = channel.avatarUrl ?: card?.avatarUrl,
+        actionLabel = addLabel,
+        subscribedLabel = subscribedLabel,
+        actionEnabled = !subscribed,
+        onAction = onAdd,
+        nameText = nameText,
+    )
+}
+
+private fun emphasised(text: String, ranges: List<IntRange>, accent: Color): AnnotatedString =
+    buildAnnotatedString {
+        append(text)
+        ranges.forEach { r ->
+            val start = r.first.coerceIn(0, text.length)
+            val end = (r.last + 1).coerceIn(start, text.length)
+            if (end > start) addStyle(SpanStyle(color = accent), start, end)
+        }
+    }
+
+/** The probe slot while t.me answers: same footprint as a channel row, so nothing shifts. */
+@Composable
+private fun ProbeLoadingRow(username: String) {
+    val checking = stringResource(R.string.web_add_validating)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .padding(vertical = 6.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            LoadingIndicator(modifier = Modifier.size(28.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "@$username",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Text(
+                text = checking,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Nothing local matches and the probe found nothing: say what guest search can reach,
+ * and offer the one way to search all of Telegram.
+ */
+@Composable
+private fun SearchEmptyState(onSignIn: (() -> Unit)?) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.web_add_search_empty),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (onSignIn != null) {
+            TextButton(onClick = onSignIn) {
+                Text(stringResource(R.string.web_add_search_sign_in))
+            }
+        }
+    }
+}
+
+/** A t.me / tg:// link: resolved by lookup, never searched by name. */
+private fun isLinkLike(input: String): Boolean {
+    val t = input.trim().lowercase()
+    return t.startsWith("tg://") || t.contains("t.me/")
+}
+
+/** The live username probe (see [PROBE_DEBOUNCE_MS]). */
+private sealed interface ProbeState {
+    data object Idle : ProbeState
+
+    /** Waiting out the debounce; draws nothing, but holds back the empty state. */
+    data object Pending : ProbeState
+    data object Loading : ProbeState
+    data class Found(val channel: WebChannelInfo) : ProbeState
+    data object Missing : ProbeState
+}
+
 private sealed interface LookupState {
     data object Idle : LookupState
     data object Loading : LookupState
@@ -549,3 +943,19 @@ private sealed interface LookupState {
 // How long a just-subscribed row stays visible showing its "Subscribed" check-circle
 // confirmation before the live subscription flow drops it (DESIGN_POLISH H1).
 private const val SUBSCRIBE_CONFIRM_HOLD_MS = 1500L
+
+// Typing pause before the typed username is probed on t.me. Long enough that a word
+// typed at speed costs one request, short enough to feel live.
+private const val PROBE_DEBOUNCE_MS = 450L
+
+// Typing pause before the top search results without an avatar are hydrated.
+private const val HYDRATE_DEBOUNCE_MS = 400L
+
+// How many of the top search results may be hydrated.
+private const val HYDRATE_TOP_RESULTS = 8
+
+// Concurrent t.me/s card fetches across catalog and search hydration.
+private const val HYDRATE_CONCURRENCY = 4
+
+// Coalesces a burst of hydration results into one index rebuild.
+private const val INDEX_REBUILD_DEBOUNCE_MS = 300L

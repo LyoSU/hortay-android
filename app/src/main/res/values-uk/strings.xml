@@ -81,8 +81,6 @@
     <string name="web_comments_unavailable_title">Коментарі недоступні</string>
     <string name="web_settings_privacy_title">Що бачить Telegram у цьому режимі</string>
     <string name="web_settings_privacy_body">Твій IP і User-Agent настільного браузера. Без файлів cookie, акаунта чи персональних даних</string>
-    <string name="web_add_body">@username, посилання t.me/username або текст із буфера обміну</string>
-    <string name="web_add_input_label">Канал</string>
     <string name="web_add_paste_clipboard">Вставити з буфера: %1$s</string>
     <string name="web_add_validating">Перевіряємо…</string>
     <string name="web_add_lookup">Знайти</string>
@@ -594,6 +592,15 @@
 
     <!-- CTA «Увійти», коли знайдений канал — приватний. -->
     <string name="web_add_signin_for_private">Увійти, щоб читати приватні канали</string>
+    <string name="web_add_search_hint">Назва, @username або посилання t.me</string>
+    <string name="web_add_search_empty">Без акаунта за назвою шукаються лише канали, які застосунок уже знає. Точний @username чи посилання t.me спрацює завжди.</string>
+    <string name="web_add_search_sign_in">Увійти, щоб шукати по всьому Telegram</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">Знайдено %1$d канал</item>
+        <item quantity="few">Знайдено %1$d канали</item>
+        <item quantity="many">Знайдено %1$d каналів</item>
+        <item quantity="other">Знайдено %1$d каналу</item>
+    </plurals>
 
     <!-- Talkback-опис кнопки відписки з назвою каналу. -->
     <string name="web_unsubscribe_from">Відписатися від %1$s</string>

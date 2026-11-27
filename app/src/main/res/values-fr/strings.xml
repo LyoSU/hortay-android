@@ -80,8 +80,6 @@
     <string name="web_comments_unavailable_title">Commentaires indisponibles</string>
     <string name="web_settings_privacy_title">Ce que Telegram voit dans ce mode</string>
     <string name="web_settings_privacy_body">Ton IP et un User-Agent de navigateur de bureau. Pas de cookies, pas de compte, rien de personnel</string>
-    <string name="web_add_body">@username, lien t.me/username, ou coller depuis le presse-papiers</string>
-    <string name="web_add_input_label">Chaîne</string>
     <string name="web_add_paste_clipboard">Coller depuis le presse-papiers : %1$s</string>
     <string name="web_add_validating">Validation…</string>
     <string name="web_add_lookup">Rechercher</string>
@@ -585,6 +583,14 @@
 
     <!-- CTA de connexion affiché quand la chaîne recherchée est privée. -->
     <string name="web_add_signin_for_private">Connecte-toi pour accéder aux chaînes privées</string>
+    <string name="web_add_search_hint">Nom, @utilisateur ou lien t.me</string>
+    <string name="web_add_search_empty">Sans compte, la recherche par nom ne couvre que les chaînes que l’app connaît déjà. Un @utilisateur exact ou un lien t.me fonctionne toujours.</string>
+    <string name="web_add_search_sign_in">Connecte-toi pour chercher dans tout Telegram</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">%1$d chaîne trouvée</item>
+        <item quantity="many">%1$d de chaînes trouvées</item>
+        <item quantity="other">%1$d chaînes trouvées</item>
+    </plurals>
 
     <!-- Libellé TalkBack de l\'icône de désabonnement avec le nom de la chaîne. -->
     <string name="web_unsubscribe_from">Se désabonner de %1$s</string>

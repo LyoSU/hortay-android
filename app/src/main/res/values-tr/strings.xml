@@ -79,8 +79,6 @@
     <string name="web_comments_unavailable_title">Yorumlar kullanılamıyor</string>
     <string name="web_settings_privacy_title">Bu modda Telegram ne görüyor</string>
     <string name="web_settings_privacy_body">IP adresin ve masaüstü tarayıcı User-Agent\'ı. Çerez, hesap veya kişisel bilgi yok</string>
-    <string name="web_add_body">@kullanıcıadı, t.me/kullanıcıadı bağlantısı veya panodan yapıştır</string>
-    <string name="web_add_input_label">Kanal</string>
     <string name="web_add_paste_clipboard">Panodan yapıştır: %1$s</string>
     <string name="web_add_validating">Doğrulanıyor…</string>
     <string name="web_add_lookup">Bul</string>
@@ -571,6 +569,13 @@
 
     <!-- Aranan kanal özel olduğunda gösterilen giriş CTA\'sı. -->
     <string name="web_add_signin_for_private">Özel kanallara erişmek için giriş yap</string>
+    <string name="web_add_search_hint">Ad, @kullanıcıadı veya t.me bağlantısı</string>
+    <string name="web_add_search_empty">Hesap olmadan adla arama yalnızca uygulamanın zaten bildiği kanalları kapsar. Tam bir @kullanıcıadı veya t.me bağlantısı her zaman çalışır.</string>
+    <string name="web_add_search_sign_in">Tüm Telegram\'da aramak için giriş yap</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">%1$d kanal bulundu</item>
+        <item quantity="other">%1$d kanal bulundu</item>
+    </plurals>
 
     <!-- Abonelik iptal simgesi için kanal adıyla Talkback etiketi. -->
     <string name="web_unsubscribe_from">%1$s aboneliğini iptal et</string>

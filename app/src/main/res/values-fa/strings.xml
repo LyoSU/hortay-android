@@ -79,8 +79,6 @@
     <string name="web_comments_unavailable_title">نظرات در دسترس نیست</string>
     <string name="web_settings_privacy_title">Telegram در این حالت چه می‌بیند</string>
     <string name="web_settings_privacy_body">آدرس IP شما و یک User-Agent مرورگر دسکتاپ. بدون کوکی، بدون حساب، هیچ اطلاعات شخصی</string>
-    <string name="web_add_body">@username، لینک t.me/username، یا از کلیپ‌بورد جای‌گذاری کنید</string>
-    <string name="web_add_input_label">کانال</string>
     <string name="web_add_paste_clipboard">جای‌گذاری از کلیپ‌بورد: %1$s</string>
     <string name="web_add_validating">در حال بررسی…</string>
     <string name="web_add_lookup">جستجو</string>
@@ -569,6 +567,13 @@
 
     <!-- دعوت به ورود وقتی کانال جستجوشده خصوصی است -->
     <string name="web_add_signin_for_private">برای دسترسی به کانال‌های خصوصی وارد شوید</string>
+    <string name="web_add_search_hint">نام، ‎@username یا پیوند t.me</string>
+    <string name="web_add_search_empty">بدون حساب، جست‌وجو با نام فقط کانال‌هایی را می‌یابد که برنامه از قبل می‌شناسد. یک ‎@username دقیق یا پیوند t.me همیشه کار می‌کند.</string>
+    <string name="web_add_search_sign_in">برای جست‌وجو در کل Telegram وارد شوید</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">%1$d کانال پیدا شد</item>
+        <item quantity="other">%1$d کانال پیدا شد</item>
+    </plurals>
 
     <!-- برچسب Talkback برای آیکون لغو اشتراک با نام کانال -->
     <string name="web_unsubscribe_from">لغو اشتراک از %1$s</string>

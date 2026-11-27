@@ -79,8 +79,6 @@
     <string name="web_comments_unavailable_title">Kommentare nicht verfügbar</string>
     <string name="web_settings_privacy_title">Was Telegram in diesem Modus sieht</string>
     <string name="web_settings_privacy_body">Deine IP und ein Desktop-Browser-User-Agent. Keine Cookies, kein Konto, keine persönlichen Daten</string>
-    <string name="web_add_body">@username, t.me/username-Link oder aus Zwischenablage einfügen</string>
-    <string name="web_add_input_label">Kanal</string>
     <string name="web_add_paste_clipboard">Aus Zwischenablage einfügen: %1$s</string>
     <string name="web_add_validating">Wird geprüft…</string>
     <string name="web_add_lookup">Suchen</string>
@@ -571,6 +569,13 @@
 
     <!-- Anmelde-CTA, wenn der gesuchte Kanal privat ist. -->
     <string name="web_add_signin_for_private">Anmelden für private Kanäle</string>
+    <string name="web_add_search_hint">Name, @username oder t.me-Link</string>
+    <string name="web_add_search_empty">Ohne Konto findet die Suche nach Namen nur Kanäle, die die App schon kennt. Ein genauer @username oder ein t.me-Link funktioniert immer.</string>
+    <string name="web_add_search_sign_in">Anmelden, um ganz Telegram zu durchsuchen</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">%1$d Kanal gefunden</item>
+        <item quantity="other">%1$d Kanäle gefunden</item>
+    </plurals>
 
     <!-- Kanalspezifische TalkBack-Beschriftung für das Abbestellungs-Symbol. -->
     <string name="web_unsubscribe_from">%1$s abbestellen</string>

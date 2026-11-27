@@ -81,8 +81,6 @@
     <string name="web_comments_unavailable_title">Komentarze niedostępne</string>
     <string name="web_settings_privacy_title">Co Telegram widzi w tym trybie</string>
     <string name="web_settings_privacy_body">Twój adres IP i User-Agent przeglądarki desktopowej. Żadnych ciasteczek, konta ani danych osobowych</string>
-    <string name="web_add_body">@username, link t.me/username lub wklej ze schowka</string>
-    <string name="web_add_input_label">Kanał</string>
     <string name="web_add_paste_clipboard">Wklej ze schowka: %1$s</string>
     <string name="web_add_validating">Sprawdzanie…</string>
     <string name="web_add_lookup">Znajdź</string>
@@ -597,6 +595,15 @@
 
     <!-- CTA logowania, gdy wyszukany kanał jest prywatny. -->
     <string name="web_add_signin_for_private">Zaloguj się, żeby uzyskać dostęp do prywatnych kanałów</string>
+    <string name="web_add_search_hint">Nazwa, @username lub link t.me</string>
+    <string name="web_add_search_empty">Bez konta wyszukiwanie po nazwie obejmuje tylko kanały, które aplikacja już zna. Dokładny @username albo link t.me działa zawsze.</string>
+    <string name="web_add_search_sign_in">Zaloguj się, żeby przeszukać cały Telegram</string>
+    <plurals name="web_add_search_results">
+        <item quantity="one">Znaleziono %1$d kanał</item>
+        <item quantity="few">Znaleziono %1$d kanały</item>
+        <item quantity="many">Znaleziono %1$d kanałów</item>
+        <item quantity="other">Znaleziono %1$d kanału</item>
+    </plurals>
 
     <!-- Etykieta TalkBack dla ikony rezygnacji z subskrypcji z nazwą kanału. -->
     <string name="web_unsubscribe_from">Anuluj subskrypcję %1$s</string>

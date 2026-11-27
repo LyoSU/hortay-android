@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- In guest mode the Add channel sheet searches by name as you type — through the channels the app already knows, plus a live check of the text as a @username.
+
 ### Fixed
 - A video or GIF playing in the feed no longer shows a sharp second copy of itself around the picture — the edges are a soft blurred backdrop instead.
 - In guest mode, edits, reactions and deletions of the comments on screen now update while the post is open, not only new comments.
